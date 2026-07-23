@@ -428,8 +428,8 @@ export async function seed(season = DEFAULT_SEASON): Promise<SeedResult> {
   }
 
   // --- admin user ------------------------------------------------------
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@junaidi.local";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "";
+  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@junaidi.app";
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "hajj@#0987";
   let seededAdmin: string | null = null;
 
   if (adminPassword) {

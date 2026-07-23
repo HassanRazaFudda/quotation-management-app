@@ -62,8 +62,8 @@ describe("travel details", () => {
     expect(html).toContain("06 May 2026");
     expect(html).toContain("Returning on");
     expect(html).toContain("04 June 2026");
-    expect(html).toContain("Karachi - Jeddah (PIA)");
-    expect(html).toContain("Jeddah - Karachi (PIA)");
+    expect(html).toContain("Karachi - Jeddah");
+    expect(html).toContain("Jeddah - Karachi");
     expect(html).toContain("Air Ticket Included");
 
     // ...and it comes before the itinerary, not after it.
@@ -120,7 +120,9 @@ describe("the two pages", () => {
     expect(html.match(/Bilal Ahmed/g)).toHaveLength(2);
     expect(html.match(/Powered by/g)).toHaveLength(2);
     expect(html.match(/\+92 317 2036604/g)).toHaveLength(2);
-    expect(html.match(/Kodex/g)).toHaveLength(2);
+    expect(html.match(/Digitli/g)).toHaveLength(2);
+    expect(html.match(/www\.digitli\.com/g)).toHaveLength(2);
+    expect(html).not.toContain("Kodex");
   });
 
   it("drops the staff line when nobody is named", () => {

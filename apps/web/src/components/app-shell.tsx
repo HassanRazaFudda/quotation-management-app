@@ -95,7 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-dvh bg-canvas lg:grid lg:grid-cols-[16rem_1fr]">
+    <div className="flex min-h-dvh flex-col bg-canvas lg:grid lg:grid-cols-[16rem_1fr]">
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-white lg:flex">
         <Brand />
@@ -145,8 +145,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      <main className="min-w-0">{children}</main>
+      {/* The content grows to fill the height so the footer sits at the very
+          bottom - on a short page it rests on the bottom edge, on a long one it
+          follows the content. It never floats up over the page (no fixed). */}
+      <main className="flex min-w-0 flex-1 flex-col lg:min-h-dvh">
+        <div className="flex-1">{children}</div>
+        <AppFooter />
+      </main>
     </div>
+  );
+}
+
+/** Small "Powered by Digitli" strip along the bottom of every screen. */
+function AppFooter() {
+  return (
+    <footer className="mt-6 border-t border-line bg-white px-5 py-3 text-center text-xs text-muted lg:px-8">
+      Powered by{" "}
+      <a
+        href="https://www.digitli.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold text-ink transition-colors hover:text-brand-600"
+      >
+        Digitli
+      </a>
+      <span className="mx-1.5 text-gray-300">·</span>
+      <a
+        href="https://www.digitli.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="transition-colors hover:text-brand-600"
+      >
+        www.digitli.com
+      </a>
+      <span className="mx-1.5 text-gray-300">·</span>
+      +92 317 2036604
+    </footer>
   );
 }
 

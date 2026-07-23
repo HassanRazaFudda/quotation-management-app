@@ -57,7 +57,8 @@ export interface PdfTravel {
 
 /** The agency behind the software. Printed small, on every page. */
 export const POWERED_BY = {
-  name: "Kodex",
+  name: "Digitli",
+  url: "www.digitli.com",
   contact: "+92 317 2036604",
 } as const;
 

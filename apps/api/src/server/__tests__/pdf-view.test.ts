@@ -151,8 +151,9 @@ describe("toPdfView", () => {
       },
     } as never);
     expect(withFlights.travel.included).toBe(true);
-    expect(withFlights.travel.outbound).toBe("Karachi - Jeddah (PIA)");
-    expect(withFlights.travel.inbound).toBe("Jeddah - Karachi (PIA)");
+    // Route only — the airline is not printed on the customer's document.
+    expect(withFlights.travel.outbound).toBe("Karachi - Jeddah");
+    expect(withFlights.travel.inbound).toBe("Jeddah - Karachi");
     expect(withFlights.travel.note).toBe("");
   });
 
@@ -166,7 +167,7 @@ describe("toPdfView", () => {
         inbound: null,
       },
     } as never);
-    expect(view.travel.outbound).toBe("Karachi - Jeddah (PIA)");
+    expect(view.travel.outbound).toBe("Karachi - Jeddah");
     expect(view.travel.inbound).toBe("");
     expect(view.travel.note).toContain("One-way ticket only");
   });

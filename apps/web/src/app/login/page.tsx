@@ -90,6 +90,20 @@ export default function LoginPage() {
             Sign in
           </Button>
         </form>
+
+        <p className="mt-6 text-center text-xs text-muted">
+          Powered by{" "}
+          <a
+            href="https://www.digitli.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold text-ink transition-colors hover:text-brand-600"
+          >
+            Digitli
+          </a>
+          <span className="mx-1.5 text-gray-300">·</span>
+          www.digitli.com
+        </p>
       </motion.div>
     </div>
   );

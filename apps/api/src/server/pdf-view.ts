@@ -112,9 +112,11 @@ function accommodationLabel(
   return room ? `${stay.accommodationName} (${room})` : stay.accommodationName;
 }
 
+// The customer's document names the route only; the airline is an internal
+// detail the agency does not print.
 const sector = (
-  leg: { origin?: string; destination?: string; airline?: string } | null | undefined,
-): string => (leg ? `${leg.origin} - ${leg.destination}${leg.airline ? ` (${leg.airline})` : ""}` : "");
+  leg: { origin?: string; destination?: string } | null | undefined,
+): string => (leg ? `${leg.origin} - ${leg.destination}` : "");
 
 /**
  * The journey as it heads the document: the day they leave and the day they
