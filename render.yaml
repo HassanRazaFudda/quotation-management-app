@@ -1,0 +1,29 @@
+# Render Blueprint for the Junaidi Quotation API.
+#
+# Render → New → Blueprint, point it at this repo. The frontend is deployed
+# separately (Vercel); this is the backend + PDF service only.
+#
+# The Starter plan is chosen on purpose: the Free plan sleeps after 15 minutes
+# of inactivity and the next request pays a ~50s cold start while the service
+# and Chromium restart. Staff would hit that every morning.
+
+services:
+  - type: web
+    name: junaidi-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter # ~$7/mo, always-on, ~512 MB
+    region: singapore # closest Render region to Pakistan
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGODB_URI
+        sync: false # set in the dashboard (MongoDB Atlas connection string)
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong secret
+      - key: ALLOWED_ORIGINS
+        sync: false # the frontend's URL, e.g. https://junaidi.vercel.app
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
