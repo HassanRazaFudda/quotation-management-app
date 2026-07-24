@@ -8,9 +8,20 @@ describe("the rendered document", () => {
   const html = buildHtml(sampleView);
 
   it("shows the company header and quotation details", () => {
-    expect(html).toContain("JUNAIDI AIR TRAVELS");
+    // The brand name prints two-tone (JUNAIDI red, GROUP black) with the sub-line.
+    expect(html).toContain(">JUNAIDI</span>");
+    expect(html).toContain(">GROUP</span>");
+    expect(html).toContain("TRAVEL &amp; TOURS");
+    expect(html).toContain("HAJJ &amp; UMRAH SERVICES");
     expect(html).toContain("HQ-1447-0042");
     expect(html).toContain("Rashid Shahid * 02 PAX");
+  });
+
+  it("embeds the Nexa brand font so the header does not fall back to a system face", () => {
+    expect(html).toContain("@font-face");
+    expect(html).toContain("'Nexa'");
+    // Only the header is branded; the body stays on the system sans-serif.
+    expect(html).toContain("'Helvetica Neue', Helvetica, Arial, sans-serif");
   });
 
   /**

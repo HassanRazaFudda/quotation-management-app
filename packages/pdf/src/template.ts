@@ -17,6 +17,7 @@
 
 import { lineColor, type StyledLine } from "@junaidi/shared";
 
+import { FONT_FACE_CSS } from "./fonts";
 import type { PdfTravel, QuotationPdfView } from "./view";
 import { POWERED_BY } from "./view";
 
@@ -43,6 +44,14 @@ function subLine(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "";
   return `<br><span style="${SMALL}">(${escapeHtml(trimmed)})</span>`;
+}
+
+/** The brand name with its first word in red and the rest in black. */
+function brandName(name: string): string {
+  const [first, ...rest] = name.trim().split(/\s+/);
+  const red = `<span class="red">${escapeHtml(first ?? "")}</span>`;
+  const dark = rest.length ? ` <span class="dark">${escapeHtml(rest.join(" "))}</span>` : "";
+  return `${red}${dark}`;
 }
 
 function listItems(items: StyledLine[]): string {
@@ -190,6 +199,7 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
     <meta charset="UTF-8">
     <title>${escapeHtml(view.company.name)} - Quotation ${escapeHtml(view.quotationId)}</title>
     <style>
+${FONT_FACE_CSS}
         @page { size: A4; margin: 0; }
         html, body { margin: 0; padding: 0; background-color: #ffffff; }
         body {
@@ -226,30 +236,46 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
         .sheet-footer strong { color: #374151; }
 
         /* --------------------------------------------------------- header */
-        .header-table { width: 100%; margin-bottom: 10px; border-bottom: 3px solid #dc2626; padding-bottom: 8px; }
+        .header-table { width: 100%; margin-bottom: 10px; border-bottom: 3px solid #9f0b1f; padding-bottom: 8px; }
         .header-table td { vertical-align: middle; }
         .logo-cell { width: 140px; text-align: left; padding-right: 15px; }
         .logo-cell img { max-width: 130px; max-height: 110px; width: auto; height: auto; display: block; object-fit: contain; object-position: left center; }
         .company-info { text-align: center; padding-right: 140px; }
-        .company-info h1 { color: #dc2626; margin: 0; font-size: 22pt; font-weight: 800; letter-spacing: 1px; }
-        .company-info h2 { color: #111827; margin: 5px 0 3px 0; font-size: 13pt; font-weight: bold; }
+        /* Nexa ships one weight (700), so an extra-heavy look comes from a
+           text-stroke that thickens each glyph, tinted to match its own colour. */
+        .company-info h1 {
+            margin: 0; font-size: 24pt; font-weight: 700; letter-spacing: 1px;
+            font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif;
+        }
+        .company-info h1 .red { color: #9f0b1f; -webkit-text-stroke: 3px #9f0b1f; }
+        .company-info h1 .dark { color: #111827; -webkit-text-stroke: 3px #111827; }
+        .company-info .sub-brand {
+            margin: 2px 0 0; color: #111827; font-size: 13pt; font-weight: 700; letter-spacing: 3px;
+            font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif;
+            -webkit-text-stroke: 1.8px #111827;
+        }
+        .company-info h2 {
+            color: #111827; margin: 4px 0 3px 0; font-size: 12pt; font-weight: 700; letter-spacing: 1px;
+            font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif;
+            -webkit-text-stroke: 1.4px #111827;
+        }
         .company-info p { margin: 3px 0; color: #4b5563; font-size: 9pt; }
 
         /* A slim strip so a loose second page is still identifiable. */
         .page-strip {
             display: flex; justify-content: space-between; align-items: baseline;
-            border-bottom: 2px solid #dc2626; padding-bottom: 5px; margin-bottom: 12px;
+            border-bottom: 2px solid #9f0b1f; padding-bottom: 5px; margin-bottom: 12px;
             font-size: 9pt; color: #4b5563;
         }
-        .page-strip strong { color: #dc2626; font-size: 11pt; letter-spacing: 0.5px; }
+        .page-strip strong { color: #9f0b1f; font-size: 11pt; letter-spacing: 0.5px; }
 
         .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-        .meta-table td { padding: 9px 12px; border: 1px solid #d1d5db; font-size: 9.5pt; }
+        .meta-table td { padding: 9px 12px; border: 1px solid #d1d5db; font-size: 10pt; }
         /* The label never wraps ("Quotation ID:" must stay on one line whatever
            the auto-fit zoom); the cell takes whatever width the text needs. */
         .meta-table .label { background-color: #f3f4f6; font-weight: bold; white-space: nowrap; width: 1%; }
 
-        .section-title { color: #dc2626; font-size: 13pt; border-bottom: 2px solid #dc2626; padding-bottom: 4px; margin-top: 4px; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
+        .section-title { color: #9f0b1f; font-size: 13pt; border-bottom: 2px solid #9f0b1f; padding-bottom: 4px; margin-top: 4px; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
 
         /* --------------------------------------------------------- travel */
         .travel-badge {
@@ -263,7 +289,7 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
         .travel-row { display: flex; gap: 12px; margin-bottom: 10px; }
         .travel-card {
             flex: 1 1 0; display: flex; flex-direction: column;
-            border: 1px solid #d1d5db; border-left: 4px solid #dc2626; border-radius: 4px;
+            border: 1px solid #d1d5db; border-left: 4px solid #9f0b1f; border-radius: 4px;
             background-color: #f9fafb; padding: 9px 14px;
         }
         .travel-eyebrow { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.6px; color: #6b7280; font-weight: bold; }
@@ -274,11 +300,11 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
         /* ------------------------------------------------------ itinerary */
         .data-table { width: 100%; border-collapse: collapse; }
         .data-table th, .data-table td { padding: 9px 12px; text-align: left; border: 1px solid #9ca3af; font-size: 10pt; }
-        .data-table th { background-color: #dc2626; color: #ffffff; font-weight: bold; }
+        .data-table th { background-color: #9f0b1f; color: #ffffff; font-weight: bold; }
         .data-table .row-highlight { background-color: #f9fafb; }
 
-        .total-section { text-align: right; padding: 12px 15px; background-color: #fef2f2; border-left: 5px solid #dc2626; border-right: 1px solid #fca5a5; border-top: 1px solid #fca5a5; border-bottom: 1px solid #fca5a5; }
-        .total-section h2 { margin: 0; color: #dc2626; font-size: 18pt; }
+        .total-section { text-align: right; padding: 12px 15px; background-color: #fef2f2; border-left: 5px solid #9f0b1f; border-right: 1px solid #fca5a5; border-top: 1px solid #fca5a5; border-bottom: 1px solid #fca5a5; }
+        .total-section h2 { margin: 0; color: #9f0b1f; font-size: 18pt; }
         .total-section p { margin: 3px 0 0 0; color: #111827; font-weight: bold; font-size: 11pt; }
 
         /* -------------------------------------------------------- page 2 */
@@ -303,7 +329,7 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
         .sign { flex: 1 1 0; text-align: center; font-size: 9pt; color: #4b5563; }
         .sign-line { border-bottom: 1px solid #9ca3af; margin-bottom: 5px; height: 14mm; }
 
-        .warning-text { color: #dc2626; font-weight: bold; font-size: 8.5pt; margin-top: 10px; display: block; }
+        .warning-text { color: #9f0b1f; font-weight: bold; font-size: 8.5pt; margin-top: 10px; display: block; }
     </style>
 </head>
 <body>
@@ -315,7 +341,8 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
             <tr>
                 <td class="logo-cell"><img src="${view.logoDataUri}" alt="${escapeHtml(view.company.name)} Logo" /></td>
                 <td class="company-info">
-                    <h1>${escapeHtml(view.company.name)}</h1>
+                    <h1>${brandName(view.company.name)}</h1>
+                    ${view.company.subheading ? `<div class="sub-brand">${escapeHtml(view.company.subheading)}</div>` : ""}
                     <h2>${escapeHtml(view.company.tagline)}</h2>
                     <p>${escapeHtml(view.company.address)}</p>
                     <p>${escapeHtml(view.company.contact)}</p>
@@ -328,7 +355,7 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
               view.hbNumber
                 ? `<tr>
                 <td class="label">HB Number:</td>
-                <td><strong style="color:#dc2626; letter-spacing:0.3px">${escapeHtml(view.hbNumber)}</strong></td>
+                <td><strong style="color:#9f0b1f; letter-spacing:0.3px">${escapeHtml(view.hbNumber)}</strong></td>
                 <td class="label">Status:</td>
                 <td><strong>Confirmed</strong></td>
             </tr>`

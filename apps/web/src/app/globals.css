@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. The red matches the quotation PDF (#dc2626) so the app and the
+ * Design tokens. The red matches the quotation PDF (#9f0b1f) so the app and the
  * document it produces read as one brand.
  */
 @theme {
@@ -9,7 +9,7 @@
   --color-brand-100: #fee2e2;
   --color-brand-200: #fecaca;
   --color-brand-300: #fca5a5;
-  --color-brand-500: #dc2626;
+  --color-brand-500: #9f0b1f;
   --color-brand-600: #b91c1c;
   --color-brand-700: #991b1b;
 

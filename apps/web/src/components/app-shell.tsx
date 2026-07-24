@@ -173,15 +173,13 @@ function AppFooter() {
       </a>
       <span className="mx-1.5 text-gray-300">·</span>
       <a
-        href="https://www.digitli.com"
+        href="tel:+923172036604"
         target="_blank"
         rel="noopener noreferrer"
         className="transition-colors hover:text-brand-600"
       >
-        www.digitli.com
+        +92 317 2036604
       </a>
-      <span className="mx-1.5 text-gray-300">·</span>
-      +92 317 2036604
     </footer>
   );
 }

@@ -101,8 +101,6 @@ export default function LoginPage() {
           >
             Digitli
           </a>
-          <span className="mx-1.5 text-gray-300">·</span>
-          www.digitli.com
         </p>
       </motion.div>
     </div>

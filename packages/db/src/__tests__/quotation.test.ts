@@ -290,11 +290,11 @@ describe("saving", () => {
     const bundle = await getConfigBundle(DEFAULT_SEASON);
     const service = bundle.services.find((s) => s.category === "includes")!;
     // The admin gives this line a red, bold style.
-    await updateLabelled("service", service.id, { color: "#dc2626", bold: true });
+    await updateLabelled("service", service.id, { color: "#9f0b1f", bold: true });
 
     const quotation = await createQuotation(baseInput, staff);
     const line = quotation.includes.find((l) => l.text === service.label)!;
-    expect(line.color).toBe("#dc2626");
+    expect(line.color).toBe("#9f0b1f");
     expect(line.bold).toBe(true);
 
     // Others keep the defaults - black, not bold.
@@ -305,7 +305,7 @@ describe("saving", () => {
     // Re-styling the service never rewrites the quotation already sent.
     await updateLabelled("service", service.id, { color: "", bold: false });
     const reread = (await QuotationModel.findById(quotation._id).lean())!;
-    expect(reread.includes.find((l) => l.text === service.label)!.color).toBe("#dc2626");
+    expect(reread.includes.find((l) => l.text === service.label)!.color).toBe("#9f0b1f");
   });
 
   it("keeps the selection ids so the form can be restored on edit or duplicate", async () => {

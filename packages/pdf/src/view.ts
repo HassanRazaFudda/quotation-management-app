@@ -30,7 +30,10 @@ export interface PdfStayRow {
 }
 
 export interface PdfCompany {
+  /** The brand name; its first word prints red, the rest black. */
   name: string;
+  /** Small line under the name, e.g. "TRAVEL & TOURS". */
+  subheading: string;
   tagline: string;
   address: string;
   contact: string;
@@ -65,8 +68,9 @@ export const POWERED_BY = {
 } as const;
 
 export const DEFAULT_COMPANY: PdfCompany = {
-  name: "JUNAIDI AIR TRAVELS",
-  tagline: "HAJJ & UMRAH SERVICES",
+  name: "JUNAIDI GROUP",
+  subheading: "TRAVEL & TOURS",
+  tagline: "",
   address: "Suite No. 7-8, Mona Square, Jahangir Road, Gurumandir, Karachi",
   contact: "Phone: 021-34130184-87 | E-Mail: junaiditravels@gmail.com",
 };
