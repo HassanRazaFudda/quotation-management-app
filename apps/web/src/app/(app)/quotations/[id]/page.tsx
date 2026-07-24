@@ -4,14 +4,14 @@ import { formatPrice } from "@junaidi/shared";
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Download, Pencil, Plane } from "lucide-react";
+import { Copy, Download, Pencil, Plane, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
 import { Badge, Button, Card, Field, Input, Modal, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
-import type { Quotation, QuotationFlight } from "@/lib/types";
+import type { Quotation, QuotationFlight, StyledLine } from "@/lib/types";
 import { isAdmin, useAuthStore } from "@/stores/auth";
 
 const STATUSES = ["draft", "sent", "confirmed", "expired"] as const;
@@ -26,6 +26,8 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
   const [downloading, setDownloading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     api
@@ -53,14 +55,24 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  async function duplicate() {
+  function duplicate() {
     if (!q) return;
+    // Open a fresh quotation pre-filled from this one; it is only created when
+    // the staff member saves the form.
+    router.push(`/quotations/new?from=${q._id}`);
+  }
+
+  async function remove() {
+    if (!q) return;
+    setDeleting(true);
     try {
-      const copy = await api.post<Quotation>(`/api/quotations/${q._id}/duplicate`);
-      toast.success(`Duplicated as ${copy.quotationId}`);
-      router.push(`/quotations/${copy._id}`);
+      await api.del(`/api/quotations/${q._id}`);
+      toast.success(`${q.quotationId} deleted`);
+      router.push("/quotations");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not duplicate.");
+      toast.error(err instanceof ApiError ? err.message : "Could not delete.");
+      setDeleting(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -118,6 +130,16 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             <Button size="sm" icon={<Download className="size-4" />} loading={downloading} onClick={download}>
               PDF
             </Button>
+            {canEdit && (
+              <Button
+                variant="danger"
+                size="sm"
+                icon={<Trash2 className="size-4" />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </Button>
+            )}
           </div>
         }
       />
@@ -137,6 +159,11 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                       {stay.accommodationName}
                       {stay.roomLabel && (
                         <span className="ml-2 text-xs font-normal text-muted">({stay.roomLabel})</span>
+                      )}
+                      {stay.coversHajj && (
+                        <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
+                          Incl. Hajj days
+                        </span>
                       )}
                     </p>
                     <p className="text-xs text-muted">
@@ -197,7 +224,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
           <div className="grid gap-5 sm:grid-cols-3">
             <ListCard
               title="Price Includes"
-              items={q.qurbaniIncluded ? [...q.includes, "Qurbani."] : q.includes}
+              items={q.qurbaniIncluded ? [...q.includes, { text: "Qurbani." }] : q.includes}
               note={q.includesNote}
             />
             <ListCard title="Visa Requirements" items={q.requirements} />
@@ -298,6 +325,26 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         onCancel={() => setConfirming(false)}
         onConfirm={(hb) => changeStatus("confirmed", hb)}
       />
+
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete quotation">
+        <p className="text-sm text-muted">
+          Delete <strong className="text-ink">{q.quotationId}</strong> for {q.guest.name}? This
+          cannot be undone.
+          {q.status === "confirmed" && (
+            <span className="mt-2 block text-brand-600">
+              This booking is confirmed (HB {q.hbNumber}); deleting it frees that HB number.
+            </span>
+          )}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="sm" loading={deleting} onClick={remove}>
+            Delete
+          </Button>
+        </div>
+      </Modal>
     </>
   );
 }
@@ -381,14 +428,22 @@ function FlightLeg({
   );
 }
 
-function ListCard({ title, items, note }: { title: string; items: string[]; note?: string }) {
+function ListCard({ title, items, note }: { title: string; items: StyledLine[]; note?: string }) {
   return (
     <Card className="p-5">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</p>
       {items.length > 0 ? (
         <ul className="list-disc space-y-1 pl-4 text-sm text-ink">
           {items.map((item, i) => (
-            <li key={i}>{item}</li>
+            <li
+              key={i}
+              style={{
+                color: /^#[0-9a-fA-F]{3,8}$/.test(item.color ?? "") ? item.color : undefined,
+                fontWeight: item.bold ? 600 : undefined,
+              }}
+            >
+              {item.text}
+            </li>
           ))}
         </ul>
       ) : (

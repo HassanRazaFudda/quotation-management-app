@@ -11,6 +11,8 @@
  * leak it into the PDF by accident.
  */
 
+import { toStyledLine, type StyledLine } from "@junaidi/shared";
+
 export interface PdfStayRow {
   /** "Madinah Stay", "Hajj Days" ... */
   phase: string;
@@ -71,6 +73,8 @@ export const DEFAULT_COMPANY: PdfCompany = {
 
 export interface QuotationPdfView {
   quotationId: string;
+  /** The booking (HB) reference, present only once confirmed. Empty hides it. */
+  hbNumber: string;
   date: string;
   guestName: string;
   validUntil: string;
@@ -84,13 +88,13 @@ export interface QuotationPdfView {
   stays: PdfStayRow[];
   qurbaniIncluded: boolean;
 
-  includes: string[];
+  includes: StyledLine[];
   includesNote: string;
-  requirements: string[];
-  terms: string[];
+  requirements: StyledLine[];
+  terms: StyledLine[];
 
-  minaServices: string[];
-  arafatServices: string[];
+  minaServices: StyledLine[];
+  arafatServices: StyledLine[];
   /** The box is printed even when empty, as space to write in. */
   remarks: string;
 
@@ -105,6 +109,7 @@ export interface QuotationPdfView {
 /** Everything `buildPdfView` accepts. Note the absence of anything internal. */
 export interface PdfViewInput {
   quotationId: string;
+  hbNumber?: string;
   date: string;
   guestName: string;
   validUntil: string;
@@ -114,26 +119,31 @@ export interface PdfViewInput {
   travel?: Partial<PdfTravel>;
   stays: PdfStayRow[];
   qurbaniIncluded?: boolean;
-  includes?: string[];
+  includes?: Array<string | StyledLine>;
   includesNote?: string;
-  requirements?: string[];
-  terms?: string[];
-  minaServices?: string[];
-  arafatServices?: string[];
+  requirements?: Array<string | StyledLine>;
+  terms?: Array<string | StyledLine>;
+  minaServices?: Array<string | StyledLine>;
+  arafatServices?: Array<string | StyledLine>;
   remarks?: string;
   generatedBy?: string;
   company?: PdfCompany;
   logoDataUri?: string;
 }
 
-const clean = (items: string[] | undefined): string[] =>
-  (items ?? []).map((item) => item.trim()).filter(Boolean);
+/** Coerce plain strings or styled lines to trimmed, non-empty styled lines. */
+const cleanLines = (items: Array<string | StyledLine> | undefined): StyledLine[] =>
+  (items ?? [])
+    .map((item) => toStyledLine(item))
+    .map((line) => ({ text: line.text.trim(), color: line.color ?? "", bold: line.bold ?? false }))
+    .filter((line) => line.text.length > 0);
 
 const text = (value: string | undefined): string => (value ?? "").trim();
 
 export function buildPdfView(input: PdfViewInput): QuotationPdfView {
   return {
     quotationId: input.quotationId.trim(),
+    hbNumber: text(input.hbNumber),
     date: input.date.trim(),
     guestName: input.guestName.trim(),
     validUntil: input.validUntil.trim(),
@@ -153,13 +163,13 @@ export function buildPdfView(input: PdfViewInput): QuotationPdfView {
     stays: input.stays,
     qurbaniIncluded: input.qurbaniIncluded ?? true,
 
-    includes: clean(input.includes),
+    includes: cleanLines(input.includes),
     includesNote: (input.includesNote ?? "").trim(),
-    requirements: clean(input.requirements),
-    terms: clean(input.terms),
+    requirements: cleanLines(input.requirements),
+    terms: cleanLines(input.terms),
 
-    minaServices: clean(input.minaServices),
-    arafatServices: clean(input.arafatServices),
+    minaServices: cleanLines(input.minaServices),
+    arafatServices: cleanLines(input.arafatServices),
     remarks: text(input.remarks),
 
     generatedBy: text(input.generatedBy),

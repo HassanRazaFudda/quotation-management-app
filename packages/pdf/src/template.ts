@@ -15,6 +15,8 @@
  * the price panel and the signatures to the bottom of their page.
  */
 
+import { lineColor, type StyledLine } from "@junaidi/shared";
+
 import type { PdfTravel, QuotationPdfView } from "./view";
 import { POWERED_BY } from "./view";
 
@@ -43,8 +45,17 @@ function subLine(text: string): string {
   return `<br><span style="${SMALL}">(${escapeHtml(trimmed)})</span>`;
 }
 
-function listItems(items: string[]): string {
-  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+function listItems(items: StyledLine[]): string {
+  return items
+    .map((item) => {
+      const styles = [
+        lineColor(item.color) && `color:${lineColor(item.color)}`,
+        item.bold && "font-weight:700",
+      ].filter(Boolean);
+      const attr = styles.length ? ` style="${styles.join(";")}"` : "";
+      return `<li${attr}>${escapeHtml(item.text)}</li>`;
+    })
+    .join("");
 }
 
 function stayRows(view: QuotationPdfView): string {
@@ -105,7 +116,7 @@ function servicesSection(view: QuotationPdfView): string {
   const hasArafat = view.arafatServices.length > 0;
   if (!hasMina && !hasArafat) return "";
 
-  const column = (title: string, items: string[]) =>
+  const column = (title: string, items: StyledLine[]) =>
     items.length === 0
       ? ""
       : `<div class="col"><div class="service-box"><h4>${title}</h4>
@@ -233,8 +244,10 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
         .page-strip strong { color: #dc2626; font-size: 11pt; letter-spacing: 0.5px; }
 
         .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-        .meta-table td { padding: 9px 12px; border: 1px solid #d1d5db; font-size: 10pt; }
-        .meta-table .label { background-color: #f3f4f6; font-weight: bold; width: 15%; }
+        .meta-table td { padding: 9px 12px; border: 1px solid #d1d5db; font-size: 9.5pt; }
+        /* The label never wraps ("Quotation ID:" must stay on one line whatever
+           the auto-fit zoom); the cell takes whatever width the text needs. */
+        .meta-table .label { background-color: #f3f4f6; font-weight: bold; white-space: nowrap; width: 1%; }
 
         .section-title { color: #dc2626; font-size: 13pt; border-bottom: 2px solid #dc2626; padding-bottom: 4px; margin-top: 4px; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
 
@@ -311,6 +324,16 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
         </table>
 
         <table class="meta-table">
+            ${
+              view.hbNumber
+                ? `<tr>
+                <td class="label">HB Number:</td>
+                <td><strong style="color:#dc2626; letter-spacing:0.3px">${escapeHtml(view.hbNumber)}</strong></td>
+                <td class="label">Status:</td>
+                <td><strong>Confirmed</strong></td>
+            </tr>`
+                : ""
+            }
             <tr>
                 <td class="label">Quotation ID:</td>
                 <td>${escapeHtml(view.quotationId)}</td>
@@ -369,7 +392,7 @@ ${servicesSection(view)}
                     <ul>${listItems(
                       // Qurbani is part of the package by default, so it is stated
                       // plainly rather than left to the free-text list.
-                      view.qurbaniIncluded ? [...view.includes, "Qurbani."] : view.includes,
+                      view.qurbaniIncluded ? [...view.includes, { text: "Qurbani." }] : view.includes,
                     )}</ul>
                     ${note}
                 </div>

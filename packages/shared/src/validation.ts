@@ -13,7 +13,7 @@
  * before saving.
  */
 
-import { hijriIndex } from "./calendar";
+import { blockContains, hijriIndex, nestedHajjBlocks } from "./calendar";
 import type {
   Accommodation,
   Location,
@@ -37,7 +37,6 @@ export interface Issue {
     | "MISSING_ROOM_TYPE"
     | "UNEXPECTED_ROOM_TYPE"
     | "OCCUPANCY_NOT_ALLOWED"
-    | "MISSING_TIER"
     | "GAP"
     | "OVERLAP"
     | "NO_HAJJ_BLOCK"
@@ -158,11 +157,6 @@ function validateStay(
     );
   }
 
-  // Without Mina is a Mina option that books no tent, so it has no tier.
-  if (location.type === "mina" && !accommodation.minaTier && !accommodation.withoutMina) {
-    at("MISSING_TIER", `${rowName}: this Mina option has no tier configured.`);
-  }
-
   if (stay.mealId && !accommodation.allowedMealIds.includes(stay.mealId)) {
     const meal = context.meals.get(stay.mealId);
     at(
@@ -190,16 +184,30 @@ interface Span {
   end: number;
 }
 
+/** The blocks these stays point at, in the order the stays were added. */
+function blocksOf(stays: StayInput[], context: ValidationContext): ResolvedBlock[] {
+  return stays
+    .map((stay) => context.blocks.get(stay.blockId))
+    .filter((block): block is ResolvedBlock => Boolean(block));
+}
+
 /**
- * Every stay counts here, Mina included. Leaving a booked stay out would
- * report the days it covers as a hole in the itinerary.
+ * The chain of days the itinerary claims to cover.
+ *
+ * Every stay counts, Mina included - leaving a booked stay out would report the
+ * days it covers as a hole. The one exception is a Hajj row sitting wholly
+ * inside a stay that spans it: the guest keeps the hotel room while they are in
+ * Mina, so those days are booked twice on purpose. The outer block already
+ * carries them, so counting the inner one again would read as an overlap, and
+ * the days after it as a gap.
  */
 function spansOf(stays: StayInput[], context: ValidationContext): Span[] {
+  const { nested } = nestedHajjBlocks(blocksOf(stays, context));
   const spans: Span[] = [];
 
   for (const stay of stays) {
     const block = context.blocks.get(stay.blockId);
-    if (!block) continue;
+    if (!block || nested.has(block.id)) continue;
 
     spans.push({
       block,
@@ -313,7 +321,10 @@ function validateHajjBlock(
     const tent = stays.find((stay) => {
       const block = context.blocks.get(stay.blockId);
       if (block?.phase !== "hajj") return false;
-      return Boolean(context.accommodations.get(stay.accommodationId)?.minaTier);
+      // A real tent is any Mina option that is not the "books no tent" one -
+      // the tier is optional, so it can no longer stand in for "is a tent".
+      const accommodation = context.accommodations.get(stay.accommodationId);
+      return Boolean(accommodation && !accommodation.withoutMina);
     });
 
     if (!tent) return [];
@@ -376,6 +387,11 @@ function validateHajjBlock(
  * starting on 30 Zilqad. Offering only those removes the possibility of a gap
  * or an overlap rather than reporting it afterwards.
  *
+ * A Hajj block is the exception. When a stay spans the Hajj days - the guest
+ * keeps their Aziziya room for the whole fortnight - the Hajj row belongs
+ * *inside* that stay, not after it, so it is offered as well. Without this the
+ * staff could never add the row at all.
+ *
  * With nothing chosen yet, every block is a valid starting point.
  */
 export function nextBlockOptions(
@@ -390,10 +406,18 @@ export function nextBlockOptions(
 
   const furthestEnd = Math.max(...chosen.map((block) => hijriIndex(block.endHijri)));
   const used = new Set(chosenBlockIds);
+  // The Hajj row goes in only once. Once any Hajj block is chosen, the itinerary
+  // simply continues from the furthest day - no second Hajj variant is offered.
+  const hasHajj = chosen.some((block) => block.phase === "hajj");
 
-  return blocks.filter(
-    (block) => !used.has(block.id) && hijriIndex(block.startHijri) === furthestEnd,
-  );
+  const follows = (block: ResolvedBlock) => hijriIndex(block.startHijri) === furthestEnd;
+
+  const nests = (block: ResolvedBlock) =>
+    !hasHajj &&
+    block.phase === "hajj" &&
+    chosen.some((outer) => outer.phase !== "hajj" && blockContains(outer, block));
+
+  return blocks.filter((block) => !used.has(block.id) && (follows(block) || nests(block)));
 }
 
 // ------------------------------------------------------------- convenience

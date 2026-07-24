@@ -13,9 +13,9 @@ export const GET = route(async (request) => {
   const url = new URL(request.url);
   const query = listQuerySchema.parse(Object.fromEntries(url.searchParams));
 
-  // Staff see only their own work; an admin sees everyone's unless they ask.
-  const createdBy =
-    session.role === "admin" ? (query.mine ? session.userId : undefined) : session.userId;
+  // The agency shares one list - everybody sees everybody's work. "mine" is
+  // just the shorthand the dashboard uses to narrow it back to the caller.
+  const createdBy = query.mine ? session.userId : query.createdBy;
 
   const result = await listQuotations({ ...query, createdBy });
   return json(request, result);

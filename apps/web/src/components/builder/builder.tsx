@@ -1,6 +1,12 @@
 "use client";
 
-import { formatPrice, nextBlockOptions, sharingWordsFor } from "@junaidi/shared";
+import {
+  blockContains,
+  formatPrice,
+  nextBlockOptions,
+  sharingWordsFor,
+  type ResolvedBlock,
+} from "@junaidi/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, CheckCircle2, Pencil, Plus, RefreshCw, Wand2 } from "lucide-react";
@@ -13,28 +19,118 @@ import {
   Input,
   NumberInput,
   RadioGroup,
+  Select,
   Textarea,
 } from "@/components/ui";
 import { toast } from "@/components/toast";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
-import type { Quotation } from "@/lib/types";
-import { autoPackageTitle, computeLocal, toApiPayload, useBuilderStore } from "@/stores/builder";
+import type { Package, Quotation } from "@/lib/types";
+import {
+  autoPackageTitle,
+  computeLocal,
+  toApiPayload,
+  toPackagePayload,
+  useBuilderStore,
+} from "@/stores/builder";
 import { servicesByCategory, useConfigStore } from "@/stores/config";
 import { FlightSection } from "./flight-section";
 import { PdfPreview } from "./pdf-preview";
 import { StayRow } from "./stay-row";
 
-export function Builder({ editing }: { editing?: Quotation }) {
+export function Builder({
+  editing,
+  duplicateFrom,
+  editingPackage,
+  asPackage = false,
+}: {
+  editing?: Quotation;
+  /** Pre-fill a fresh quotation from this one; save creates a new document. */
+  duplicateFrom?: Quotation;
+  /** Loaded package being edited, in package mode. */
+  editingPackage?: Package;
+  /** Build a reusable package instead of a customer quotation. */
+  asPackage?: boolean;
+}) {
   const router = useRouter();
   const config = useConfigStore();
   const builder = useBuilderStore();
   const [saving, setSaving] = useState(false);
   const initialised = useRef(false);
 
+  // Package mode: a name stands in for the guest, and there are no dates or money.
+  const [packageName, setPackageName] = useState(editingPackage?.name ?? "");
+  // The packages a fresh quotation can be started from.
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [startedFrom, setStartedFrom] = useState("");
+
   useEffect(() => {
     config.load();
   }, [config]);
+
+  // Offer the package picker only on a fresh customer quotation.
+  useEffect(() => {
+    if (asPackage || editing) return;
+    api
+      .get<{ packages: Package[] }>("/api/packages")
+      .then((r) => setPackages(r.packages))
+      .catch(() => undefined);
+  }, [asPackage, editing]);
+
+  /**
+   * Pour a package's itinerary, services and flight into the builder. The
+   * customer fields (guest, dates) and money are left untouched, so this works
+   * both to seed a package being edited and to start a quotation from one.
+   */
+  function fillFromPackage(pkg: Package, extra?: Partial<Parameters<typeof builder.reset>[0]>) {
+    builder.reset({
+      packageCategory: pkg.packageCategory,
+      minaAccommodationId: pkg.minaAccommodationId ?? "",
+      withoutMina: pkg.withoutMina,
+      qurbaniIncluded: pkg.qurbaniIncluded,
+      packageTitle: pkg.packageTitle,
+      packageTitleEdited: Boolean(pkg.packageTitle),
+      itineraryComplete: true,
+      includesNote: pkg.includesNote,
+      remarks: pkg.remarks,
+      minaServiceIds: pkg.minaServiceIds,
+      arafatServiceIds: pkg.arafatServiceIds,
+      includeIds: pkg.includeIds,
+      requirementIds: pkg.requirementIds,
+      termIds: pkg.termIds,
+      flight: {
+        included: pkg.flight.included,
+        returnRequired: pkg.flight.returnRequired,
+        roundTrip: pkg.flight.roundTrip ?? false,
+        roundTripId: pkg.flight.roundTripId ?? null,
+        outboundId: pkg.flight.outboundId,
+        inboundId: pkg.flight.inboundId,
+      },
+      ...extra,
+    });
+    for (const stay of pkg.stays) {
+      builder.addStay({
+        blockId: stay.blockId,
+        locationId: stay.locationId,
+        accommodationId: stay.accommodationId,
+        roomType: stay.roomType,
+        occupancy: stay.occupancy,
+        sharingWord: stay.sharingWord,
+        mealId: stay.mealId,
+        mealNoteId: stay.mealNoteId,
+      });
+    }
+    builder.set("itineraryComplete", true);
+  }
+
+  /** The picker on a fresh quotation: load the chosen package's shape. */
+  function startFromPackage(id: string) {
+    setStartedFrom(id);
+    const pkg = packages.find((p) => p._id === id);
+    if (!pkg) return;
+    fillFromPackage(pkg);
+    toast.success(`Started from "${pkg.name}"`);
+  }
 
   // Seed the form once the config is available.
   useEffect(() => {
@@ -44,32 +140,45 @@ export function Builder({ editing }: { editing?: Quotation }) {
     const defaults = (cat: string) =>
       servicesByCategory(config, cat).filter((s) => s.defaultSelected).map((s) => s.id);
 
-    if (editing) {
+    // Editing and duplicating fill the form the same way; only the target
+    // differs. An edit keeps the id (save updates it) and the original date; a
+    // duplicate leaves the id null (save creates a new one) and dates today.
+    const source = editing ?? duplicateFrom;
+    if (editingPackage) {
+      fillFromPackage(editingPackage);
+    } else if (source) {
       builder.reset({
-        quotationId: editing._id,
-        packageCategory: editing.packageCategory,
-        withoutMina: editing.withoutMina,
-        qurbaniIncluded: editing.qurbaniIncluded,
-        guestName: editing.guest.name,
-        pax: editing.guest.pax,
-        date: editing.date.slice(0, 10),
-        validUntil: editing.validUntil?.slice(0, 10) ?? "",
-        packageTitle: editing.packageTitle,
+        quotationId: editing?._id ?? null,
+        packageCategory: source.packageCategory,
+        minaAccommodationId: source.stays.find((s) => s.locationType === "mina")?.accommodationId ?? "",
+        withoutMina: source.withoutMina,
+        qurbaniIncluded: source.qurbaniIncluded,
+        guestName: source.guest.name,
+        pax: source.guest.pax,
+        date: editing ? source.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        validUntil: editing ? (source.validUntil?.slice(0, 10) ?? "") : "",
+        packageTitle: source.packageTitle,
         packageTitleEdited: true,
         itineraryComplete: true,
-        includesNote: editing.includesNote,
-        remarks: editing.remarks,
-        discount: editing.discount,
-        discountNote: editing.discountNote,
-        manualTotal: editing.manualOverride ? editing.finalTotal : null,
+        includesNote: source.includesNote,
+        remarks: source.remarks,
+        // A discount is per-customer; a duplicate starts it fresh.
+        discount: editing ? source.discount : 0,
+        discountNote: editing ? source.discountNote : "",
+        manualTotal: editing && source.manualOverride ? source.finalTotal : null,
+        minaServiceIds: source.minaServiceIds ?? [],
+        arafatServiceIds: source.arafatServiceIds ?? [],
+        includeIds: source.includeIds ?? [],
+        requirementIds: source.requirementIds ?? [],
+        termIds: source.termIds ?? [],
         flight: {
-          included: editing.flight?.included ?? false,
-          returnRequired: editing.flight?.returnRequired ?? true,
+          included: source.flight?.included ?? false,
+          returnRequired: source.flight?.returnRequired ?? true,
           outboundId: null,
           inboundId: null,
         },
       });
-      for (const stay of editing.stays) {
+      for (const stay of source.stays) {
         builder.addStay({
           blockId: stay.blockId,
           locationId: stay.locationId,
@@ -77,6 +186,8 @@ export function Builder({ editing }: { editing?: Quotation }) {
           roomType: stay.roomType,
           occupancy: stay.occupancy,
           sharingWord: stay.sharingWord,
+          mealId: stay.mealId,
+          mealNoteId: stay.mealNoteId,
         });
       }
       builder.set("itineraryComplete", true);
@@ -96,7 +207,8 @@ export function Builder({ editing }: { editing?: Quotation }) {
         builder.set("withoutMina", Boolean(firstMina.withoutMina));
       }
     }
-  }, [config.loaded, editing, builder, config]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.loaded, editing, duplicateFrom, editingPackage, config]);
 
   const result = useMemo(() => computeLocal(builder, config), [builder, config]);
 
@@ -136,6 +248,60 @@ export function Builder({ editing }: { editing?: Quotation }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [builder.packageCategory, config.accommodations, config.packageCategories]);
 
+  // Once a covering block has had its Hajj row added, we leave it alone - so a
+  // staff member who deletes that row (to go Without Mina, say) is not fought.
+  const hajjAutoAdded = useRef<Set<string>>(new Set());
+
+  /**
+   * A stay that spans the Hajj days needs the Hajj row inside it, and the Mina
+   * option is already chosen at the top - so add it for them. It goes in right
+   * after the block that spans it; the save step orders the rows by date.
+   */
+  useEffect(() => {
+    if (builder.withoutMina || !builder.minaAccommodationId) return;
+
+    const chosen = builder.stays
+      .map((stay) => config.blocks.find((block) => block.id === stay.blockId))
+      .filter((block): block is ResolvedBlock => Boolean(block));
+
+    // A Hajj row already there (added by hand or when editing) needs nothing.
+    if (chosen.some((block) => block.phase === "hajj")) return;
+
+    // A covering block is a non-Hajj stay that swallows a whole Hajj block. It
+    // is found against the configured Hajj blocks, because the row that would
+    // nest inside it does not exist yet - that is the row we are about to add.
+    const fitsInside = (outer: ResolvedBlock) =>
+      config.blocks.filter((block) => block.phase === "hajj" && blockContains(outer, block));
+
+    const coveringBlock = chosen.find(
+      (block) =>
+        block.phase !== "hajj" &&
+        !hajjAutoAdded.current.has(block.id) &&
+        fitsInside(block).length > 0,
+    );
+    if (!coveringBlock) return;
+
+    // Prefer the Hajj block the chosen Mina option is actually priced for; if
+    // neither is, fall back to the first that fits so the row still appears.
+    const fits = fitsInside(coveringBlock);
+    const priced = fits.find((block) =>
+      config.rates.some(
+        (rate) => rate.accommodationId === builder.minaAccommodationId && rate.blockId === block.id,
+      ),
+    );
+    const hajj = priced ?? fits[0];
+    const mina = config.locations.find((location) => location.type === "mina");
+    if (!hajj || !mina) return;
+
+    hajjAutoAdded.current.add(coveringBlock.id);
+    builder.addStay({
+      blockId: hajj.id,
+      locationId: mina.id,
+      accommodationId: builder.minaAccommodationId,
+    });
+    toast.success(`Hajj days added inside "${coveringBlock.label}".`);
+  }, [builder.stays, builder.minaAccommodationId, builder.withoutMina, builder, config]);
+
   /** Keep the "no tent booked" flag in step with the option chosen. */
   function chooseMina(accommodationId: string) {
     builder.set("minaAccommodationId", accommodationId);
@@ -163,12 +329,22 @@ export function Builder({ editing }: { editing?: Quotation }) {
       .map((s) => s.blockId)
       .filter(Boolean);
 
-    const options = nextBlockOptions(earlier, config.blocks);
+    let options = nextBlockOptions(earlier, config.blocks);
 
     const current = builder.stays[index]?.blockId;
+    const currentBlock = config.blocks.find((b) => b.id === current);
+
+    // A Hajj row is only ever swapped for another Hajj block - never for the
+    // stay that follows it. When this row holds a Hajj block, its dropdown is
+    // narrowed to the Hajj options alone.
+    if (currentBlock?.phase === "hajj") {
+      options = options.filter((b) => b.phase === "hajj");
+      if (!options.some((b) => b.id === current)) return [currentBlock, ...options];
+      return options;
+    }
+
     if (current && !options.some((b) => b.id === current)) {
-      const own = config.blocks.find((b) => b.id === current);
-      if (own) return [own, ...options];
+      if (currentBlock) return [currentBlock, ...options];
     }
     return options;
   };
@@ -188,8 +364,8 @@ export function Builder({ editing }: { editing?: Quotation }) {
   }
 
   async function save() {
-    if (!builder.guestName.trim()) {
-      toast.error("Guest name is required.");
+    if (asPackage ? !packageName.trim() : !builder.guestName.trim()) {
+      toast.error(asPackage ? "A package name is required." : "Guest name is required.");
       return;
     }
     if (errors.length > 0 || result.flightIssues.length > 0) {
@@ -198,6 +374,15 @@ export function Builder({ editing }: { editing?: Quotation }) {
     }
     setSaving(true);
     try {
+      if (asPackage) {
+        const payload = toPackagePayload(builder, config.season, packageName);
+        // One endpoint creates and updates; the id in the body decides which.
+        await api.post("/api/admin/packages", { ...payload, id: editingPackage?._id ?? null });
+        toast.success(`Saved package "${packageName.trim()}"`);
+        router.push("/admin/packages");
+        return;
+      }
+
       const payload = toApiPayload(builder, config.season);
       const saved = builder.quotationId
         ? await api.patch<Quotation>(`/api/quotations/${builder.quotationId}`, payload)
@@ -233,7 +418,22 @@ export function Builder({ editing }: { editing?: Quotation }) {
   return (
     <div className="grid gap-5 p-5 lg:grid-cols-[1fr_26rem] lg:p-8">
       <div className="min-w-0 space-y-5">
-        <div className="flex items-center justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Start a fresh quotation from a saved package. */}
+          {!asPackage && !editing && packages.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted">Start from package</span>
+              <Select
+                className="w-64"
+                options={packages.map((p) => ({ value: p._id, label: p.name }))}
+                placeholder="Choose a package…"
+                value={startedFrom}
+                onChange={(e) => startFromPackage(e.target.value)}
+              />
+            </div>
+          ) : (
+            <span />
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -284,38 +484,51 @@ export function Builder({ editing }: { editing?: Quotation }) {
           </div>
         </Card>
 
-        {/* ---------------- guest ---------------- */}
+        {/* ---------------- guest / package name ---------------- */}
         <Card>
-          <CardHeader title="Guest & Dates" />
+          <CardHeader title={asPackage ? "Package details" : "Guest & Dates"} />
           <div className="grid gap-4 p-5 sm:grid-cols-2">
-            <Field label="Guest name">
-              <Input
-                value={builder.guestName}
-                onChange={(e) => builder.set("guestName", e.target.value)}
-                placeholder="Rashid Shahid"
-              />
-            </Field>
-            <Field
-              label="PAX"
-              hint={paxHint(builder.pax)}
-            >
-              <NumberInput
-                min={1}
-                fallback={1}
-                value={builder.pax}
-                onChange={(v) => builder.set("pax", v)}
-              />
-            </Field>
-            <Field label="Date">
-              <Input type="date" value={builder.date} onChange={(e) => builder.set("date", e.target.value)} />
-            </Field>
-            <Field label="Valid until">
-              <Input
-                type="date"
-                value={builder.validUntil}
-                onChange={(e) => builder.set("validUntil", e.target.value)}
-              />
-            </Field>
+            {asPackage ? (
+              <Field label="Package name" hint="Shown in the “start from package” list">
+                <Input
+                  value={packageName}
+                  onChange={(e) => setPackageName(e.target.value)}
+                  placeholder="20-Day Maktab A Standard"
+                />
+              </Field>
+            ) : (
+              <Field label="Guest name">
+                <Input
+                  value={builder.guestName}
+                  onChange={(e) => builder.set("guestName", e.target.value)}
+                  placeholder="Rashid Shahid"
+                />
+              </Field>
+            )}
+            {/* PAX is a customer detail, not a template one, so a package has
+                none - it is set when a quotation is started from the package. */}
+            {!asPackage && (
+              <>
+                <Field label="PAX" hint={paxHint(builder.pax)}>
+                  <NumberInput
+                    min={1}
+                    fallback={1}
+                    value={builder.pax}
+                    onChange={(v) => builder.set("pax", v)}
+                  />
+                </Field>
+                <Field label="Date">
+                  <Input type="date" value={builder.date} onChange={(e) => builder.set("date", e.target.value)} />
+                </Field>
+                <Field label="Valid until">
+                  <Input
+                    type="date"
+                    value={builder.validUntil}
+                    onChange={(e) => builder.set("validUntil", e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
 
             <Field
               label="Package title"
@@ -444,20 +657,26 @@ export function Builder({ editing }: { editing?: Quotation }) {
                 Qurbani included
               </label>
 
-              <Field label="Discount (not shown on the quotation)">
-                <NumberInput
-                  min={0}
-                  value={builder.discount}
-                  onChange={(v) => builder.set("discount", v)}
-                  placeholder="0"
-                />
-              </Field>
-              {builder.discount > 0 && (
-                <Input
-                  value={builder.discountNote}
-                  onChange={(e) => builder.set("discountNote", e.target.value)}
-                  placeholder="Internal note (e.g. repeat customer)"
-                />
+              {/* A discount is a per-customer negotiation, so a package - which
+                  has no customer - does not carry one. */}
+              {!asPackage && (
+                <>
+                  <Field label="Discount (not shown on the quotation)">
+                    <NumberInput
+                      min={0}
+                      value={builder.discount}
+                      onChange={(v) => builder.set("discount", v)}
+                      placeholder="0"
+                    />
+                  </Field>
+                  {builder.discount > 0 && (
+                    <Input
+                      value={builder.discountNote}
+                      onChange={(e) => builder.set("discountNote", e.target.value)}
+                      placeholder="Internal note (e.g. repeat customer)"
+                    />
+                  )}
+                </>
               )}
             </div>
 
@@ -503,7 +722,13 @@ export function Builder({ editing }: { editing?: Quotation }) {
             Cancel
           </Button>
           <Button onClick={save} loading={saving} disabled={errors.length > 0}>
-            {builder.quotationId ? "Save changes" : "Create quotation"}
+            {asPackage
+              ? editingPackage
+                ? "Save package"
+                : "Create package"
+              : builder.quotationId
+                ? "Save changes"
+                : "Create quotation"}
           </Button>
         </div>
       </div>

@@ -190,6 +190,31 @@ export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number];
 export interface ServiceItem extends LabelledItem {
   category: ServiceCategory;
   defaultSelected: boolean;
+  /** Hex colour for this line on the quotation, or "" for the default (black). */
+  color?: string;
+  /** Print this line in bold. Off by default. */
+  bold?: boolean;
+}
+
+/**
+ * One line of a bullet list on the quotation, carrying its own styling. A plain
+ * string is treated as an unstyled line, so quotations saved before styling
+ * existed still render.
+ */
+export interface StyledLine {
+  text: string;
+  color?: string;
+  bold?: boolean;
+}
+
+export function toStyledLine(value: string | StyledLine): StyledLine {
+  return typeof value === "string" ? { text: value } : value;
+}
+
+/** A line's colour is only applied when it is a real, non-black hex value. */
+export function lineColor(color: string | undefined): string {
+  const value = (color ?? "").trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(value) ? value : "";
 }
 
 // ------------------------------------------------------------- date blocks

@@ -11,6 +11,9 @@ export const OPTIONS = handleOptions;
 const patchSchema = z.object({
   label: z.string().min(1).optional(),
   defaultSelected: z.boolean().optional(),
+  /** "" (black) or a hex colour; how the line prints on the quotation. */
+  color: z.string().max(9).optional(),
+  bold: z.boolean().optional(),
   sortOrder: z.number().optional(),
   active: z.boolean().optional(),
 });

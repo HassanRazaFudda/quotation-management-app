@@ -119,6 +119,8 @@ function toServiceItem(doc: Record<string, any>): ServiceItem {
     label: doc.label,
     category: doc.category,
     defaultSelected: doc.defaultSelected ?? true,
+    color: doc.color ?? "",
+    bold: doc.bold ?? false,
     sortOrder: doc.sortOrder ?? 0,
     active: doc.active ?? true,
   };

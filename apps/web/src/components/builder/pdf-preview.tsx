@@ -22,8 +22,13 @@ export function PdfPreview({ canPreview }: { canPreview: boolean }) {
   const lastUrl = useRef<string | null>(null);
 
   // A signature of everything that affects the document, so we only re-render
-  // when something visible actually changed.
-  const signature = JSON.stringify(toApiPayload(builder, season));
+  // when something visible actually changed. The guest name is still being
+  // typed while the itinerary is built, so stand in a placeholder for the
+  // preview rather than letting an empty name fail validation.
+  const payload = toApiPayload(builder, season);
+  const signature = JSON.stringify(
+    payload.guest.name ? payload : { ...payload, guest: { ...payload.guest, name: "Guest Name" } },
+  );
 
   useEffect(() => {
     if (!canPreview) {

@@ -161,6 +161,43 @@ describe("flat - Mina", () => {
   });
 });
 
+describe("a stay that spans the Hajj days", () => {
+  // 04 -> 17 Zilhaj Aziziya (13 nights), with the 07 -> 12 Hajj row inside it.
+  const spanning: StayInput[] = [
+    { blockId: "blk-aziziya-hajj", locationId: "loc-aziziya", accommodationId: "acc-aziziya", ...sharing },
+    { blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std" },
+  ];
+
+  it("keeps the hotel's nights and drops the nested Hajj row's", () => {
+    const [hotel, hajj] = priceStays(spanning, context);
+    expect(hotel!.nights).toBe(13);
+    expect(hajj!.nights).toBe(0); // its days are already counted by the hotel row
+  });
+
+  it("charges both rows in full - the Maktab is a real, separate charge", () => {
+    const [hotel, hajj] = priceStays(spanning, context);
+    expect(hotel!.lineTotal).toBe(95_000);
+    expect(hajj!.lineTotal).toBe(145_000);
+  });
+
+  it("counts the spanned days once in the totals", () => {
+    const totals = calculateTotals({ stays: priceStays(spanning, context) });
+    expect(totals.totalNights).toBe(13); // not 13 + 5
+    expect(totals.subtotal).toBe(95_000 + 145_000);
+  });
+
+  it("leaves an ordinary Hajj itinerary untouched", () => {
+    // Aziziya 04 -> 07, then the Hajj block after it: nothing nests.
+    const normal: StayInput[] = [
+      { blockId: "blk-aziziya-2", locationId: "loc-aziziya", accommodationId: "acc-aziziya", ...sharing },
+      { blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std" },
+    ];
+    const [aziziya, hajj] = priceStays(normal, context);
+    expect(aziziya!.nights).toBe(3);
+    expect(hajj!.nights).toBe(5); // still counted - it follows, it is not nested
+  });
+});
+
 describe("missing configuration", () => {
   it("names the hotel and the block when no rate is set", () => {
     expect(() =>

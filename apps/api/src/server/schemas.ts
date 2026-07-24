@@ -6,6 +6,7 @@
  * a client cannot argue about the price. Zod strips anything extra.
  */
 
+import { QUOTATION_GROUPS, QUOTATION_SORTS } from "@junaidi/db";
 import { AZIZIYA_ROOM_TYPES, OCCUPANCIES, SHARING_WORDS } from "@junaidi/shared";
 import { z } from "zod";
 
@@ -71,6 +72,33 @@ export const quotationSchema = z.object({
   status: z.enum(["draft", "sent", "confirmed", "expired"]).default("draft"),
 });
 
+/**
+ * A predefined package: a quotation shape without the customer or the money.
+ * The itinerary and service fields are shared with a quotation; only the guest,
+ * dates and pricing are dropped and a package name is added.
+ */
+export const packageSchema = z.object({
+  id: objectId.nullish(),
+  name: z.string().min(1, "A package needs a name."),
+  season: z.string().min(3),
+  packageTitle: z.string().default(""),
+  packageCategory: z.string().default(""),
+  withoutMina: z.boolean().default(false),
+  qurbaniIncluded: z.boolean().default(true),
+  minaAccommodationId: objectId.nullish(),
+  stays: z.array(staySchema).min(1, "Add at least one stay."),
+  flight: flightSchema.optional(),
+
+  minaServiceIds: z.array(objectId).default([]),
+  arafatServiceIds: z.array(objectId).default([]),
+  includeIds: z.array(objectId).default([]),
+  requirementIds: z.array(objectId).default([]),
+  termIds: z.array(objectId).default([]),
+
+  includesNote: z.string().default(""),
+  remarks: z.string().default(""),
+});
+
 /** Live pricing needs less than a full save. */
 export const calculateSchema = quotationSchema.pick({
   season: true,
@@ -85,7 +113,12 @@ export const listQuerySchema = z.object({
   season: z.string().optional(),
   status: z.string().optional(),
   search: z.string().optional(),
+  /** Narrow the shared list to one author. */
+  createdBy: objectId.optional(),
+  /** Shorthand for "createdBy = me". */
   mine: z.coerce.boolean().optional(),
+  sort: z.enum(QUOTATION_SORTS).optional(),
+  groupBy: z.enum(QUOTATION_GROUPS).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });

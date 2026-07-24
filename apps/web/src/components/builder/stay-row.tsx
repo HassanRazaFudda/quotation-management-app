@@ -53,6 +53,7 @@ export function StayRow({
 
   const block = blockOptions.find((b) => b.id === stay.blockId);
   const location = config.locations.find((l) => l.id === stay.locationId);
+  const isMina = location?.type === "mina";
   const hotel = config.accommodations.find((a) => a.id === stay.accommodationId);
   // A hotel only offers the room sizes the admin recorded for it, so the list
   // narrows once the accommodation is chosen.
@@ -185,11 +186,16 @@ export function StayRow({
           }))}
           placeholder={stay.locationId ? "Hotel / Maktab" : "—"}
           value={stay.accommodationId}
-          disabled={!stay.locationId}
+          // The Mina option is chosen once at the top and applied to every Hajj
+          // row, so it is locked here to stop it being set two different ways.
+          disabled={!stay.locationId || isMina}
           onChange={(e) =>
             updateStay(stay.key, { accommodationId: e.target.value, mealId: null, mealNoteId: null })
           }
         />
+        {isMina && (
+          <p className="mt-1 text-xs text-muted">Set from the Mina option above.</p>
+        )}
       </div>
 
       <div className="md:col-span-2">

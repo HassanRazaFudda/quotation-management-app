@@ -6,7 +6,7 @@
  * every route needs to answer the preflight OPTIONS request.
  */
 
-import { AdminError, QuotationError, connect } from "@junaidi/db";
+import { AdminError, PackageError, QuotationError, connect } from "@junaidi/db";
 import { PricingError } from "@junaidi/shared";
 import { ZodError } from "zod";
 
@@ -112,6 +112,9 @@ function toErrorBody(error: unknown): { status: number; body: ErrorBody } {
   if (error instanceof QuotationError) {
     // The itinerary failed validation; hand back the specific problems so the
     // builder can point at the offending rows.
+    return { status: 422, body: { error: error.message, details: error.issues } };
+  }
+  if (error instanceof PackageError) {
     return { status: 422, body: { error: error.message, details: error.issues } };
   }
   if (error instanceof PricingError) {

@@ -7,10 +7,12 @@
  */
 
 import {
+  applyNestedNights,
   buildPackageTitle,
   calculateTotals,
   makePricingContext,
   makeValidationContext,
+  nestedHajjBlocks,
   priceFlights,
   priceStays,
   suggestHajjBlock,
@@ -231,13 +233,22 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       rates: config.rates,
     });
 
+    // A Hajj row inside a stay that spans it contributes no nights. Pricing a
+    // row on its own cannot see that, so the set is worked out here from all
+    // the rows and applied to each result.
+    const { nested } = nestedHajjBlocks(
+      complete
+        .map((stay) => config.blocks.find((block) => block.id === stay.blockId))
+        .filter((block): block is (typeof config.blocks)[number] => Boolean(block)),
+    );
+
     // Price each row on its own so one bad row cannot blank the whole total.
     for (const stay of state.stays) {
       if (!stay.blockId || !stay.accommodationId) continue;
       try {
         const [priced] = priceStays([stay], pricing);
         if (priced) {
-          perStayNights[stay.key] = priced.nights;
+          perStayNights[stay.key] = nested.has(stay.blockId) ? 0 : priced.nights;
           perStayTotal[stay.key] = priced.lineTotal;
         }
       } catch {
@@ -245,15 +256,18 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       }
     }
 
-    const pricedComplete = complete
-      .map((stay) => {
-        try {
-          return priceStays([stay], pricing)[0];
-        } catch {
-          return null;
-        }
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
+    const pricedComplete = applyNestedNights(
+      complete
+        .map((stay) => {
+          try {
+            return priceStays([stay], pricing)[0];
+          } catch {
+            return null;
+          }
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null),
+      config.blocks,
+    );
 
     const totals = calculateTotals({
       stays: pricedComplete,
@@ -333,5 +347,32 @@ export function toApiPayload(state: BuilderState, season: string) {
     discount: state.discount,
     discountNote: state.discountNote,
     manualTotal: state.manualTotal,
+  };
+}
+
+/**
+ * A package is the same shape minus the customer and the money: no guest, no
+ * dates, no discount or manual total. A name replaces the guest.
+ */
+export function toPackagePayload(state: BuilderState, season: string, name: string) {
+  return {
+    name: name.trim(),
+    season,
+    packageTitle: state.packageTitle,
+    packageCategory: state.packageCategory,
+    withoutMina: state.withoutMina,
+    qurbaniIncluded: state.qurbaniIncluded,
+    minaAccommodationId: state.minaAccommodationId || null,
+    stays: state.stays
+      .filter((s) => s.blockId && s.locationId && s.accommodationId)
+      .map(({ key: _key, ...stay }) => stay),
+    flight: state.flight,
+    minaServiceIds: state.minaServiceIds,
+    arafatServiceIds: state.arafatServiceIds,
+    includeIds: state.includeIds,
+    requirementIds: state.requirementIds,
+    termIds: state.termIds,
+    includesNote: state.includesNote,
+    remarks: state.remarks,
   };
 }

@@ -17,6 +17,7 @@
  * `toPdfTotals` at the bottom - that is the only shape the renderer receives.
  */
 
+import { nestedHajjBlocks } from "./calendar";
 import {
   rateKey,
   type Accommodation,
@@ -140,8 +141,33 @@ export function priceStay(stay: StayInput, context: PricingContext): PricedStay 
   return { ...stay, nights: block.nights, rateSnapshot: lineTotal, lineTotal };
 }
 
+/**
+ * Nights already counted by a block that spans them are not counted again.
+ *
+ * The Hajj row inside an "Aziziya including Hajj days" stay is a second entry
+ * for days the hotel row has already charged and already counted, so it carries
+ * no nights of its own - otherwise a 20-night package would read as 24. Its
+ * price is untouched: the Maktab is a real, separate charge.
+ */
+export function applyNestedNights<T extends { blockId: string; nights: number }>(
+  stays: T[],
+  blocks: ResolvedBlock[],
+): T[] {
+  const chosen = stays
+    .map((stay) => blocks.find((block) => block.id === stay.blockId))
+    .filter((block): block is ResolvedBlock => Boolean(block));
+
+  const { nested } = nestedHajjBlocks(chosen);
+  if (nested.size === 0) return stays;
+
+  return stays.map((stay) => (nested.has(stay.blockId) ? { ...stay, nights: 0 } : stay));
+}
+
 export function priceStays(stays: StayInput[], context: PricingContext): PricedStay[] {
-  return stays.map((stay) => priceStay(stay, context));
+  return applyNestedNights(
+    stays.map((stay) => priceStay(stay, context)),
+    [...context.blocks.values()],
+  );
 }
 
 // ------------------------------------------------------------------ totals

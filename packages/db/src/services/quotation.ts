@@ -16,7 +16,9 @@ import {
   errorsOnly,
   formatPrice,
   hasErrors,
+  hijriIndex,
   makePricingContext,
+  nestedHajjBlocks,
   makeValidationContext,
   priceFlights,
   priceStays,
@@ -29,6 +31,8 @@ import {
   type ResolvedBlock,
   type StayInput,
 } from "@junaidi/shared";
+
+import { Types, type PipelineStage } from "mongoose";
 
 import { nextSequence } from "../models/counter";
 import { QuotationModel } from "../models/quotation";
@@ -178,12 +182,35 @@ export async function buildQuotationDocument(
   const noteById = new Map(bundle.mealNotes.map((n) => [n.id, n]));
   const serviceById = new Map(bundle.services.map((s) => [s.id, s]));
 
-  const labels = (ids: string[] | undefined): string[] =>
+  // Resolve to the label *and* its styling, both frozen onto the quotation so a
+  // later colour change never rewrites a document already sent.
+  const styledLines = (ids: string[] | undefined) =>
     (ids ?? [])
-      .map((id) => serviceById.get(id)?.label)
-      .filter((label): label is string => Boolean(label));
+      .map((id) => serviceById.get(id))
+      .filter((service): service is NonNullable<typeof service> => Boolean(service))
+      .map((service) => ({
+        text: service.label,
+        color: service.color ?? "",
+        bold: service.bold ?? false,
+      }));
 
-  const stays = priced.stays.map((stay) => {
+  // Which stay swallows the Hajj days, so its row can say so.
+  const { covering } = nestedHajjBlocks(priced.stays.map((stay) => stay.block));
+
+  /*
+   * Order the rows by date rather than by the order they were typed. A Hajj row
+   * added last still belongs directly under the stay that spans it, and the
+   * travel dates below are read off the ends of this list. Where two stays
+   * start on the same day the longer one leads, so the spanning stay comes
+   * before the Hajj row nested in it.
+   */
+  const ordered = [...priced.stays].sort((a, b) => {
+    const start = hijriIndex(a.block.startHijri) - hijriIndex(b.block.startHijri);
+    if (start !== 0) return start;
+    return hijriIndex(b.block.endHijri) - hijriIndex(a.block.endHijri);
+  });
+
+  const stays = ordered.map((stay) => {
     const accommodation = accommodationById.get(stay.accommodationId)!;
     const location = locationById.get(accommodation.locationId)!;
 
@@ -200,6 +227,7 @@ export async function buildQuotationDocument(
       locationType: location.type,
       accommodationName: accommodation.name,
       minaTier: accommodation.minaTier ?? null,
+      withoutMina: accommodation.withoutMina ?? false,
       bedsPerTent: accommodation.bedsPerTent ?? null,
       roomType: stay.roomType ?? null,
       occupancy: stay.occupancy ?? null,
@@ -207,7 +235,10 @@ export async function buildQuotationDocument(
       // Frozen at save time so the wording on a sent quotation never changes.
       roomLabel: roomLabel(stay),
       meal: stay.mealId ? (mealById.get(stay.mealId)?.label ?? "") : "",
+      mealId: stay.mealId ?? null,
       mealNote: stay.mealNoteId ? (noteById.get(stay.mealNoteId)?.label ?? "") : "",
+      mealNoteId: stay.mealNoteId ?? null,
+      coversHajj: covering.has(stay.blockId),
 
       nights: stay.nights,
       rateSnapshot: stay.rateSnapshot,
@@ -238,13 +269,20 @@ export async function buildQuotationDocument(
       total: priced.flights.total,
     },
 
-    minaServices: labels(input.minaServiceIds),
-    arafatServices: labels(input.arafatServiceIds),
-    includes: labels(input.includeIds),
-    requirements: labels(input.requirementIds),
-    terms: labels(input.termIds),
+    minaServices: styledLines(input.minaServiceIds),
+    arafatServices: styledLines(input.arafatServiceIds),
+    includes: styledLines(input.includeIds),
+    requirements: styledLines(input.requirementIds),
+    terms: styledLines(input.termIds),
     includesNote: input.includesNote ?? "",
     remarks: input.remarks ?? "",
+
+    // Kept for restoring the form when editing or duplicating.
+    minaServiceIds: input.minaServiceIds ?? [],
+    arafatServiceIds: input.arafatServiceIds ?? [],
+    includeIds: input.includeIds ?? [],
+    requirementIds: input.requirementIds ?? [],
+    termIds: input.termIds ?? [],
 
     totalNights: priced.totalNights,
     subtotal: priced.subtotal,
@@ -376,41 +414,146 @@ export async function duplicateQuotation(id: string, author: QuotationAuthor) {
   });
 }
 
+/**
+ * Delete a quotation outright.
+ *
+ * A quotation is not shared config - it is one document - so this is a real
+ * delete, not a soft one. Staff may remove their own; an admin may remove
+ * anyone's. Deleting a confirmed booking frees its HB number for reuse.
+ */
+export async function deleteQuotation(id: string, author: QuotationAuthor) {
+  const existing = await QuotationModel.findById(id);
+  if (!existing) throw new QuotationError("Quotation not found.");
+
+  if (author.role !== "admin" && String(existing.createdBy) !== author.userId) {
+    throw new QuotationError("You can only delete your own quotations.");
+  }
+
+  await existing.deleteOne();
+  return { ok: true as const };
+}
+
 // ------------------------------------------------------------------ reads
+
+/** How the list is ordered. Either date, either way round. */
+export const QUOTATION_SORTS = ["created-desc", "created-asc", "date-desc", "date-asc"] as const;
+export type QuotationSort = (typeof QUOTATION_SORTS)[number];
+
+/** Optional banding of the list. */
+export const QUOTATION_GROUPS = ["none", "staff", "status", "month"] as const;
+export type QuotationGroup = (typeof QUOTATION_GROUPS)[number];
+
+const SORT_SPECS: Record<QuotationSort, Record<string, 1 | -1>> = {
+  "created-desc": { createdAt: -1 },
+  "created-asc": { createdAt: 1 },
+  "date-desc": { date: -1 },
+  "date-asc": { date: 1 },
+};
+
+/** Status bands read in the order a booking actually moves through them. */
+const STATUS_ORDER = ["draft", "sent", "confirmed", "expired"];
+
+/** The heading the client draws for a row. Month sorts as it reads: "2026-07". */
+const GROUP_LABEL = {
+  staff: "$createdByName",
+  status: "$status",
+  month: { $dateToString: { format: "%Y-%m", date: "$date" } },
+} as const;
+
+const GROUP_SORT = {
+  staff: { $toLower: "$createdByName" },
+  status: { $indexOfArray: [STATUS_ORDER, "$status"] },
+  month: { $dateToString: { format: "%Y-%m", date: "$date" } },
+} as const;
 
 export interface QuotationFilter {
   season?: string;
   status?: string;
   search?: string;
-  /** Staff only ever see their own. */
+  /** Everyone reads everyone's work; this narrows the list to one author. */
   createdBy?: string;
+  sort?: QuotationSort;
+  groupBy?: QuotationGroup;
   page?: number;
   pageSize?: number;
 }
 
+/**
+ * A page of quotations.
+ *
+ * The whole agency shares one list, so it carries the tools that make a shared
+ * list usable: order by either date, and band by staff member, status or month.
+ * Grouping works by *sorting* on the group key first, so a band is never
+ * scattered across pages - the server stamps each row with the label of the
+ * band it belongs to and the client draws a heading whenever the label changes.
+ */
 export async function listQuotations(filter: QuotationFilter) {
   const page = Math.max(1, filter.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, filter.pageSize ?? 20));
+  const sort = SORT_SPECS[filter.sort ?? "created-desc"] ?? SORT_SPECS["created-desc"];
+  const groupBy = filter.groupBy ?? "none";
 
   const query: Record<string, unknown> = {};
   if (filter.season) query.season = filter.season;
   if (filter.status) query.status = filter.status;
-  if (filter.createdBy) query.createdBy = filter.createdBy;
+  // An aggregation gets no schema casting, so the author id is cast by hand.
+  if (filter.createdBy && Types.ObjectId.isValid(filter.createdBy)) {
+    query.createdBy = new Types.ObjectId(filter.createdBy);
+  }
   if (filter.search?.trim()) {
     const pattern = new RegExp(escapeRegex(filter.search.trim()), "i");
     query.$or = [{ quotationId: pattern }, { "guest.name": pattern }];
   }
 
+  const pipeline: PipelineStage[] = [{ $match: query }];
+
+  if (groupBy !== "none") {
+    pipeline.push({
+      $addFields: { groupLabel: GROUP_LABEL[groupBy], groupSort: GROUP_SORT[groupBy] },
+    });
+  }
+
+  pipeline.push(
+    {
+      $sort: {
+        // Months follow the chosen direction; people and statuses read in their
+        // own natural order whichever way the dates run.
+        ...(groupBy === "none"
+          ? {}
+          : { groupSort: groupBy === "month" && !filter.sort?.endsWith("-asc") ? -1 : 1 }),
+        ...sort,
+        _id: -1, // a tiebreak, so paging never repeats or drops a row
+      },
+    },
+    { $skip: (page - 1) * pageSize },
+    { $limit: pageSize },
+    { $project: { groupSort: 0 } },
+  );
+
   const [items, total] = await Promise.all([
-    QuotationModel.find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .lean(),
+    QuotationModel.aggregate(pipeline),
     QuotationModel.countDocuments(query),
   ]);
 
   return { items, total, page, pageSize, pages: Math.ceil(total / pageSize) };
+}
+
+/**
+ * Everyone who has produced a quotation, for the "whose work" filter. Names
+ * come off the quotations themselves, so a staff member who has since left
+ * still appears next to the work they did.
+ */
+export async function quotationAuthors(season?: string): Promise<Array<{ userId: string; name: string }>> {
+  const match: Record<string, unknown> = {};
+  if (season) match.season = season;
+
+  const rows = await QuotationModel.aggregate([
+    { $match: match },
+    { $group: { _id: "$createdBy", name: { $last: "$createdByName" } } },
+    { $sort: { name: 1 } },
+  ]);
+
+  return rows.map((row) => ({ userId: String(row._id), name: row.name ?? "" }));
 }
 
 function escapeRegex(value: string): string {

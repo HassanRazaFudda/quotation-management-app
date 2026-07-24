@@ -320,6 +320,14 @@ function BlockFields({
         </Field>
       </div>
 
+      <p className="rounded-lg bg-canvas px-3 py-2 text-xs text-muted">
+        <strong className="text-ink">Hajj days</strong> is only the Mina block itself
+        (e.g. 07&nbsp;–&nbsp;12 Zilhaj). A hotel stay that <em>spans</em> the Hajj days — the guest
+        keeps their room while they are in Mina, e.g. 01&nbsp;–&nbsp;14 Zilhaj Aziziya — is still
+        <strong className="text-ink"> Before&nbsp;Hajj</strong>. The quotation adds the Hajj row
+        inside it automatically and marks it &ldquo;Including Hajj days&rdquo;.
+      </p>
+
       <div>
         <span className="mb-1.5 block text-sm text-muted">
           Where the guest can stay in this block

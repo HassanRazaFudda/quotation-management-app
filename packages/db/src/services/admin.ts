@@ -137,6 +137,20 @@ export async function upsertAccommodation(id: string | null, data: Record<string
   return AccommodationModel.create(data);
 }
 
+/**
+ * Soft delete: the hotel or tent disappears from the builder, but quotations
+ * that already used it keep their own copy of its name and rates.
+ */
+export async function deactivateAccommodation(id: string) {
+  const accommodation = await AccommodationModel.findByIdAndUpdate(
+    id,
+    { $set: { active: false } },
+    { returnDocument: "after" },
+  ).lean();
+  if (!accommodation) throw new AdminError("Accommodation not found.");
+  return accommodation;
+}
+
 // --- date blocks -----------------------------------------------------------
 
 export async function upsertDateBlock(id: string | null, data: Record<string, unknown>) {

@@ -14,6 +14,7 @@ import {
   type AziziyaRoomType,
   type Occupancy,
   type SharingWord,
+  type StyledLine,
 } from "@junaidi/shared";
 import {
   DEFAULT_COMPANY,
@@ -26,6 +27,8 @@ import {
 /** Only the parts of a quotation the customer's document is built from. */
 interface QuotationLike {
   quotationId: string;
+  /** The booking reference, set when confirmed. */
+  hbNumber?: string;
   date: Date | string;
   validUntil?: Date | string | null;
   packageTitle?: string;
@@ -51,6 +54,8 @@ interface QuotationLike {
     locationType: string;
     accommodationName: string;
     minaTier?: string | null;
+    /** This Mina option books no tent - print its name, not the Maktab. */
+    withoutMina?: boolean;
     bedsPerTent?: number | null;
     roomType?: AziziyaRoomType | null;
     occupancy?: Occupancy | null;
@@ -60,13 +65,16 @@ interface QuotationLike {
     meal?: string;
     mealNote?: string;
     nights: number;
+    /** This stay spans the Hajj days, which follow as their own row. */
+    coversHajj?: boolean;
   }>;
-  minaServices?: string[];
-  arafatServices?: string[];
-  includes?: string[];
+  // Strings (old quotations) or styled lines (new). Coerced by the PDF view.
+  minaServices?: Array<string | StyledLine>;
+  arafatServices?: Array<string | StyledLine>;
+  includes?: Array<string | StyledLine>;
   includesNote?: string;
-  requirements?: string[];
-  terms?: string[];
+  requirements?: Array<string | StyledLine>;
+  terms?: Array<string | StyledLine>;
   remarks?: string;
 }
 
@@ -77,6 +85,20 @@ const PHASE_LABELS: Record<string, string> = {
   mina: "Hajj Days",
   arafat: "Arafat",
 };
+
+/**
+ * How the first column reads.
+ *
+ * A stay that spans the Hajj days says so - "Aziziya Including Hajj Days" -
+ * because the guest keeps that room while they are in Mina, and the Hajj row
+ * printed under it carries the Maktab rather than a second hotel.
+ */
+function phaseLabel(stay: QuotationLike["stays"][number]): string {
+  const base = PHASE_LABELS[stay.locationType] ?? `${stay.locationName} Stay`;
+  if (!stay.coversHajj) return base;
+
+  return `${base.replace(/\s*Stay$/, "")} Including Hajj Days`;
+}
 
 function formatDate(value: Date | string | null | undefined): string {
   if (!value) return "";
@@ -95,16 +117,17 @@ function formatDate(value: Date | string | null | undefined): string {
  * "Aziziya Hotel (Separate - Triple)". The wording is frozen on the quotation
  * when it is saved, so a sent document never rewords itself.
  *
- * The Hajj row shows the Maktab category rather than the internal tent tier -
+ * The Hajj row shows the Maktab category rather than the tent's internal name -
  * "Maktab A Category" is what the customer recognises. A package that books no
- * tent has no Maktab to name, so it says so instead.
+ * tent has no Maktab to name, so it prints that option's name instead. The tier
+ * is optional and no longer decides this; "books no tent" does.
  */
 function accommodationLabel(
   stay: QuotationLike["stays"][number],
   packageCategory: string,
 ): string {
   if (stay.locationType === "mina") {
-    if (!stay.minaTier) return stay.accommodationName;
+    if (stay.withoutMina) return stay.accommodationName;
     return packageCategory || stay.accommodationName;
   }
 
@@ -127,15 +150,29 @@ const sector = (
  * for a land-only package where the guest books their own flight.
  */
 function travelDetails(quotation: QuotationLike): PdfTravel {
-  const first = quotation.stays[0];
-  const last = quotation.stays[quotation.stays.length - 1];
+  // The earliest and latest day anywhere in the itinerary, not the first and
+  // last row: a Hajj row nested inside a longer stay can sit last and would
+  // otherwise cut the return short. ISO dates sort chronologically as text.
+  const edge = (
+    pick: (stay: QuotationLike["stays"][number]) => string | undefined,
+    keep: (a: string, b: string) => boolean,
+  ): string =>
+    quotation.stays.reduce((best, stay) => {
+      const value = pick(stay);
+      if (!value) return best;
+      return !best || keep(value, best) ? value : best;
+    }, "");
+
+  const departure = edge((stay) => stay.blockStartGregorian, (a, b) => a < b);
+  const arrival = edge((stay) => stay.blockEndGregorian, (a, b) => a > b);
+
   const flight = quotation.flight;
   const included = Boolean(flight?.included);
 
   return {
     included,
-    departureDate: first?.blockStartGregorian ? formatGregorian(first.blockStartGregorian) : "",
-    returnDate: last?.blockEndGregorian ? formatGregorian(last.blockEndGregorian) : "",
+    departureDate: departure ? formatGregorian(departure) : "",
+    returnDate: arrival ? formatGregorian(arrival) : "",
     outbound: included ? sector(flight?.outbound) : "",
     inbound: included ? sector(flight?.inbound) : "",
     note: travelNote(quotation),
@@ -160,6 +197,7 @@ export async function toPdfView(quotation: QuotationLike): Promise<QuotationPdfV
 
   return buildPdfView({
     quotationId: quotation.quotationId,
+    hbNumber: quotation.hbNumber ?? "",
     date: formatDate(quotation.date),
     guestName: guestLine,
     validUntil: formatDate(quotation.validUntil),
@@ -171,7 +209,7 @@ export async function toPdfView(quotation: QuotationLike): Promise<QuotationPdfV
     travel: travelDetails(quotation),
 
     stays: quotation.stays.map((stay) => ({
-      phase: PHASE_LABELS[stay.locationType] ?? `${stay.locationName} Stay`,
+      phase: phaseLabel(stay),
       nights: stay.nights > 0 ? `${String(stay.nights).padStart(2, "0")} Nights` : "",
       dates: stay.blockLabelHijri,
       datesSub: stay.blockLabelGregorian ?? "",

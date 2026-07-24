@@ -34,6 +34,16 @@ const flightSnapshotSchema = new Schema(
   { _id: false },
 );
 
+/** One bullet on the quotation, with the styling frozen at save time. */
+const styledLineSchema = new Schema(
+  {
+    text: { type: String, required: true },
+    color: { type: String, default: "" },
+    bold: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const staySchema = new Schema(
   {
     // References, kept for reporting.
@@ -55,6 +65,8 @@ const staySchema = new Schema(
     locationType: { type: String, required: true },
     accommodationName: { type: String, required: true },
     minaTier: { type: String, enum: [...MINA_TIERS, null], default: null },
+    /** This Mina option books no tent; the PDF prints its name, not the Maktab. */
+    withoutMina: { type: Boolean, default: false },
     bedsPerTent: { type: Number, default: null },
     // The room is chosen per stay: shared in Makkah, private in Aziziya is normal.
     roomType: { type: String, enum: [...AZIZIYA_ROOM_TYPES, null], default: null },
@@ -63,8 +75,17 @@ const staySchema = new Schema(
     sharingWord: { type: String, enum: [...SHARING_WORDS, null], default: null },
     /** What the PDF prints: "Sharing" / "Quint" / "Separate - Triple". */
     roomLabel: { type: String, default: "" },
+    // The label is what the PDF prints (frozen); the id lets the builder restore
+    // the exact choice when the quotation is edited or duplicated.
     meal: { type: String, default: "" },
+    mealId: { type: Schema.Types.ObjectId, ref: "Meal", default: null },
     mealNote: { type: String, default: "" },
+    mealNoteId: { type: Schema.Types.ObjectId, ref: "MealNote", default: null },
+    /**
+     * This stay spans the Hajj days, which are listed again as their own row.
+     * Frozen here so re-dating a block next month cannot reword a sent PDF.
+     */
+    coversHajj: { type: Boolean, default: false },
 
     nights: { type: Number, required: true, min: 0 },
     rateSnapshot: { type: Number, required: true, min: 0 },
@@ -114,13 +135,21 @@ const quotationSchema = new Schema(
       total: { type: Number, default: 0 },
     },
 
-    minaServices: [{ type: String }],
-    arafatServices: [{ type: String }],
-    includes: [{ type: String }],
+    minaServices: { type: [styledLineSchema], default: [] },
+    arafatServices: { type: [styledLineSchema], default: [] },
+    includes: { type: [styledLineSchema], default: [] },
     includesNote: { type: String, default: "" },
-    requirements: [{ type: String }],
-    terms: [{ type: String }],
+    requirements: { type: [styledLineSchema], default: [] },
+    terms: { type: [styledLineSchema], default: [] },
     remarks: { type: String, default: "" },
+
+    // The labelled lines above are what the PDF prints (frozen). These id lists
+    // are kept only so editing or duplicating can restore the exact selection.
+    minaServiceIds: [{ type: Schema.Types.ObjectId, ref: "ServiceItem" }],
+    arafatServiceIds: [{ type: Schema.Types.ObjectId, ref: "ServiceItem" }],
+    includeIds: [{ type: Schema.Types.ObjectId, ref: "ServiceItem" }],
+    requirementIds: [{ type: Schema.Types.ObjectId, ref: "ServiceItem" }],
+    termIds: [{ type: Schema.Types.ObjectId, ref: "ServiceItem" }],
 
     totalNights: { type: Number, default: 0 },
     subtotal: { type: Number, default: 0 },

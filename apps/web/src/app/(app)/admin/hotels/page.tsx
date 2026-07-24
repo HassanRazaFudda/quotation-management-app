@@ -1,20 +1,22 @@
 "use client";
 
 import {
+  MINA_TIERS,
   MINA_TIER_BEDS,
   OCCUPANCIES,
   SHARING_WORDS,
   SHARING_WORD_SIZE,
   type Accommodation,
+  type MinaTier,
   type Occupancy,
   type SharingWord,
 } from "@junaidi/shared";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Save } from "lucide-react";
+import { Plus, Save, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
-import { Button, Card, Field, Input, Select, Spinner } from "@/components/ui";
+import { Button, Card, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import { useConfigStore } from "@/stores/config";
@@ -93,7 +95,25 @@ function HotelRow({
     hotel.allowedSharingWords?.length ? hotel.allowedSharingWords : [...SHARING_WORDS],
   );
   const [categoryIds, setCategoryIds] = useState<string[]>(hotel.allowedCategories ?? []);
+  // A Mina option is either a tent of some tier, or one that books no tent.
+  const [minaTier, setMinaTier] = useState<MinaTier | "">(hotel.minaTier ?? "");
+  const [withoutMina, setWithoutMina] = useState<boolean>(hotel.withoutMina ?? false);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      await api.del(`/api/admin/hotels/${hotel.id}`);
+      toast.success(`${hotel.name} removed`);
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not remove.");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   const toggle = <T extends string>(list: T[], setList: (v: T[]) => void, id: T) =>
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
@@ -105,9 +125,9 @@ function HotelRow({
         id: hotel.id,
         locationId: hotel.locationId,
         name,
-        minaTier: hotel.minaTier ?? null,
+        minaTier: withoutMina ? null : (minaTier || null),
         bedsPerTent: hotel.bedsPerTent ?? null,
-        withoutMina: hotel.withoutMina ?? false,
+        withoutMina,
         allowedOccupancies: occupancies,
         allowedSharingWords: sharingWords,
         allowedCategories: categoryIds,
@@ -129,20 +149,58 @@ function HotelRow({
     <div className="space-y-3 p-5">
       <div className="flex items-center gap-3">
         <Input value={name} onChange={(e) => setName(e.target.value)} className="max-w-md" />
-        {hotel.minaTier && (
-          <span className="rounded bg-canvas px-2 py-1 text-xs text-muted">
-            {hotel.minaTier} · {MINA_TIER_BEDS[hotel.minaTier as keyof typeof MINA_TIER_BEDS]}
-          </span>
-        )}
-        {hotel.withoutMina && (
-          <span className="rounded bg-brand-50 px-2 py-1 text-xs text-brand-600">
-            books no tent
-          </span>
-        )}
         <Button size="sm" variant="secondary" icon={<Save className="size-4" />} loading={saving} onClick={save} className="ml-auto">
           Save
         </Button>
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+          title="Remove"
+        >
+          <Trash2 className="size-4" />
+        </button>
       </div>
+
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Remove accommodation">
+        <p className="text-sm text-muted">
+          Remove <strong className="text-ink">{hotel.name}</strong>? It disappears from new
+          quotations. Quotations that already used it keep their own copy and are not affected.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="sm" loading={deleting} onClick={remove}>
+            Remove
+          </Button>
+        </div>
+      </Modal>
+
+      {/* A Mina option books a tent (the Maktab category prints on the quote) or
+          books no tent. The tier is only a beds label and is entirely optional -
+          leave it on "Tent" when the bed count is not known. */}
+      {isMina && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-medium text-muted">Mina option:</span>
+          <Select
+            className="w-64"
+            options={[
+              { value: "__tent", label: "Standard" },
+              ...MINA_TIERS.map((tier) => ({
+                value: tier,
+                label: `Tent · ${tier[0]!.toUpperCase()}${tier.slice(1)} · ${MINA_TIER_BEDS[tier]}`,
+              })),
+              { value: "__none", label: "Books no tent (Without Mina)" },
+            ]}
+            value={withoutMina ? "__none" : minaTier || "__tent"}
+            onChange={(e) => {
+              const v = e.target.value;
+              setWithoutMina(v === "__none");
+              setMinaTier(v === "__none" || v === "__tent" ? "" : (v as MinaTier));
+            }}
+          />
+        </div>
+      )}
 
       {/* A tent has no room sizes; every other accommodation does. */}
       {!isMina && (

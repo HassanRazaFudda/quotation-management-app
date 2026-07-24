@@ -6,6 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
 import { Button, Card, Input, Spinner } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import { servicesByCategory, useConfigStore } from "@/stores/config";
 
@@ -49,6 +50,16 @@ export default function ServicesPage() {
       toast.error(e instanceof ApiError ? e.message : "Could not remove.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Set a line's colour or weight. Saved immediately, then config reloads. */
+  async function styleService(id: string, patch: { color?: string; bold?: boolean }) {
+    try {
+      await api.patch(`/api/admin/services/${id}`, patch);
+      await config.load(undefined, true);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not save.");
     }
   }
 
@@ -102,11 +113,19 @@ export default function ServicesPage() {
             busy={busy}
             onAdd={(label) => add(cat.key, label)}
             onRemove={remove}
+            onStyle={styleService}
           />
         ))}
       </div>
     </>
   );
+}
+
+interface StyledItem {
+  id: string;
+  label: string;
+  color?: string;
+  bold?: boolean;
 }
 
 function ServiceGroup({
@@ -116,13 +135,16 @@ function ServiceGroup({
   busy,
   onAdd,
   onRemove,
+  onStyle,
 }: {
   title: string;
   hint: string;
-  items: Array<{ id: string; label: string }>;
+  items: StyledItem[];
   busy: boolean;
   onAdd: (label: string) => void;
   onRemove: (id: string) => void;
+  /** Present only for the styled lists; Maktab categories have no styling. */
+  onStyle?: (id: string, patch: { color?: string; bold?: boolean }) => void;
 }) {
   const [value, setValue] = useState("");
 
@@ -139,18 +161,64 @@ function ServiceGroup({
         <p className="text-xs text-muted">{hint}</p>
       </div>
       <ul className="divide-y divide-line">
-        {items.map((item) => (
-          <li key={item.id} className="flex items-center justify-between gap-2 px-5 py-2.5">
-            <span className="text-sm text-ink">{item.label}</span>
-            <button
-              onClick={() => onRemove(item.id)}
-              disabled={busy}
-              className="rounded-lg p-1.5 text-gray-400 hover:bg-brand-50 hover:text-brand-600"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </li>
-        ))}
+        {items.map((item) => {
+          const color = /^#[0-9a-fA-F]{3,8}$/.test(item.color ?? "") ? item.color : "#111827";
+          return (
+            <li key={item.id} className="flex items-center justify-between gap-2 px-5 py-2.5">
+              <span
+                className="min-w-0 flex-1 truncate text-sm"
+                style={{ color, fontWeight: item.bold ? 700 : 400 }}
+              >
+                {item.label}
+              </span>
+              {onStyle && (
+                <>
+                  {/* Colour picker; a swatch that opens the native colour dialog. */}
+                  <label
+                    className="relative size-6 shrink-0 cursor-pointer rounded border border-line"
+                    style={{ backgroundColor: color }}
+                    title="Line colour"
+                  >
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => onStyle(item.id, { color: e.target.value })}
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                    />
+                  </label>
+                  <button
+                    onClick={() => onStyle(item.id, { color: "" })}
+                    disabled={busy}
+                    className="shrink-0 rounded px-1.5 py-1 text-xs text-muted hover:text-ink"
+                    title="Reset to black"
+                  >
+                    reset
+                  </button>
+                  <button
+                    onClick={() => onStyle(item.id, { bold: !item.bold })}
+                    disabled={busy}
+                    className={cn(
+                      "shrink-0 rounded border px-2 py-1 text-xs font-bold transition-colors",
+                      item.bold
+                        ? "border-brand-200 bg-brand-50 text-brand-700"
+                        : "border-line text-muted hover:text-ink",
+                    )}
+                    title="Bold"
+                  >
+                    B
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => onRemove(item.id)}
+                disabled={busy}
+                className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-brand-50 hover:text-brand-600"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </li>
+          );
+        })}
         {items.length === 0 && <li className="px-5 py-3 text-sm text-muted">Nothing yet.</li>}
       </ul>
       <form onSubmit={submit} className="flex gap-2 border-t border-line p-3">

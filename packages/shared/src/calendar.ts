@@ -102,6 +102,58 @@ export function hijriIndex(date: HijriDate): number {
   return month * DAYS_PER_MONTH_ESTIMATE + date.day;
 }
 
+// --------------------------------------------------------------- nesting
+
+/** The fields nesting is worked out from. */
+type BlockShape = Pick<DateBlock, "id" | "phase" | "startHijri" | "endHijri">;
+
+/** Does `outer` cover every day `inner` covers? */
+export function blockContains(outer: BlockShape, inner: BlockShape): boolean {
+  return (
+    hijriIndex(outer.startHijri) <= hijriIndex(inner.startHijri) &&
+    hijriIndex(outer.endHijri) >= hijriIndex(inner.endHijri)
+  );
+}
+
+export interface BlockNesting {
+  /** Hajj blocks sitting wholly inside one of the other blocks. */
+  nested: Set<string>;
+  /** The blocks that swallow them. */
+  covering: Set<string>;
+}
+
+/**
+ * Which of these blocks sit inside another one.
+ *
+ * A Hajj block booked alongside a hotel block that spans it is not a clash: the
+ * guest keeps their Aziziya room for the whole fortnight and is simply away in
+ * Mina for five of those days. The quotation shows both rows - the hotel with
+ * its nights and its price, the Hajj days with the Maktab - so the days are
+ * deliberately covered twice.
+ *
+ * The outer block must not itself be a Hajj block, or the two Hajj variants the
+ * admin configures (07-12 and 08-12) would look like a legitimate nesting
+ * instead of the mistake of picking both.
+ */
+export function nestedHajjBlocks(blocks: BlockShape[]): BlockNesting {
+  const nested = new Set<string>();
+  const covering = new Set<string>();
+
+  for (const inner of blocks) {
+    if (inner.phase !== "hajj") continue;
+
+    for (const outer of blocks) {
+      if (outer.id === inner.id || outer.phase === "hajj") continue;
+      if (!blockContains(outer, inner)) continue;
+
+      nested.add(inner.id);
+      covering.add(outer.id);
+    }
+  }
+
+  return { nested, covering };
+}
+
 // ------------------------------------------------------------ calendar map
 
 export type CalendarIndex = Map<string, string>;

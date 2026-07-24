@@ -190,6 +190,43 @@ describe("the Hajj block rule", () => {
 });
 
 /**
+ * A guest who keeps their Aziziya room across the Hajj days: the hotel is
+ * booked 04 -> 17 Zilhaj and the Hajj days (07 -> 12) are listed again as their
+ * own row. The two rows cover the same days on purpose.
+ */
+describe("a stay that spans the Hajj days", () => {
+  // 04 -> 17 Zilhaj Aziziya, with the 07 -> 12 Hajj row nested inside it.
+  const spanning: StayInput[] = [
+    { blockId: "blk-aziziya-hajj", locationId: "loc-aziziya", accommodationId: "acc-aziziya", roomType: "sharing", mealId: "meal-3time" },
+    { blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std", mealId: "meal-3time", mealNoteId: "note-muallim" },
+  ];
+
+  it("is accepted with no overlap, gap or Hajj complaint", () => {
+    expect(validateItinerary(spanning, context())).toEqual([]);
+  });
+
+  it("does not read the nested Hajj row as a second Hajj block", () => {
+    expect(codes(spanning)).not.toContain("MULTIPLE_HAJJ_BLOCKS");
+  });
+
+  it("still requires the Hajj days to be booked at all", () => {
+    // The spanning hotel row alone does not stand in for the Hajj block.
+    expect(codes([spanning[0]!])).toContain("NO_HAJJ_BLOCK");
+  });
+
+  it("does not treat two spanning-free Hajj blocks as nesting", () => {
+    // Both Hajj variants at once is still the mistake it always was.
+    expect(
+      codes([
+        spanning[0]!,
+        { blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std", mealId: "meal-3time" },
+        { blockId: "blk-hajj-4n", locationId: "loc-mina", accommodationId: "acc-mina-std", mealId: "meal-3time" },
+      ]),
+    ).toContain("MULTIPLE_HAJJ_BLOCKS");
+  });
+});
+
+/**
  * Some guests do Mina through another Muallim, so the agency books no tent.
  * The Hajj days are usually still sold - the Muallim, the transport and Arafat
  * are charged - which is what the "Without Mina" option is.
@@ -214,8 +251,14 @@ describe("without-Mina packages", () => {
     expect(codes(withHajjRow("acc-mina-std"), true)).toContain("HAJJ_BLOCK_NOT_EXPECTED");
   });
 
-  it("does not mistake Without Mina for a tent missing its tier", () => {
-    expect(codes(withHajjRow("acc-no-mina"), true)).not.toContain("MISSING_TIER");
+  it("accepts a tent with no tier set — the tier is optional", () => {
+    // The agency does not always know the bed count; a tent still validates.
+    expect(codes(withHajjRow("acc-mina-b"))).toEqual([]);
+  });
+
+  it("still refuses that tier-less tent under a Without Mina package", () => {
+    // "Without Mina" must book no tent, tier or not.
+    expect(codes(withHajjRow("acc-mina-b"), true)).toContain("HAJJ_BLOCK_NOT_EXPECTED");
   });
 
   /** An agency that leaves the days out altogether is allowed too. */
@@ -257,11 +300,29 @@ describe("nextBlockOptions", () => {
   });
 
   it("offers only blocks starting where the last one ended", () => {
-    // 01 -> 04 Zilhaj was taken, so the next must start on 04 Zilhaj.
+    // 01 -> 04 Zilhaj was taken, so the next must start on 04 Zilhaj. Both the
+    // 04 -> 07 stay and the 04 -> 17 stay that spans the Hajj days qualify.
     const next = nextBlockOptions(["blk-aziziya-1"], resolved);
-    expect(next.map((b) => b.label)).toEqual(["04 Zilhaj - 07 Zilhaj"]);
+    expect(next.map((b) => b.id).sort()).toEqual(["blk-aziziya-2", "blk-aziziya-hajj"]);
     // 06 Zilhaj starts mid-gap and must not be offered.
     expect(next.map((b) => b.id)).not.toContain("blk-makkah-8");
+  });
+
+  it("offers the Hajj row nested inside a stay that spans it", () => {
+    // The 04 -> 17 stay keeps the room across the Hajj days, so the Hajj blocks
+    // are offered to sit inside it - alongside the stay that follows on 17.
+    const next = nextBlockOptions(["blk-aziziya-hajj"], resolved);
+    expect(next.map((b) => b.id)).toEqual(
+      expect.arrayContaining(["blk-hajj-5n", "blk-hajj-4n", "blk-post-madinah"]),
+    );
+  });
+
+  it("stops offering a second Hajj variant once one is chosen", () => {
+    // With the covering stay AND a Hajj row already in, the itinerary just
+    // continues from 17 - the other Hajj variant must not reappear.
+    const next = nextBlockOptions(["blk-aziziya-hajj", "blk-hajj-5n"], resolved);
+    expect(next.map((b) => b.id)).not.toContain("blk-hajj-4n");
+    expect(next.every((b) => b.phase !== "hajj")).toBe(true);
   });
 
   it("leads to a single Hajj block after a stay ending 07 Zilhaj", () => {

@@ -18,7 +18,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api
-      .get<QuotationList>("/api/quotations?pageSize=6")
+      // The dashboard stays personal - "everyone's" lives on the list page.
+      .get<QuotationList>("/api/quotations?pageSize=6&mine=true")
       .then(setData)
       .finally(() => setLoading(false));
   }, []);

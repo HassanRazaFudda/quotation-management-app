@@ -4,13 +4,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { QuotationModel } from "../models/quotation";
 import { DEFAULT_SEASON, seed } from "../seed";
 import { getConfigBundle } from "../services/config";
+import { updateLabelled, upsertDateBlock, upsertRate } from "../services/admin";
 import {
   QuotationError,
+  buildQuotationDocument,
   changeQuotationStatus,
   createQuotation,
+  deleteQuotation,
   duplicateQuotation,
   listQuotations,
   priceQuotation,
+  quotationAuthors,
   staffReport,
   updateQuotation,
   type QuotationAuthor,
@@ -282,10 +286,130 @@ describe("saving", () => {
     expect(mina.bedsPerTent).toBe(16);
   });
 
+  it("freezes each service line's colour and weight onto the quotation", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const service = bundle.services.find((s) => s.category === "includes")!;
+    // The admin gives this line a red, bold style.
+    await updateLabelled("service", service.id, { color: "#dc2626", bold: true });
+
+    const quotation = await createQuotation(baseInput, staff);
+    const line = quotation.includes.find((l) => l.text === service.label)!;
+    expect(line.color).toBe("#dc2626");
+    expect(line.bold).toBe(true);
+
+    // Others keep the defaults - black, not bold.
+    const plain = quotation.includes.find((l) => l.text !== service.label)!;
+    expect(plain.color).toBe("");
+    expect(plain.bold).toBe(false);
+
+    // Re-styling the service never rewrites the quotation already sent.
+    await updateLabelled("service", service.id, { color: "", bold: false });
+    const reread = (await QuotationModel.findById(quotation._id).lean())!;
+    expect(reread.includes.find((l) => l.text === service.label)!.color).toBe("#dc2626");
+  });
+
+  it("keeps the selection ids so the form can be restored on edit or duplicate", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const stay = quotation.stays[0]!;
+
+    // Meal ids alongside the frozen labels.
+    expect(String(stay.mealId)).toBe(String(baseInput.stays[0]!.mealId));
+    // Service selection ids alongside the styled label lines.
+    expect(quotation.minaServiceIds.map(String).sort()).toEqual([...baseInput.minaServiceIds!].sort());
+    expect(quotation.includeIds.length).toBe(quotation.includes.length);
+  });
+
   it("resolves service ids into the labels the PDF prints", async () => {
     const quotation = await createQuotation(baseInput, staff);
-    expect(quotation.minaServices.join(" ")).toContain("Gypsum-covered Tents");
+    expect(quotation.minaServices.map((s) => s.text).join(" ")).toContain("Gypsum-covered Tents");
     expect(quotation.includes.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * A guest who keeps their Aziziya room across the Hajj days. The admin builds a
+ * block that spans the Hajj days (04 -> 17 Zilhaj), and the Hajj row sits inside
+ * it: the hotel is booked for the whole fortnight, the Maktab charged on its own
+ * row, and the spanned days counted once.
+ */
+describe("a stay spanning the Hajj days", () => {
+  let spanningInput: QuotationInput;
+
+  beforeAll(async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const aziziya = bundle.accommodations.find((a) => a.name === "Aziziya Hotel")!;
+    const minaStd = bundle.accommodations.find((a) => a.name === "Mina Standard")!;
+    const hajj = bundle.blocks.find((b) => b.phase === "hajj")!; // 07 -> 12 Zilhaj
+
+    // The admin adds the fortnight-long Aziziya block and prices it.
+    const covering = await upsertDateBlock(null, {
+      season: DEFAULT_SEASON,
+      startHijri: { month: "Zilhaj", day: 4 },
+      endHijri: { month: "Zilhaj", day: 17 },
+      phase: "pre",
+      allowedLocationIds: [aziziya.locationId],
+      sortOrder: 50,
+      active: true,
+    });
+    const coveringId = String((covering as { _id: unknown })._id);
+
+    await upsertRate(aziziya.id, coveringId, DEFAULT_SEASON, {
+      model: "sharingOrSeparate",
+      sharing: 95_000,
+      separate: { Quad: 140_000, Triple: 165_000, Double: 210_000 },
+    });
+
+    spanningInput = {
+      ...baseInput,
+      guest: { name: "Spanning Guest", pax: 2 },
+      stays: [
+        {
+          blockId: coveringId,
+          locationId: aziziya.locationId,
+          accommodationId: aziziya.id,
+          roomType: "sharing",
+          mealId: aziziya.allowedMealIds[0],
+        },
+        {
+          blockId: hajj.id,
+          locationId: minaStd.locationId,
+          accommodationId: minaStd.id,
+          mealId: minaStd.allowedMealIds[0],
+        },
+      ],
+    };
+  }, 30_000);
+
+  it("saves without an overlap or gap warning", async () => {
+    const priced = await priceQuotation(spanningInput);
+    expect(priced.warnings).toEqual([]);
+  });
+
+  it("marks the spanning stay, and only it, as covering the Hajj", async () => {
+    const doc = await buildQuotationDocument(spanningInput, staff, "HQ-TEST");
+    const covering = doc.stays.filter((s) => s.coversHajj);
+
+    expect(covering).toHaveLength(1);
+    expect(covering[0]!.locationType).toBe("aziziya");
+  });
+
+  it("orders the Hajj row directly after the stay that spans it", async () => {
+    const doc = await buildQuotationDocument(spanningInput, staff, "HQ-TEST");
+    const types = doc.stays.map((s) => s.locationType);
+
+    expect(types.indexOf("mina")).toBe(types.indexOf("aziziya") + 1);
+  });
+
+  it("counts the spanned days once and charges both rows", async () => {
+    const doc = await buildQuotationDocument(spanningInput, staff, "HQ-TEST");
+    const aziziya = doc.stays.find((s) => s.locationType === "aziziya")!;
+    const mina = doc.stays.find((s) => s.locationType === "mina")!;
+
+    expect(aziziya.nights).toBeGreaterThan(0);
+    expect(mina.nights).toBe(0); // its days are already in the Aziziya row
+    expect(doc.totalNights).toBe(aziziya.nights); // not aziziya + mina
+    expect(mina.lineTotal).toBeGreaterThan(0); // the Maktab is still charged
+    expect(doc.subtotal).toBe(aziziya.lineTotal + mina.lineTotal);
   });
 });
 
@@ -367,6 +491,40 @@ describe("duplicating", () => {
     const copy = await duplicateQuotation(String(original._id), staff);
     expect(copy.hbNumber).toBe("");
     expect(copy.status).toBe("draft");
+  });
+});
+
+describe("deleting", () => {
+  it("removes a quotation outright", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const result = await deleteQuotation(String(quotation._id), staff);
+
+    expect(result.ok).toBe(true);
+    expect(await QuotationModel.findById(quotation._id)).toBeNull();
+  });
+
+  it("lets an admin delete anyone's, but stops staff deleting others'", async () => {
+    const mine = await createQuotation(baseInput, staff);
+    await expect(deleteQuotation(String(mine._id), other)).rejects.toThrow(/only delete your own/i);
+
+    // The admin can, and it is really gone.
+    await deleteQuotation(String(mine._id), admin);
+    expect(await QuotationModel.findById(mine._id)).toBeNull();
+  });
+
+  it("frees the HB number so it can be used again", async () => {
+    const first = await createQuotation(baseInput, staff);
+    await changeQuotationStatus(String(first._id), { status: "confirmed", hbNumber: "HB-DEL-1" }, staff);
+    await deleteQuotation(String(first._id), staff);
+
+    // The same number now confirms a different booking without clashing.
+    const second = await createQuotation(baseInput, staff);
+    const confirmed = await changeQuotationStatus(
+      String(second._id),
+      { status: "confirmed", hbNumber: "HB-DEL-1" },
+      staff,
+    );
+    expect(confirmed.hbNumber).toBe("HB-DEL-1");
   });
 });
 
@@ -457,13 +615,80 @@ describe("ownership", () => {
 });
 
 describe("listing and reporting", () => {
-  it("scopes a staff member to their own quotations", async () => {
+  /** The bands a list falls into, in the order they appear. */
+  const bandsOf = (items: Array<{ groupLabel?: string }>): string[] =>
+    items
+      .map((item) => item.groupLabel ?? "")
+      .filter((label, index, all) => label !== all[index - 1]);
+
+  beforeAll(async () => {
+    // A deliberately mixed set: three authors across three months.
+    await createQuotation(
+      { ...baseInput, date: new Date("2027-03-05"), guest: { name: "Zubair Ali", pax: 1 } },
+      other,
+    );
+    await createQuotation(
+      { ...baseInput, date: new Date("2027-04-19"), guest: { name: "Hina Malik", pax: 1 } },
+      admin,
+    );
+  }, 30_000);
+
+  it("shows everyone's work, and narrows to one author on request", async () => {
     const all = await listQuotations({ season: DEFAULT_SEASON });
     const mine = await listQuotations({ season: DEFAULT_SEASON, createdBy: staff.userId });
 
     expect(mine.total).toBeGreaterThan(0);
     expect(mine.total).toBeLessThan(all.total);
     expect(mine.items.every((q) => String(q.createdBy) === staff.userId)).toBe(true);
+  });
+
+  it("orders by the quotation date, either way round", async () => {
+    const times = (items: Array<{ date: Date }>) => items.map((q) => new Date(q.date).getTime());
+
+    const newest = await listQuotations({ season: DEFAULT_SEASON, sort: "date-desc", pageSize: 100 });
+    const oldest = await listQuotations({ season: DEFAULT_SEASON, sort: "date-asc", pageSize: 100 });
+
+    expect(times(newest.items)).toEqual([...times(newest.items)].sort((a, b) => b - a));
+    expect(times(oldest.items)).toEqual([...times(oldest.items)].sort((a, b) => a - b));
+    // The set really does span more than one date, or the above proves nothing.
+    expect(new Set(times(newest.items)).size).toBeGreaterThan(1);
+  });
+
+  it("stamps every row with its band, and never splits a band", async () => {
+    for (const groupBy of ["staff", "status", "month"] as const) {
+      const list = await listQuotations({ season: DEFAULT_SEASON, groupBy, pageSize: 100 });
+      const bands = bandsOf(list.items);
+
+      expect(list.items.every((q) => typeof q.groupLabel === "string")).toBe(true);
+      expect(new Set(bands).size).toBe(bands.length); // no band reappears later
+      expect(list.items[0]).not.toHaveProperty("groupSort"); // internal, not shipped
+    }
+  });
+
+  it("bands months newest first and people alphabetically", async () => {
+    const months = await listQuotations({ season: DEFAULT_SEASON, groupBy: "month", pageSize: 100 });
+    const monthBands = bandsOf(months.items);
+    expect(monthBands.length).toBeGreaterThan(1);
+    expect(monthBands).toEqual([...monthBands].sort().reverse());
+
+    const staffed = await listQuotations({ season: DEFAULT_SEASON, groupBy: "staff", pageSize: 100 });
+    const names = bandsOf(staffed.items);
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it("bands statuses the way a booking moves, not alphabetically", async () => {
+    const list = await listQuotations({ season: DEFAULT_SEASON, groupBy: "status", pageSize: 100 });
+    const bands = bandsOf(list.items);
+
+    expect(bands).toEqual(["draft", "sent", "confirmed", "expired"].filter((s) => bands.includes(s)));
+  });
+
+  it("names everyone who has written a quotation", async () => {
+    const authors = await quotationAuthors(DEFAULT_SEASON);
+
+    expect(authors.map((a) => a.name)).toEqual(expect.arrayContaining(["Bilal", "Owner", "Sana"]));
+    expect(authors.every((a) => /^[a-f\d]{24}$/i.test(a.userId))).toBe(true);
   });
 
   it("searches by guest name and quotation number", async () => {
@@ -528,6 +753,9 @@ describe("a package sold without Mina", () => {
     expect(quotation.withoutMina).toBe(true);
     expect(hajj.accommodationName).toBe("Without Mina");
     expect(hajj.minaTier).toBeNull();
+    // The stay carries its own "books no tent" flag, so the PDF prints the
+    // option's name rather than the Maktab.
+    expect(hajj.withoutMina).toBe(true);
     expect(hajj.lineTotal).toBeGreaterThan(0);
     // The days are still covered, so the nights match a tented package.
     expect(quotation.totalNights).toBe(8);

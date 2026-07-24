@@ -1,6 +1,8 @@
 /** Shapes returned by the API, mirrored for the client. */
 
-import type { ConfigBundle, SharingWord } from "@junaidi/shared";
+import type { ConfigBundle, SharingWord, StyledLine } from "@junaidi/shared";
+
+export type { StyledLine };
 
 export interface SessionUser {
   userId: string;
@@ -51,16 +53,23 @@ export interface QuotationStay {
   locationType: string;
   accommodationName: string;
   minaTier: string | null;
+  /** This Mina option books no tent. */
+  withoutMina?: boolean;
   bedsPerTent: number | null;
   roomType: "sharing" | "separate" | null;
   occupancy: "Quad" | "Triple" | "Double" | null;
   sharingWord: SharingWord | null;
   roomLabel: string;
   meal: string;
+  /** Set on newer quotations, so editing/duplicating can restore the choice. */
+  mealId: string | null;
   mealNote: string;
+  mealNoteId: string | null;
   nights: number;
   rateSnapshot: number;
   lineTotal: number;
+  /** This stay spans the Hajj days, listed again as their own row. */
+  coversHajj?: boolean;
 }
 
 export interface QuotationFlight {
@@ -87,12 +96,18 @@ export interface Quotation {
   qurbaniIncluded: boolean;
   stays: QuotationStay[];
   flight: QuotationFlight;
-  minaServices: string[];
-  arafatServices: string[];
-  includes: string[];
+  minaServices: StyledLine[];
+  arafatServices: StyledLine[];
+  includes: StyledLine[];
   includesNote: string;
-  requirements: string[];
-  terms: string[];
+  requirements: StyledLine[];
+  terms: StyledLine[];
+  /** Selection ids, so editing/duplicating can restore the ticked services. */
+  minaServiceIds?: string[];
+  arafatServiceIds?: string[];
+  includeIds?: string[];
+  requirementIds?: string[];
+  termIds?: string[];
   remarks: string;
   totalNights: number;
   subtotal: number;
@@ -104,6 +119,8 @@ export interface Quotation {
   createdByName: string;
   createdAt: string;
   updatedAt: string;
+  /** Set when the list was grouped: the band this row belongs to. */
+  groupLabel?: string;
 }
 
 export interface QuotationList {
@@ -112,4 +129,49 @@ export interface QuotationList {
   page: number;
   pageSize: number;
   pages: number;
+}
+
+/** Someone who has written a quotation. */
+export interface QuotationAuthor {
+  userId: string;
+  name: string;
+}
+
+/** A predefined package: a quotation shape staff can start from. */
+export interface Package {
+  _id: string;
+  name: string;
+  season: string;
+  packageTitle: string;
+  packageCategory: string;
+  withoutMina: boolean;
+  qurbaniIncluded: boolean;
+  minaAccommodationId: string | null;
+  stays: Array<{
+    blockId: string;
+    locationId: string;
+    accommodationId: string;
+    roomType: "sharing" | "separate" | null;
+    occupancy: "Quad" | "Triple" | "Double" | null;
+    sharingWord: SharingWord | null;
+    mealId: string | null;
+    mealNoteId: string | null;
+  }>;
+  flight: {
+    included: boolean;
+    returnRequired: boolean;
+    roundTrip?: boolean;
+    outboundId: string | null;
+    inboundId: string | null;
+    roundTripId?: string | null;
+  };
+  minaServiceIds: string[];
+  arafatServiceIds: string[];
+  includeIds: string[];
+  requirementIds: string[];
+  termIds: string[];
+  includesNote: string;
+  remarks: string;
+  createdAt: string;
+  updatedAt: string;
 }

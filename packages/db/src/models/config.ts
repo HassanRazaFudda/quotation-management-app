@@ -133,6 +133,9 @@ const serviceItemSchema = new Schema(
     category: { type: String, required: true, enum: [...SERVICE_CATEGORIES] },
     label: { type: String, required: true, trim: true },
     defaultSelected: { type: Boolean, default: true },
+    /** How this line prints on the quotation. Empty colour = black. */
+    color: { type: String, default: "" },
+    bold: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
   },

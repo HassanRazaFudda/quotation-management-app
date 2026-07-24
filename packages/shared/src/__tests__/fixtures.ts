@@ -59,6 +59,12 @@ export const accommodations: Accommodation[] = [
     allowedMealIds: ["meal-3time"], allowedMealNoteIds: ["note-muallim"], sortOrder: 3, active: true,
   },
   {
+    // A real tent whose bed count the agency does not track - no tier at all.
+    // The tier is an optional label; this is still a tent (not "without Mina").
+    id: "acc-mina-b", locationId: "loc-mina", name: "Mina Standard B Category",
+    allowedMealIds: ["meal-3time"], allowedMealNoteIds: ["note-muallim"], sortOrder: 2, active: true,
+  },
+  {
     // Books no tent, but still charges the Muallim and transport.
     id: "acc-no-mina", locationId: "loc-mina", name: "Without Mina",
     withoutMina: true, allowedCategories: ["cat-c", "cat-d"],
@@ -81,6 +87,9 @@ export const blocks: DateBlock[] = [
   block("blk-pre-makkah", { month: "Zilqad", day: 25 }, { month: "Zilhaj", day: 1 }, "pre", ["loc-makkah"]),
   block("blk-aziziya-1", { month: "Zilhaj", day: 1 }, { month: "Zilhaj", day: 4 }, "pre", ["loc-aziziya"]),
   block("blk-aziziya-2", { month: "Zilhaj", day: 4 }, { month: "Zilhaj", day: 7 }, "pre", ["loc-aziziya"]),
+  // A stay that keeps the Aziziya room across the Hajj days: it spans both Hajj
+  // variants, so the Hajj row nests inside it instead of following it.
+  block("blk-aziziya-hajj", { month: "Zilhaj", day: 4 }, { month: "Zilhaj", day: 17 }, "pre", ["loc-aziziya"]),
   block("blk-makkah-8", { month: "Zilhaj", day: 6 }, { month: "Zilhaj", day: 8 }, "pre", ["loc-makkah"]),
   block("blk-hajj-5n", { month: "Zilhaj", day: 7 }, { month: "Zilhaj", day: 12 }, "hajj", ["loc-mina"]),
   block("blk-hajj-4n", { month: "Zilhaj", day: 8 }, { month: "Zilhaj", day: 12 }, "hajj", ["loc-mina"]),
@@ -131,12 +140,23 @@ export const rates: Rate[] = [
     separate: { Quad: 34_000, Triple: 40_000, Double: 51_000 },
   },
   {
+    // The 13-night stay that spans the Hajj days. The hotel figure only - the
+    // Maktab is charged on the Hajj row that nests inside it.
+    model: "sharingOrSeparate", accommodationId: "acc-aziziya", blockId: "blk-aziziya-hajj", season: SEASON,
+    sharing: 95_000,
+    separate: { Quad: 140_000, Triple: 165_000, Double: 210_000 },
+  },
+  {
     model: "flat", accommodationId: "acc-mina-std", blockId: "blk-hajj-5n", season: SEASON,
     amount: 145_000,
   },
   {
     model: "flat", accommodationId: "acc-mina-std", blockId: "blk-hajj-4n", season: SEASON,
     amount: 132_000,
+  },
+  {
+    model: "flat", accommodationId: "acc-mina-b", blockId: "blk-hajj-5n", season: SEASON,
+    amount: 138_000,
   },
   {
     model: "flat", accommodationId: "acc-mina-dlx", blockId: "blk-hajj-5n", season: SEASON,
