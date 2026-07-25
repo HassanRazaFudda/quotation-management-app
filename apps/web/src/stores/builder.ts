@@ -13,12 +13,15 @@ import {
   makePricingContext,
   makeValidationContext,
   nestedHajjBlocks,
+  OCCUPANCIES,
   priceFlights,
   priceStays,
+  priceTiers,
   suggestHajjBlock,
   validateItinerary,
   type FlightSelection,
   type Issue,
+  type Occupancy,
   type StayInput,
 } from "@junaidi/shared";
 import { create } from "zustand";
@@ -66,13 +69,31 @@ export interface BuilderState {
   discountNote: string;
   manualTotal: number | null;
 
+  // Package-only three-price pricing. Ignored entirely in quotation mode.
+  tierPricingEnabled: boolean;
+  tiers: Record<Occupancy, TierRow>;
+  addOns: Array<{ label: string; amount: number }>;
+
   set: <K extends keyof BuilderState>(key: K, value: BuilderState[K]) => void;
   addStay: (stay?: Partial<StayInput>) => void;
   updateStay: (key: string, patch: Partial<StayInput>) => void;
   removeStay: (key: string) => void;
   toggleService: (field: ServiceField, id: string) => void;
   setFlight: (patch: Partial<FlightSelection>) => void;
+  updateTier: (occupancy: Occupancy, patch: Partial<TierRow>) => void;
+  addAddOn: () => void;
+  updateAddOn: (index: number, patch: Partial<{ label: string; amount: number }>) => void;
+  removeAddOn: (index: number) => void;
   reset: (initial?: Partial<BuilderState>) => void;
+}
+
+/** One tier's controls in the package builder. */
+export interface TierRow {
+  /** Is this tier printed on the brochure? */
+  offered: boolean;
+  /** A typed-in price that replaces the calculated one. null = use calculated. */
+  manualTotal: number | null;
+  discount: number;
 }
 
 type ServiceField =
@@ -91,8 +112,24 @@ function today(): string {
 
 type BuilderData = Omit<
   BuilderState,
-  "set" | "addStay" | "updateStay" | "removeStay" | "toggleService" | "setFlight" | "reset"
+  | "set"
+  | "addStay"
+  | "updateStay"
+  | "removeStay"
+  | "toggleService"
+  | "setFlight"
+  | "updateTier"
+  | "addAddOn"
+  | "updateAddOn"
+  | "removeAddOn"
+  | "reset"
 >;
+
+/** Every tier offered, no override or discount - the default for a new package. */
+const emptyTiers = (): Record<Occupancy, TierRow> =>
+  Object.fromEntries(
+    OCCUPANCIES.map((occ) => [occ, { offered: true, manualTotal: null, discount: 0 }]),
+  ) as Record<Occupancy, TierRow>;
 
 const EMPTY: BuilderData = {
   quotationId: null,
@@ -126,6 +163,9 @@ const EMPTY: BuilderData = {
   discount: 0,
   discountNote: "",
   manualTotal: null,
+  tierPricingEnabled: false,
+  tiers: emptyTiers(),
+  addOns: [],
 };
 
 export const useBuilderStore = create<BuilderState>((set) => ({
@@ -174,7 +214,17 @@ export const useBuilderStore = create<BuilderState>((set) => ({
 
   setFlight: (patch) => set((s) => ({ flight: { ...s.flight, ...patch } })),
 
-  reset: (initial) => set({ ...EMPTY, date: today(), stays: [], ...initial }),
+  updateTier: (occupancy, patch) =>
+    set((s) => ({ tiers: { ...s.tiers, [occupancy]: { ...s.tiers[occupancy], ...patch } } })),
+
+  addAddOn: () => set((s) => ({ addOns: [...s.addOns, { label: "", amount: 0 }] })),
+  updateAddOn: (index, patch) =>
+    set((s) => ({ addOns: s.addOns.map((a, i) => (i === index ? { ...a, ...patch } : a)) })),
+  removeAddOn: (index) => set((s) => ({ addOns: s.addOns.filter((_, i) => i !== index) })),
+
+  // A fresh package/quotation starts with all tiers offered and no add-ons.
+  reset: (initial) =>
+    set({ ...EMPTY, date: today(), stays: [], tiers: emptyTiers(), addOns: [], ...initial }),
 }));
 
 // ------------------------------------------------------- local computation
@@ -191,6 +241,13 @@ export interface LocalResult {
   perStayNights: Record<string, number>;
   perStayTotal: Record<string, number>;
   suggestedHajjBlockId: string | null;
+  /**
+   * The calculated tier prices (package mode): the itinerary priced with the
+   * hotels at each occupancy, plus the flight. `complete` is false when a hotel
+   * has no rate for that tier, so the figure is short and the staff should type
+   * the price in. Mirrors the server's `buildPackagePdfBundle` exactly.
+   */
+  tierAuto: Record<Occupancy, { total: number; complete: boolean }>;
 }
 
 /**
@@ -224,6 +281,11 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
   let subtotal = 0;
   let manualOverride = state.manualTotal !== null;
   let finalTotal = 0;
+  const tierAuto: LocalResult["tierAuto"] = {
+    Quad: { total: 0, complete: false },
+    Triple: { total: 0, complete: false },
+    Double: { total: 0, complete: false },
+  };
 
   try {
     const pricing = makePricingContext({
@@ -279,6 +341,15 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     subtotal = totals.subtotal;
     finalTotal = totals.finalTotal;
     manualOverride = totals.manualOverride;
+
+    // Tier suggestions: the hotels priced at each occupancy, plus the flight
+    // (which is the same across tiers). Matches the server on save/print.
+    for (const tier of priceTiers(complete, pricing)) {
+      tierAuto[tier.occupancy] = {
+        total: tier.total + flights.total,
+        complete: tier.complete,
+      };
+    }
   } catch {
     // Config not ready; totals stay at zero.
   }
@@ -295,6 +366,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     perStayNights,
     perStayTotal,
     suggestedHajjBlockId: suggested?.id ?? null,
+    tierAuto,
   };
 }
 
@@ -374,5 +446,19 @@ export function toPackagePayload(state: BuilderState, season: string, name: stri
     termIds: state.termIds,
     includesNote: state.includesNote,
     remarks: state.remarks,
+    tierPricing: {
+      enabled: state.tierPricingEnabled,
+      Quad: tierDoc(state.tiers.Quad),
+      Triple: tierDoc(state.tiers.Triple),
+      Double: tierDoc(state.tiers.Double),
+    },
+    addOns: state.addOns
+      .map((addOn) => ({ label: addOn.label.trim(), amount: Math.max(0, Math.round(addOn.amount)) }))
+      .filter((addOn) => addOn.label.length > 0),
   };
+}
+
+/** A tier's stored controls, or null when it is not offered on the brochure. */
+function tierDoc(row: TierRow) {
+  return row.offered ? { manualTotal: row.manualTotal, discount: Math.max(0, row.discount) } : null;
 }

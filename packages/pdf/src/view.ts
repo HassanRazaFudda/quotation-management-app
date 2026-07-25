@@ -37,6 +37,8 @@ export interface PdfCompany {
   tagline: string;
   address: string;
   contact: string;
+  /** Social links for the header icons; an empty string hides that icon. */
+  social: { facebook: string; instagram: string; youtube: string };
 }
 
 /**
@@ -73,7 +75,33 @@ export const DEFAULT_COMPANY: PdfCompany = {
   tagline: "",
   address: "Suite No. 7-8, Mona Square, Jahangir Road, Gurumandir, Karachi",
   contact: "Phone: 021-34130184-87 | E-Mail: junaiditravels@gmail.com",
+  social: {
+    facebook: "http://www.facebook.com/Junaidigroup/",
+    instagram: "https://www.instagram.com/junaidiairtravel",
+    youtube: "https://www.youtube.com/@Junaidi-Group",
+  },
 };
+
+/**
+ * One printed tier price. Like the single total, this is the ONLY money shape
+ * the renderer sees for a package: a label and an already-final, already-
+ * formatted figure. The discount and calculated value stay behind, exactly as
+ * they do for a quotation's single price.
+ */
+export interface PdfTierPrice {
+  /** "Quad", "Triple", "Double". */
+  label: string;
+  /** "PKR 3,650,000 /-" — already discounted, already formatted. */
+  priceFormatted: string;
+}
+
+/** A per-room-type surcharge line printed under a package's itinerary. */
+export interface PdfAddOn {
+  /** "Aziziya Triple Bed". */
+  label: string;
+  /** "PKR 200,000 /-" — already formatted. */
+  amountFormatted: string;
+}
 
 export interface QuotationPdfView {
   quotationId: string;
@@ -85,8 +113,15 @@ export interface QuotationPdfView {
   /** "Hajj 2027/1448 - Maktab A Category - 28 Days Package (Customize)". */
   packageTitle: string;
 
-  /** "PKR 919,000 /-" — the only money on the page. */
+  /** "PKR 919,000 /-" — the single price, when not printing tiers. */
   totalPrice: string;
+  /**
+   * A package's two or three prices for one itinerary. When present, these
+   * replace the single `totalPrice` panel. Empty for a customer quotation.
+   */
+  tierPrices: PdfTierPrice[];
+  /** Package add-on surcharges, printed as a band under the itinerary. */
+  addOns: PdfAddOn[];
 
   travel: PdfTravel;
   stays: PdfStayRow[];
@@ -120,6 +155,10 @@ export interface PdfViewInput {
   packageTitle: string;
   /** Pass the FINAL price only — already discounted, already formatted. */
   totalPriceFormatted: string;
+  /** A package's tier prices, each already final and formatted. Omit for a quotation. */
+  tierPrices?: PdfTierPrice[];
+  /** A package's add-on surcharges, each already formatted. Omit for a quotation. */
+  addOns?: PdfAddOn[];
   travel?: Partial<PdfTravel>;
   stays: PdfStayRow[];
   qurbaniIncluded?: boolean;
@@ -154,6 +193,13 @@ export function buildPdfView(input: PdfViewInput): QuotationPdfView {
     packageTitle: input.packageTitle.trim(),
 
     totalPrice: input.totalPriceFormatted.trim(),
+    tierPrices: (input.tierPrices ?? []).map((tier) => ({
+      label: tier.label.trim(),
+      priceFormatted: tier.priceFormatted.trim(),
+    })),
+    addOns: (input.addOns ?? [])
+      .map((addOn) => ({ label: addOn.label.trim(), amountFormatted: addOn.amountFormatted.trim() }))
+      .filter((addOn) => addOn.label.length > 0),
 
     travel: {
       included: input.travel?.included ?? false,

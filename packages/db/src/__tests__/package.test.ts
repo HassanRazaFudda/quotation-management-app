@@ -6,6 +6,8 @@ import { DEFAULT_SEASON, seed } from "../seed";
 import { getConfigBundle } from "../services/config";
 import {
   PackageError,
+  buildPackagePdfBundle,
+  createQuotationFromPackage,
   deactivatePackage,
   getPackage,
   listPackages,
@@ -103,6 +105,137 @@ describe("saving a package", () => {
 
     expect(String(updated!._id)).toBe(String(saved!._id));
     expect(updated!.name).toBe("Renamed Package");
+  });
+
+  it("defaults to no tier pricing, so it stays a single-price template", async () => {
+    const saved = await upsertPackage(null, base);
+    const tp = saved!.tierPricing!;
+    expect(tp.enabled).toBe(false);
+    expect(tp.Quad).toBeNull();
+    expect(tp.Triple).toBeNull();
+    expect(tp.Double).toBeNull();
+  });
+
+  it("stores only the offered tiers, each with its own controls", async () => {
+    const saved = await upsertPackage(null, {
+      ...base,
+      name: "Three-price Package",
+      tierPricing: {
+        enabled: true,
+        Quad: { manualTotal: 3_650_000, discount: 0 },
+        Triple: { manualTotal: null, discount: 50_000 },
+        Double: null, // not offered
+      },
+    });
+
+    const tp = saved!.tierPricing!;
+    expect(tp.enabled).toBe(true);
+    expect(tp.Quad).toMatchObject({ manualTotal: 3_650_000, discount: 0 });
+    expect(tp.Triple).toMatchObject({ manualTotal: null, discount: 50_000 });
+    expect(tp.Double).toBeNull();
+  });
+});
+
+describe("resolving a package for its brochure PDF", () => {
+  it("prices each offered tier and honours a manual override or discount", async () => {
+    const created = await upsertPackage(null, {
+      ...base,
+      name: "Priced Brochure",
+      tierPricing: {
+        enabled: true,
+        Quad: { manualTotal: 3_650_000, discount: 0 },
+        Triple: { manualTotal: 3_750_000, discount: 0 },
+        Double: null, // not offered
+      },
+      addOns: [{ label: "Aziziya Double Bed", amount: 400_000 }],
+    });
+
+    const { tierPrices, addOns, doc } = await buildPackagePdfBundle(String(created!._id));
+
+    // Only the two offered tiers, in order, at their typed-in prices.
+    expect(tierPrices.map((t) => t.label)).toEqual(["Quad", "Triple"]);
+    expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_650_000);
+    expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_750_000);
+
+    // Add-ons carried through, and the itinerary resolved to real names.
+    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 400_000 }]);
+    expect(doc.stays.length).toBeGreaterThan(0);
+    expect(doc.stays[0]!.accommodationName).toBeTruthy();
+  });
+
+  it("carries an optional customer, and stays anonymous without one", async () => {
+    const created = await upsertPackage(null, { ...base, name: "Optional Guest" });
+
+    const anon = await buildPackagePdfBundle(String(created!._id));
+    expect(anon.doc.guest.name).toBe("");
+
+    const named = await buildPackagePdfBundle(String(created!._id), {
+      guest: { name: "Rashid Shahid", pax: 2 },
+    });
+    expect(named.doc.guest).toMatchObject({ name: "Rashid Shahid", pax: 2 });
+  });
+
+  it("offers no tiers when tier pricing is off", async () => {
+    const created = await upsertPackage(null, { ...base, name: "No Tiers" });
+    const { tierPrices } = await buildPackagePdfBundle(String(created!._id));
+    expect(tierPrices).toEqual([]);
+  });
+
+  it("takes a print discount off every tier and names who printed it", async () => {
+    const created = await upsertPackage(null, {
+      ...base,
+      name: "Discounted Brochure",
+      tierPricing: {
+        enabled: true,
+        Quad: { manualTotal: 3_650_000, discount: 0 },
+        Triple: { manualTotal: 3_750_000, discount: 0 },
+        Double: null,
+      },
+    });
+
+    const { tierPrices, doc } = await buildPackagePdfBundle(String(created!._id), {
+      discount: 50_000,
+      generatedBy: "Bilal Ahmed",
+    });
+
+    expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_600_000);
+    expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_700_000);
+    expect(doc.createdByName).toBe("Bilal Ahmed");
+  });
+});
+
+describe("saving a package as a customer quotation", () => {
+  it("creates a confirmable draft quotation with the customer and discount", async () => {
+    const created = await upsertPackage(null, { ...base, name: "To Quote" });
+
+    const quotation = await createQuotationFromPackage(
+      String(created!._id),
+      { userId: "6a624a95b9081c0a38e3d954", name: "Bilal Ahmed", role: "staff" },
+      { guest: { name: "Rashid Shahid", pax: 2 }, discount: 30_000 },
+    );
+
+    expect(quotation.status).toBe("draft");
+    expect(quotation.guest?.name).toBe("Rashid Shahid");
+    expect(quotation.quotationId).toMatch(/^HQ-/);
+    expect(quotation.createdByName).toBe("Bilal Ahmed");
+    // The discount is internal but recorded, so the final total reflects it.
+    expect(quotation.discount).toBe(30_000);
+    expect(quotation.hbNumber).toBe("");
+  });
+
+  it("sets the hotel occupancy from the chosen tier", async () => {
+    const created = await upsertPackage(null, { ...base, name: "Tiered Quote" });
+
+    const quotation = await createQuotationFromPackage(
+      String(created!._id),
+      { userId: "6a624a95b9081c0a38e3d955", name: "Bilal", role: "staff" },
+      { guest: { name: "Guest", pax: 1 }, tier: "Double" },
+    );
+
+    // base has no Makkah/Madinah hotel, but the tier must not corrupt the
+    // Aziziya (sharingOrSeparate) or Mina (flat) rooms.
+    const aziziya = quotation.stays.find((s) => s.roomType === "sharing");
+    expect(aziziya).toBeTruthy();
   });
 });
 

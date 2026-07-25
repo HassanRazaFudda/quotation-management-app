@@ -77,6 +77,23 @@ export const quotationSchema = z.object({
  * The itinerary and service fields are shared with a quotation; only the guest,
  * dates and pricing are dropped and a package name is added.
  */
+/** One offered tier's controls: an optional typed-in price and a discount. */
+const tierSettingSchema = z.object({
+  manualTotal: z.number().min(0).nullish(),
+  discount: z.number().min(0).default(0),
+});
+
+/**
+ * A package's three-price block. Each tier is nullable: null (or absent) means
+ * that tier is not offered, so a package can carry one, two or three prices.
+ */
+export const tierPricingSchema = z.object({
+  enabled: z.boolean().default(false),
+  Quad: tierSettingSchema.nullish(),
+  Triple: tierSettingSchema.nullish(),
+  Double: tierSettingSchema.nullish(),
+});
+
 export const packageSchema = z.object({
   id: objectId.nullish(),
   name: z.string().min(1, "A package needs a name."),
@@ -97,6 +114,42 @@ export const packageSchema = z.object({
 
   includesNote: z.string().default(""),
   remarks: z.string().default(""),
+
+  tierPricing: tierPricingSchema.optional(),
+  /** Per-room-type surcharges printed under the itinerary. */
+  addOns: z
+    .array(z.object({ label: z.string().default(""), amount: z.number().min(0).default(0) }))
+    .default([]),
+});
+
+/**
+ * Printing a package. The customer is optional - a package prints as a plain
+ * brochure with no name, or as a named quote when details are entered.
+ */
+export const packagePrintSchema = z.object({
+  guest: z
+    .object({
+      name: z.string().default(""),
+      pax: z.number().int().min(1).max(500).default(1),
+    })
+    .optional(),
+  validUntil: z.string().nullish(),
+  /** A negotiated discount off every printed price. Internal - never printed. */
+  discount: z.number().min(0).default(0),
+});
+
+/**
+ * Saving a package as a customer quotation. Unlike printing, a quotation needs
+ * a named guest, and a tiered package needs the chosen room tier.
+ */
+export const packageQuoteSchema = z.object({
+  guest: z.object({
+    name: z.string().min(1, "Guest name is required."),
+    pax: z.number().int().min(1).max(500).default(1),
+  }),
+  validUntil: z.string().nullish(),
+  discount: z.number().min(0).default(0),
+  tier: z.enum(["Quad", "Triple", "Double"]).nullish(),
 });
 
 /** Live pricing needs less than a full save. */

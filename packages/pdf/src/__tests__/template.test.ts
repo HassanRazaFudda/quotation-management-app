@@ -12,9 +12,33 @@ describe("the rendered document", () => {
     expect(html).toContain(">JUNAIDI</span>");
     expect(html).toContain(">GROUP</span>");
     expect(html).toContain("TRAVEL &amp; TOURS");
-    expect(html).toContain("HAJJ &amp; UMRAH SERVICES");
+    expect(html).toContain("Mona Square"); // the address line
     expect(html).toContain("HQ-1447-0042");
     expect(html).toContain("Rashid Shahid * 02 PAX");
+  });
+
+  it("links each social icon to its page, and omits an empty one", () => {
+    const branded = buildHtml(
+      buildPdfView({
+        ...sampleInput,
+        company: {
+          name: "JUNAIDI GROUP",
+          subheading: "TRAVEL & TOURS",
+          tagline: "",
+          address: "Karachi",
+          contact: "info@x.com",
+          // Instagram left blank, to prove an unset link is dropped.
+          social: {
+            facebook: "http://www.facebook.com/Junaidigroup/",
+            instagram: "",
+            youtube: "https://www.youtube.com/@Junaidi-Group",
+          },
+        },
+      }),
+    );
+    expect(branded).toContain('href="http://www.facebook.com/Junaidigroup/"');
+    expect(branded).toContain('href="https://www.youtube.com/@Junaidi-Group"');
+    expect(branded).not.toContain("instagram"); // empty link renders no icon
   });
 
   it("embeds the Nexa brand font so the header does not fall back to a system face", () => {
@@ -59,6 +83,53 @@ describe("the rendered document", () => {
 
   it("shows the price once", () => {
     expect(html.split("PKR 919,000 /-").length - 1).toBe(1);
+  });
+});
+
+describe("a package brochure", () => {
+  const brochure = buildHtml(
+    buildPdfView({
+      ...sampleInput,
+      quotationId: "",
+      guestName: "",
+      tierPrices: [
+        { label: "Quad", priceFormatted: "PKR 3,650,000 /-" },
+        { label: "Triple", priceFormatted: "PKR 3,750,000 /-" },
+        { label: "Double", priceFormatted: "PKR 3,900,000 /-" },
+      ],
+      addOns: [
+        { label: "Aziziya Triple Bed", amountFormatted: "PKR 200,000 /-" },
+        { label: "Aziziya Double Bed", amountFormatted: "PKR 400,000 /-" },
+      ],
+    }),
+  );
+
+  it("prints the three tier prices instead of a single total", () => {
+    expect(brochure).toContain("Package Price Per Person");
+    expect(brochure).toContain("PKR 3,650,000 /-");
+    expect(brochure).toContain("PKR 3,750,000 /-");
+    expect(brochure).toContain("PKR 3,900,000 /-");
+    expect(brochure).not.toContain("Total Estimated Package Price Per Person");
+  });
+
+  it("prints the per-room-type add-on charges", () => {
+    expect(brochure).toContain("Aziziya Triple Bed");
+    expect(brochure).toContain("PKR 200,000 /-");
+    expect(brochure).toContain("Aziziya Double Bed");
+    expect(brochure).toContain("PKR 400,000 /-");
+  });
+
+  it("drops the quotation-only rows when there is no customer or reference", () => {
+    // The row markup, not the CSS comment that also names the label.
+    expect(brochure).not.toContain('class="label">Quotation ID:');
+    expect(brochure).not.toContain('class="label">Guest Name:');
+  });
+
+  it("still keeps a single price and no add-ons for a normal quotation", () => {
+    const quotation = buildHtml(sampleView);
+    expect(quotation).toContain("Total Estimated Package Price Per Person");
+    expect(quotation).not.toContain('class="tier-band"');
+    expect(quotation).not.toContain('class="addons-band"');
   });
 });
 

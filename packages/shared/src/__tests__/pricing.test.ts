@@ -4,10 +4,12 @@ import { resolveBlocks } from "../calendar";
 import {
   PricingError,
   calculateTotals,
+  finalTierTotal,
   formatPrice,
   makePricingContext,
   priceStay,
   priceStays,
+  priceTiers,
   toPdfTotals,
 } from "../pricing";
 import { OCCUPANCIES, emptyRate, type StayInput } from "../types";
@@ -277,6 +279,76 @@ describe("formatPrice", () => {
   it("matches the existing quotation format", () => {
     expect(formatPrice(2_700_000)).toBe("PKR 2,700,000 /-");
     expect(formatPrice(0)).toBe("PKR 0 /-");
+  });
+});
+
+/**
+ * A package prints three prices for one itinerary. Only the Makkah / Madinah
+ * hotels move between Quad, Triple and Double; Aziziya and Mina hold their own
+ * figure across all three.
+ */
+describe("priceTiers - a package's three prices", () => {
+  const stays: StayInput[] = [
+    { blockId: "blk-pre-madinah", locationId: "loc-madinah", accommodationId: "acc-sofitel", ...sharing },
+    { blockId: "blk-pre-makkah", locationId: "loc-makkah", accommodationId: "acc-swiss", ...sharing },
+    { blockId: "blk-aziziya-2", locationId: "loc-aziziya", accommodationId: "acc-aziziya", roomType: "sharing" },
+    { blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std" },
+  ];
+  // Aziziya sharing (22k) + Mina flat (145k) sit in every tier unchanged.
+  const constant = 22_000 + 145_000;
+  const byOccupancy = (t: (typeof OCCUPANCIES)[number]) => {
+    const value = new Map(priceTiers(stays, context).map((r) => [r.occupancy, r.total])).get(t);
+    return value ?? 0;
+  };
+
+  it("moves only the hotels between tiers", () => {
+    expect(byOccupancy("Quad")).toBe(110_000 + 150_000 + constant);
+    expect(byOccupancy("Triple")).toBe(130_000 + 175_000 + constant);
+    expect(byOccupancy("Double")).toBe(160_000 + 220_000 + constant);
+  });
+
+  it("ignores a hotel stay's own room choice - the tier decides occupancy", () => {
+    // The same itinerary with the hotels marked Double still tiers identically.
+    const hotels = new Set(["acc-sofitel", "acc-swiss"]);
+    const asDouble = stays.map((s) =>
+      hotels.has(s.accommodationId)
+        ? { ...s, roomType: "sharing" as const, occupancy: "Double" as const }
+        : s,
+    );
+    expect(priceTiers(asDouble, context)).toEqual(priceTiers(stays, context));
+  });
+
+  it("returns all three tiers, in order, and flags them complete", () => {
+    const tiers = priceTiers(stays, context);
+    expect(tiers.map((t) => t.occupancy)).toEqual(["Quad", "Triple", "Double"]);
+    expect(tiers.every((t) => t.complete)).toBe(true);
+  });
+
+  it("marks a tier incomplete when a hotel has no rate for the block", () => {
+    // Sofitel has no rate in the Hajj block, so nothing can be summed for it.
+    const missing: StayInput[] = [
+      { blockId: "blk-hajj-5n", locationId: "loc-madinah", accommodationId: "acc-sofitel", ...sharing },
+    ];
+    expect(priceTiers(missing, context).every((t) => t.complete)).toBe(false);
+  });
+});
+
+describe("finalTierTotal - override and discount per tier", () => {
+  it("uses the calculated total when nothing overrides it", () => {
+    expect(finalTierTotal(427_000, { manualTotal: null, discount: 0 })).toBe(427_000);
+  });
+
+  it("lets a typed-in price win outright, ignoring the discount", () => {
+    expect(finalTierTotal(427_000, { manualTotal: 3_650_000, discount: 99_999 })).toBe(3_650_000);
+  });
+
+  it("subtracts that tier's own discount from the calculated total", () => {
+    expect(finalTierTotal(427_000, { manualTotal: null, discount: 27_000 })).toBe(400_000);
+  });
+
+  it("never goes below zero", () => {
+    expect(finalTierTotal(427_000, { manualTotal: null, discount: 999_999_999 })).toBe(0);
+    expect(finalTierTotal(-10, { manualTotal: null, discount: 0 })).toBe(0);
   });
 });
 

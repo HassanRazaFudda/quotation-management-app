@@ -125,11 +125,16 @@ function formatDate(value: Date | string | null | undefined): string {
 function accommodationLabel(
   stay: QuotationLike["stays"][number],
   packageCategory: string,
+  dropRoom = false,
 ): string {
   if (stay.locationType === "mina") {
     if (stay.withoutMina) return stay.accommodationName;
     return packageCategory || stay.accommodationName;
   }
+
+  // A package prints its room sizes as the tier price columns, so the itinerary
+  // names only the hotel - "Aziziya Hotel", not "Aziziya Hotel (Sharing)".
+  if (dropRoom) return stay.accommodationName;
 
   const room = stay.roomLabel || roomLabel(stay);
   return room ? `${stay.accommodationName} (${room})` : stay.accommodationName;
@@ -190,21 +195,52 @@ function travelNote(quotation: QuotationLike): string {
   return "";
 }
 
-export async function toPdfView(quotation: QuotationLike): Promise<QuotationPdfView> {
-  const guestLine = quotation.guest.pax > 1
-    ? `${quotation.guest.name} * ${String(quotation.guest.pax).padStart(2, "0")} PAX`
-    : quotation.guest.name;
+/** A package brochure differs from a customer quotation in a few small ways. */
+export interface PdfViewOptions {
+  /**
+   * Render as a package: no reference number, the room type dropped from the
+   * itinerary, and the tier prices below in place of one. The customer is
+   * optional here - a name is shown only when one is entered.
+   */
+  asPackage?: boolean;
+  /** A package's tier prices, each an already-final figure. */
+  tierPrices?: Array<{ label: string; total: number }>;
+  /** A package's per-room-type surcharges. */
+  addOns?: Array<{ label: string; amount: number }>;
+}
+
+export async function toPdfView(
+  quotation: QuotationLike,
+  options: PdfViewOptions = {},
+): Promise<QuotationPdfView> {
+  const asPackage = options.asPackage ?? false;
+
+  const guestLine =
+    quotation.guest.pax > 1
+      ? `${quotation.guest.name} * ${String(quotation.guest.pax).padStart(2, "0")} PAX`
+      : quotation.guest.name;
 
   return buildPdfView({
-    quotationId: quotation.quotationId,
-    hbNumber: quotation.hbNumber ?? "",
-    date: formatDate(quotation.date),
+    // A package carries no reference number or booking - those belong to an
+    // individual quotation, so the ID / HB rows drop out. The customer is
+    // optional: an empty guest name simply hides the guest row.
+    quotationId: asPackage ? "" : quotation.quotationId,
+    hbNumber: asPackage ? "" : (quotation.hbNumber ?? ""),
+    date: asPackage ? "" : formatDate(quotation.date),
     guestName: guestLine,
     validUntil: formatDate(quotation.validUntil),
     packageTitle: quotation.packageTitle ?? "",
 
     // The final, already-discounted figure. Nothing else about money is passed.
     totalPriceFormatted: formatPrice(quotation.finalTotal),
+    tierPrices: options.tierPrices?.map((tier) => ({
+      label: tier.label,
+      priceFormatted: formatPrice(tier.total),
+    })),
+    addOns: options.addOns?.map((addOn) => ({
+      label: addOn.label,
+      amountFormatted: formatPrice(addOn.amount),
+    })),
 
     travel: travelDetails(quotation),
 
@@ -213,7 +249,7 @@ export async function toPdfView(quotation: QuotationLike): Promise<QuotationPdfV
       nights: stay.nights > 0 ? `${String(stay.nights).padStart(2, "0")} Nights` : "",
       dates: stay.blockLabelHijri,
       datesSub: stay.blockLabelGregorian ?? "",
-      accommodation: accommodationLabel(stay, quotation.packageCategory ?? ""),
+      accommodation: accommodationLabel(stay, quotation.packageCategory ?? "", asPackage),
       meal: stay.meal ?? "",
       mealNote: stay.mealNote ?? "",
     })),

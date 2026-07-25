@@ -75,8 +75,8 @@ export interface QuotationStay {
 export interface QuotationFlight {
   included: boolean;
   returnRequired: boolean;
-  outbound: { label: string; airline: string; origin: string; destination: string; price: number } | null;
-  inbound: { label: string; airline: string; origin: string; destination: string; price: number } | null;
+  outbound: { optionId?: string; label: string; airline: string; origin: string; destination: string; price: number } | null;
+  inbound: { optionId?: string; label: string; airline: string; origin: string; destination: string; price: number } | null;
   total: number;
 }
 
@@ -172,6 +172,15 @@ export interface Package {
   termIds: string[];
   includesNote: string;
   remarks: string;
+  /** Package-only three-price pricing; a tier left null is not offered. */
+  tierPricing?: {
+    enabled: boolean;
+    Quad: { manualTotal: number | null; discount: number } | null;
+    Triple: { manualTotal: number | null; discount: number } | null;
+    Double: { manualTotal: number | null; discount: number } | null;
+  };
+  /** Per-room-type surcharges printed under the itinerary. */
+  addOns?: Array<{ label: string; amount: number }>;
   createdAt: string;
   updatedAt: string;
 }

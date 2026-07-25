@@ -2,14 +2,18 @@
 
 import {
   blockContains,
+  finalTierTotal,
   formatPrice,
   nextBlockOptions,
+  OCCUPANCIES,
   sharingWordsFor,
+  type FlightOption,
+  type Occupancy,
   type ResolvedBlock,
 } from "@junaidi/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, Pencil, Plus, RefreshCw, Wand2 } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Pencil, Plus, RefreshCw, Trash2, Wand2 } from "lucide-react";
 
 import {
   Button,
@@ -32,16 +36,61 @@ import {
   toApiPayload,
   toPackagePayload,
   useBuilderStore,
+  type TierRow,
 } from "@/stores/builder";
 import { servicesByCategory, useConfigStore } from "@/stores/config";
 import { FlightSection } from "./flight-section";
 import { PdfPreview } from "./pdf-preview";
 import { StayRow } from "./stay-row";
 
+/**
+ * Rebuild the flight picker's selection from a saved quotation. The snapshot
+ * keeps only the chosen option ids (on `outbound`/`inbound`), so the round-trip
+ * vs separate-sectors mode is inferred from the outbound option's direction: a
+ * round-trip ticket is stored with its single id sitting on the outbound leg.
+ */
+function restoreFlight(saved: Quotation["flight"] | undefined, flights: FlightOption[]) {
+  const included = saved?.included ?? false;
+  const base = {
+    included,
+    returnRequired: saved?.returnRequired ?? true,
+    roundTrip: false,
+    roundTripId: null as string | null,
+    outboundId: null as string | null,
+    inboundId: null as string | null,
+  };
+  if (!included) return base;
+
+  const outboundId = saved?.outbound?.optionId ?? null;
+  const inboundId = saved?.inbound?.optionId ?? null;
+  const outboundOption = flights.find((f) => f.id === outboundId);
+  if (outboundOption?.direction === "roundtrip") {
+    return { ...base, roundTrip: true, roundTripId: outboundId, returnRequired: true };
+  }
+  return { ...base, outboundId, inboundId };
+}
+
+/** A package's stored tier pricing, mapped into the builder's per-tier rows. */
+function tiersFromPackage(pkg: Package): {
+  tierPricingEnabled: boolean;
+  tiers: Record<Occupancy, TierRow>;
+} {
+  const tp = pkg.tierPricing;
+  const row = (t: { manualTotal: number | null; discount: number } | null | undefined): TierRow =>
+    t
+      ? { offered: true, manualTotal: t.manualTotal, discount: t.discount }
+      : { offered: false, manualTotal: null, discount: 0 };
+  return {
+    tierPricingEnabled: tp?.enabled ?? false,
+    tiers: { Quad: row(tp?.Quad), Triple: row(tp?.Triple), Double: row(tp?.Double) },
+  };
+}
+
 export function Builder({
   editing,
   duplicateFrom,
   editingPackage,
+  startPackage,
   asPackage = false,
 }: {
   editing?: Quotation;
@@ -49,6 +98,8 @@ export function Builder({
   duplicateFrom?: Quotation;
   /** Loaded package being edited, in package mode. */
   editingPackage?: Package;
+  /** Start a fresh customer quotation from this package (via the Packages page). */
+  startPackage?: Package;
   /** Build a reusable package instead of a customer quotation. */
   asPackage?: boolean;
 }) {
@@ -63,6 +114,10 @@ export function Builder({
   // The packages a fresh quotation can be started from.
   const [packages, setPackages] = useState<Package[]>([]);
   const [startedFrom, setStartedFrom] = useState("");
+  // When a quotation is started from a package that offers tiers, the picked
+  // tier drives the hotel occupancy - the quotation itself stays single-price.
+  const [tierPackage, setTierPackage] = useState<Package | null>(null);
+  const [activeTier, setActiveTier] = useState<Occupancy | null>(null);
 
   useEffect(() => {
     config.load();
@@ -106,6 +161,8 @@ export function Builder({
         outboundId: pkg.flight.outboundId,
         inboundId: pkg.flight.inboundId,
       },
+      ...tiersFromPackage(pkg),
+      addOns: (pkg.addOns ?? []).map((a) => ({ ...a })),
       ...extra,
     });
     for (const stay of pkg.stays) {
@@ -123,12 +180,37 @@ export function Builder({
     builder.set("itineraryComplete", true);
   }
 
+  /**
+   * Set the room tier on a quotation started from a package. Only the hotels
+   * (Makkah / Madinah) move with the tier; Aziziya and Mina keep their own room,
+   * matching how the package's tier prices are calculated.
+   */
+  function applyTier(occupancy: Occupancy) {
+    setActiveTier(occupancy);
+    for (const stay of useBuilderStore.getState().stays) {
+      const accommodation = config.accommodations.find((a) => a.id === stay.accommodationId);
+      const location = config.locations.find((l) => l.id === accommodation?.locationId);
+      if (location?.pricingModel === "byOccupancy") {
+        builder.updateStay(stay.key, { roomType: "sharing", occupancy, sharingWord: null });
+      }
+    }
+  }
+
   /** The picker on a fresh quotation: load the chosen package's shape. */
-  function startFromPackage(id: string) {
-    setStartedFrom(id);
-    const pkg = packages.find((p) => p._id === id);
-    if (!pkg) return;
+  function startFromPackage(pkg: Package) {
+    setStartedFrom(pkg._id);
     fillFromPackage(pkg);
+
+    // A package with tier prices lets the staff pick which tier to quote; the
+    // choice sets the hotel occupancy and the quotation prices normally from it.
+    if (pkg.tierPricing?.enabled) {
+      setTierPackage(pkg);
+      const first = OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ]);
+      if (first) applyTier(first);
+    } else {
+      setTierPackage(null);
+      setActiveTier(null);
+    }
     toast.success(`Started from "${pkg.name}"`);
   }
 
@@ -146,6 +228,9 @@ export function Builder({
     const source = editing ?? duplicateFrom;
     if (editingPackage) {
       fillFromPackage(editingPackage);
+    } else if (startPackage) {
+      // A fresh quotation opened from the Packages page ("Quote").
+      startFromPackage(startPackage);
     } else if (source) {
       builder.reset({
         quotationId: editing?._id ?? null,
@@ -171,12 +256,7 @@ export function Builder({
         includeIds: source.includeIds ?? [],
         requirementIds: source.requirementIds ?? [],
         termIds: source.termIds ?? [],
-        flight: {
-          included: source.flight?.included ?? false,
-          returnRequired: source.flight?.returnRequired ?? true,
-          outboundId: null,
-          inboundId: null,
-        },
+        flight: restoreFlight(source.flight, config.flights),
       });
       for (const stay of source.stays) {
         builder.addStay({
@@ -208,7 +288,7 @@ export function Builder({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.loaded, editing, duplicateFrom, editingPackage, config]);
+  }, [config.loaded, editing, duplicateFrom, editingPackage, startPackage, config]);
 
   const result = useMemo(() => computeLocal(builder, config), [builder, config]);
 
@@ -421,15 +501,32 @@ export function Builder({
         <div className="flex flex-wrap items-center justify-between gap-2">
           {/* Start a fresh quotation from a saved package. */}
           {!asPackage && !editing && packages.length > 0 ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-muted">Start from package</span>
               <Select
                 className="w-64"
                 options={packages.map((p) => ({ value: p._id, label: p.name }))}
                 placeholder="Choose a package…"
                 value={startedFrom}
-                onChange={(e) => startFromPackage(e.target.value)}
+                onChange={(e) => {
+                  const pkg = packages.find((p) => p._id === e.target.value);
+                  if (pkg) startFromPackage(pkg);
+                }}
               />
+              {/* A package with tier prices lets the staff pick the room tier. */}
+              {tierPackage?.tierPricing?.enabled && (
+                <>
+                  <span className="text-sm text-muted">· Room tier</span>
+                  <Select
+                    className="w-36"
+                    options={OCCUPANCIES.filter((occ) => tierPackage.tierPricing?.[occ]).map(
+                      (occ) => ({ value: occ, label: occ }),
+                    )}
+                    value={activeTier ?? ""}
+                    onChange={(e) => applyTier(e.target.value as Occupancy)}
+                  />
+                </>
+              )}
             </div>
           ) : (
             <span />
@@ -695,6 +792,173 @@ export function Builder({
             </div>
           </div>
         </Card>
+
+        {/* ---------- package tier prices & add-on charges ---------- */}
+        {asPackage && (
+          <>
+            <Card>
+              <CardHeader
+                title="Package Prices"
+                subtitle="Quad / Triple / Double — the three prices printed on the brochure"
+              />
+              <div className="space-y-4 p-5">
+                <label className="flex items-center gap-2 text-sm font-medium text-ink">
+                  <input
+                    type="checkbox"
+                    checked={builder.tierPricingEnabled}
+                    onChange={(e) => builder.set("tierPricingEnabled", e.target.checked)}
+                    className="size-4 accent-brand-500"
+                  />
+                  Print three tier prices
+                </label>
+
+                {!builder.tierPricingEnabled ? (
+                  <p className="text-sm text-muted">
+                    The brochure prints a single price. Turn this on to show Quad, Triple and
+                    Double.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {OCCUPANCIES.map((occ) => {
+                      const row = builder.tiers[occ];
+                      const auto = result.tierAuto[occ];
+                      const printed = finalTierTotal(auto.total, {
+                        manualTotal: row.manualTotal,
+                        discount: row.discount,
+                      });
+                      return (
+                        <div key={occ} className="rounded-lg border border-line p-3">
+                          <div className="flex flex-wrap items-end gap-3">
+                            <label className="flex w-20 items-center gap-2 pb-2 text-sm font-semibold text-ink">
+                              <input
+                                type="checkbox"
+                                checked={row.offered}
+                                onChange={(e) =>
+                                  builder.updateTier(occ, { offered: e.target.checked })
+                                }
+                                className="size-4 accent-brand-500"
+                              />
+                              {occ}
+                            </label>
+
+                            {row.offered ? (
+                              <>
+                                <label className="min-w-[9rem] flex-1">
+                                  <span className="mb-1 block text-xs text-muted">
+                                    Price (auto {formatPrice(auto.total)})
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    inputMode="numeric"
+                                    value={row.manualTotal ?? ""}
+                                    placeholder={String(auto.total)}
+                                    onChange={(e) =>
+                                      builder.updateTier(occ, {
+                                        manualTotal:
+                                          e.target.value === ""
+                                            ? null
+                                            : Math.max(0, Number(e.target.value)),
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="w-28">
+                                  <span className="mb-1 block text-xs text-muted">Discount</span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    inputMode="numeric"
+                                    value={row.discount || ""}
+                                    placeholder="0"
+                                    onChange={(e) =>
+                                      builder.updateTier(occ, {
+                                        discount:
+                                          e.target.value === ""
+                                            ? 0
+                                            : Math.max(0, Number(e.target.value)),
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <div className="pb-1.5 text-right">
+                                  <span className="mb-0.5 block text-xs text-muted">Prints</span>
+                                  <span className="font-bold text-brand-600">
+                                    {formatPrice(printed)}
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <span className="pb-2 text-sm text-muted">Not shown on the brochure</span>
+                            )}
+                          </div>
+
+                          {row.offered && !auto.complete && row.manualTotal === null && (
+                            <p className="mt-2 text-xs text-amber-700">
+                              Some hotels have no {occ} rate set — type the price in above.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Add-on Charges"
+                subtitle="Per-room-type surcharges, printed in a band under the itinerary"
+              />
+              <div className="space-y-3 p-5">
+                {builder.addOns.length === 0 && (
+                  <p className="text-sm text-muted">
+                    None. Add a line such as “Aziziya Triple Bed (per pax)”.
+                  </p>
+                )}
+                {builder.addOns.map((addOn, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      className="flex-1"
+                      value={addOn.label}
+                      placeholder="Aziziya Triple Bed (per pax)"
+                      onChange={(e) => builder.updateAddOn(i, { label: e.target.value })}
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      className="w-36"
+                      value={addOn.amount || ""}
+                      placeholder="200000"
+                      onChange={(e) =>
+                        builder.updateAddOn(i, {
+                          amount: e.target.value === "" ? 0 : Math.max(0, Number(e.target.value)),
+                        })
+                      }
+                    />
+                    <button
+                      onClick={() => builder.removeAddOn(i)}
+                      className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                      title="Remove"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Plus className="size-4" />}
+                  onClick={builder.addAddOn}
+                >
+                  Add charge
+                </Button>
+              </div>
+            </Card>
+          </>
+        )}
 
         {/* ---------------- services ---------------- */}
         <Card>

@@ -27,6 +27,15 @@ const packageStaySchema = new Schema(
   { _id: false },
 );
 
+/** One offered tier's controls: an optional typed-in price and a discount. */
+const tierSettingSchema = new Schema(
+  {
+    manualTotal: { type: Number, default: null },
+    discount: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const packageSchema = new Schema(
   {
     /** Shown in the "start from package" dropdown, so it must read on its own. */
@@ -58,6 +67,28 @@ const packageSchema = new Schema(
     termIds: [{ type: Schema.Types.ObjectId, ref: "ServiceItem" }],
     includesNote: { type: String, default: "" },
     remarks: { type: String, default: "" },
+
+    /**
+     * Three-price pricing (package-only). Off by default, so an existing
+     * package keeps re-pricing as a single figure when used in a quotation.
+     * When on, each of Quad / Triple / Double is offered only if its subdoc is
+     * present; a null tier is not shown.
+     */
+    tierPricing: {
+      enabled: { type: Boolean, default: false },
+      Quad: { type: tierSettingSchema, default: null },
+      Triple: { type: tierSettingSchema, default: null },
+      Double: { type: tierSettingSchema, default: null },
+    },
+
+    /**
+     * Per-room-type surcharges printed under the itinerary (e.g. an Aziziya
+     * triple-bed upgrade). A package-only extra; a quotation never carries them.
+     */
+    addOns: {
+      type: [new Schema({ label: String, amount: Number }, { _id: false })],
+      default: [],
+    },
 
     sortOrder: { type: Number, default: 0 },
     active: { type: Boolean, default: true },

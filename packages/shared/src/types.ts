@@ -352,6 +352,44 @@ export interface QuotationTotals {
   manualOverride: boolean;
 }
 
+// ------------------------------------------------------ package tier pricing
+
+/**
+ * A package is printed as up to three prices for the SAME itinerary - Quad,
+ * Triple and Double - and each of those prices has its own controls. This is a
+ * package-only concept: an individual customer quotation still carries a single
+ * price and is untouched by any of this.
+ */
+export interface TierSetting {
+  /** A typed-in price that replaces the calculated one. null = use calculated. */
+  manualTotal: number | null;
+  /** Taken off the calculated total. Internal - only the final figure prints. */
+  discount: number;
+}
+
+/**
+ * A package's three-price block. `enabled: false` leaves the package as a plain
+ * reference set (today's behaviour); when on, each offered tier carries its own
+ * settings and a tier left `null` is simply not offered - so a package can show
+ * one, two or three prices. `offeredTiers` reads it into an ordered list.
+ */
+export interface TierPricing {
+  enabled: boolean;
+  Quad: TierSetting | null;
+  Triple: TierSetting | null;
+  Double: TierSetting | null;
+}
+
+/**
+ * A per-room-type surcharge printed under a package's itinerary, e.g. "Aziziya
+ * Triple Bed - PKR 200,000 /- per pax". Manually entered, like the tier prices:
+ * the amount is a real charge the customer sees, not an internal figure.
+ */
+export interface PackageAddOn {
+  label: string;
+  amount: number;
+}
+
 // ------------------------------------------------------- config bundle
 
 import type { FlightOption } from "./flights";

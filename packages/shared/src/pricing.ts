@@ -19,6 +19,7 @@
 
 import { nestedHajjBlocks } from "./calendar";
 import {
+  OCCUPANCIES,
   rateKey,
   type Accommodation,
   type Location,
@@ -28,6 +29,8 @@ import {
   type Rate,
   type ResolvedBlock,
   type StayInput,
+  type TierPricing,
+  type TierSetting,
 } from "./types";
 
 export class PricingError extends Error {
@@ -168,6 +171,88 @@ export function priceStays(stays: StayInput[], context: PricingContext): PricedS
     stays.map((stay) => priceStay(stay, context)),
     [...context.blocks.values()],
   );
+}
+
+// ------------------------------------------------------- package tier pricing
+
+/** One tier's calculated figure, with whether every hotel could be priced. */
+export interface TierAutoPrice {
+  occupancy: Occupancy;
+  /** The itinerary summed with the hotels filled at this occupancy. */
+  total: number;
+  /**
+   * True when every hotel had a rate for this occupancy. A hotel missing its
+   * Triple or Double rate leaves `total` short of the real figure, so the UI
+   * asks the staff member to type the price in rather than trusting it.
+   */
+  complete: boolean;
+}
+
+/**
+ * Price one itinerary at each occupancy tier.
+ *
+ * A package is quoted as up to three prices for identical rooms and dates: the
+ * only thing that moves between Quad, Triple and Double is the per-person rate
+ * of the Makkah / Madinah hotels. Aziziya and Mina do not vary by tier - a
+ * shared Aziziya room and a Mina tent cost the same however the hotels are
+ * filled - so each contributes its own as-entered figure to all three tiers.
+ *
+ * This is calculation only; whether a tier is offered, overridden or discounted
+ * is decided above, in `finalTierTotal`.
+ */
+export function priceTiers(stays: StayInput[], context: PricingContext): TierAutoPrice[] {
+  return OCCUPANCIES.map((occupancy) => {
+    let total = 0;
+    let complete = true;
+
+    for (const stay of stays) {
+      const rate = context.rates.get(rateKey(stay.accommodationId, stay.blockId));
+      if (!rate) {
+        complete = false;
+        continue;
+      }
+
+      if (rate.model === "byOccupancy") {
+        // A hotel takes the tier's occupancy; the stay's own choice is ignored.
+        const figure = rate.rates[occupancy] ?? 0;
+        if (figure <= 0) complete = false;
+        total += figure;
+        continue;
+      }
+
+      // Aziziya and Mina keep their own figure across every tier.
+      try {
+        total += blockTotal(rate, stay);
+      } catch {
+        complete = false;
+      }
+    }
+
+    return { occupancy, total, complete };
+  });
+}
+
+/** The offered tiers in Quad-Triple-Double order, each with its settings. */
+export function offeredTiers(
+  pricing: TierPricing | null | undefined,
+): Array<{ occupancy: Occupancy; setting: TierSetting }> {
+  if (!pricing?.enabled) return [];
+  return OCCUPANCIES.flatMap((occupancy) => {
+    const setting = pricing[occupancy];
+    return setting ? [{ occupancy, setting }] : [];
+  });
+}
+
+/**
+ * The single figure a tier prints: a typed-in override wins outright, otherwise
+ * the calculated total with that tier's own discount taken off. The discount is
+ * internal - only this result ever reaches the page.
+ */
+export function finalTierTotal(auto: number, setting: TierSetting): number {
+  if (setting.manualTotal !== null && setting.manualTotal !== undefined) {
+    return Math.max(0, Math.round(setting.manualTotal));
+  }
+  return Math.max(0, auto - clampDiscount(setting.discount, auto));
 }
 
 // ------------------------------------------------------------------ totals

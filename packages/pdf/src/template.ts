@@ -31,55 +31,147 @@ const CONTENT_HEIGHT_MM = PAGE_HEIGHT_MM - PAD_TOP_MM - PAD_BOTTOM_MM;
 const SMALL = "font-size:8.5pt; color:#4b5563;";
 
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 /** Small grey parenthesised sub-line, or nothing when empty. */
 function subLine(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) return "";
-  return `<br><span style="${SMALL}">(${escapeHtml(trimmed)})</span>`;
+    const trimmed = text.trim();
+    if (!trimmed) return "";
+    return `<br><span style="${SMALL}">(${escapeHtml(trimmed)})</span>`;
 }
 
 /** The brand name with its first word in red and the rest in black. */
 function brandName(name: string): string {
-  const [first, ...rest] = name.trim().split(/\s+/);
-  const red = `<span class="red">${escapeHtml(first ?? "")}</span>`;
-  const dark = rest.length ? ` <span class="dark">${escapeHtml(rest.join(" "))}</span>` : "";
-  return `${red}${dark}`;
+    const [first, ...rest] = name.trim().split(/\s+/);
+    const red = `<span class="red">${escapeHtml(first ?? "")}</span>`;
+    const dark = rest.length ? ` <span class="dark">${escapeHtml(rest.join(" "))}</span>` : "";
+    return `${red}${dark}`;
+}
+
+/**
+ * Brand marks in each platform's own colour: Facebook blue, YouTube red, and
+ * Instagram's own gradient (carried inside the SVG). The gradient id is unique
+ * to the page, and the header only appears once, so there is no clash.
+ */
+const SOCIAL_SVG = {
+    facebook:
+        '<svg viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.6 4.5-4.6 1.3 0 2.7.2 2.7.2v2.9h-1.5c-1.5 0-1.9.9-1.9 1.8V12h3.3l-.5 3.5h-2.8v8.4A12 12 0 0 0 24 12z"/></svg>',
+    instagram:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="url(#ig)" stroke-width="2">' +
+        '<defs><linearGradient id="ig" x1="0" y1="1" x2="1" y2="0">' +
+        '<stop offset="0" stop-color="#f9ce34"/><stop offset="0.5" stop-color="#ee2a7b"/><stop offset="1" stop-color="#6228d7"/>' +
+        "</linearGradient></defs>" +
+        '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/>' +
+        '<circle cx="17.3" cy="6.7" r="1.2" fill="url(#ig)" stroke="none"/></svg>',
+    youtube:
+        '<svg viewBox="0 0 24 24" fill="#FF0000"><path d="M23 7.5s-.2-1.6-.9-2.3c-.9-.9-1.9-.9-2.4-1C16.5 4 12 4 12 4s-4.5 0-8.1.2c-.5 0-1.5 0-2.4 1C.8 5.9.6 7.5.6 7.5S.4 9.4.4 11.3v1.3c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2.1.9 2.6 1C6.9 20 12 20 12 20s4.5 0 8.1-.2c.5 0 1.5 0 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.3c0-1.9-.2-3.8-.2-3.8zM9.7 15V9l5.2 3-5.2 3z"/></svg>',
+} as const;
+
+/** The link as it reads on the page - the protocol and www. are noise. */
+function cleanUrl(url: string): string {
+    return url.trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "");
+}
+
+/**
+ * The social links for the top-right of the header: each on its own line, the
+ * platform icon in its own colour beside the readable link.
+ */
+function socialIcons(company: QuotationPdfView["company"]): string {
+    const links: Array<[keyof typeof SOCIAL_SVG, string]> = [
+        ["facebook", company.social?.facebook ?? ""],
+        ["instagram", company.social?.instagram ?? ""],
+        ["youtube", company.social?.youtube ?? ""],
+    ];
+    const rows = links
+        .filter(([, url]) => url.trim())
+        .map(
+            ([name, url]) =>
+                `<a href="${escapeHtml(url.trim())}" title="${name}">${SOCIAL_SVG[name]}<span class="url">${escapeHtml(cleanUrl(url))}</span></a>`,
+        )
+        .join("");
+    return rows ? `<div class="social">${rows}</div>` : "";
 }
 
 function listItems(items: StyledLine[]): string {
-  return items
-    .map((item) => {
-      const styles = [
-        lineColor(item.color) && `color:${lineColor(item.color)}`,
-        item.bold && "font-weight:700",
-      ].filter(Boolean);
-      const attr = styles.length ? ` style="${styles.join(";")}"` : "";
-      return `<li${attr}>${escapeHtml(item.text)}</li>`;
-    })
-    .join("");
+    return items
+        .map((item) => {
+            const styles = [
+                lineColor(item.color) && `color:${lineColor(item.color)}`,
+                item.bold && "font-weight:700",
+            ].filter(Boolean);
+            const attr = styles.length ? ` style="${styles.join(";")}"` : "";
+            return `<li${attr}>${escapeHtml(item.text)}</li>`;
+        })
+        .join("");
 }
 
 function stayRows(view: QuotationPdfView): string {
-  return view.stays
-    .map((stay, index) => {
-      const highlight = index % 2 === 1 ? ' class="row-highlight"' : "";
-      return `
+    return view.stays
+        .map((stay, index) => {
+            const highlight = index % 2 === 1 ? ' class="row-highlight"' : "";
+            return `
                 <tr${highlight}>
                     <td><strong>${escapeHtml(stay.phase)}</strong>${subLine(stay.nights)}</td>
                     <td>${escapeHtml(stay.dates)}${subLine(stay.datesSub)}</td>
                     <td><strong>${escapeHtml(stay.accommodation)}</strong></td>
                     <td>${escapeHtml(stay.meal)}${subLine(stay.mealNote)}</td>
                 </tr>`;
-    })
+        })
+        .join("");
+}
+
+/**
+ * The price panel that closes page one.
+ *
+ * A customer quotation shows one figure. A package shows its two or three tier
+ * prices side by side - the same itinerary at Quad, Triple and Double - which
+ * is why the itinerary rows drop the room type: the price columns carry it.
+ */
+function priceSection(view: QuotationPdfView): string {
+  if (view.tierPrices.length === 0) {
+    return `
+        <div class="total-section">
+            <p>Total Estimated Package Price Per Person</p>
+            <h2>${escapeHtml(view.totalPrice)}</h2>
+        </div>`;
+  }
+
+  const cards = view.tierPrices
+    .map(
+      (tier) => `
+            <div class="tier-card">
+                <span class="tier-label">${escapeHtml(tier.label)}</span>
+                <span class="tier-price">${escapeHtml(tier.priceFormatted)}</span>
+            </div>`,
+    )
     .join("");
+
+  return `
+        <p class="tier-caption">Package Price Per Person</p>
+        <div class="tier-band">${cards}
+        </div>`;
+}
+
+/**
+ * Per-room-type surcharges, in a band under the itinerary - "Aziziya Triple Bed
+ * PKR 200,000 /-". A package-only extra; empty for a quotation, so nothing
+ * prints.
+ */
+function addOnsBand(view: QuotationPdfView): string {
+  if (view.addOns.length === 0) return "";
+  const items = view.addOns
+    .map(
+      (addOn) =>
+        `<span class="addon-item"><strong>${escapeHtml(addOn.label)}</strong> ${escapeHtml(addOn.amountFormatted)}</span>`,
+    )
+    .join("");
+  return `<div class="addons-band">${items}</div>`;
 }
 
 // ------------------------------------------------------------------ travel
@@ -92,20 +184,20 @@ function stayRows(view: QuotationPdfView): string {
  * depend on flights being sold.
  */
 function travelSection(travel: PdfTravel): string {
-  // No sector line without a ticket: the note below says it once, and saying
-  // it inside both cards as well would be three times on one screen.
-  const card = (eyebrow: string, date: string, sector: string) => `
+    // No sector line without a ticket: the note below says it once, and saying
+    // it inside both cards as well would be three times on one screen.
+    const card = (eyebrow: string, date: string, sector: string) => `
         <div class="travel-card">
             <span class="travel-eyebrow">${eyebrow}</span>
             <span class="travel-date">${date ? escapeHtml(date) : "—"}</span>
             ${sector ? `<span class="travel-sector">${escapeHtml(sector)}</span>` : ""}
         </div>`;
 
-  const badge = travel.included
-    ? '<span class="travel-badge on">Air Ticket Included</span>'
-    : '<span class="travel-badge off">Air Ticket Not Included</span>';
+    const badge = travel.included
+        ? '<span class="travel-badge on">Air Ticket Included</span>'
+        : '<span class="travel-badge off">Air Ticket Not Included</span>';
 
-  return `
+    return `
     <div class="section-title">
         Travel Details ${badge}
     </div>
@@ -121,17 +213,17 @@ function travelSection(travel: PdfTravel): string {
 
 /** Mina and Arafat services, side by side. Omitted entirely when both empty. */
 function servicesSection(view: QuotationPdfView): string {
-  const hasMina = view.minaServices.length > 0;
-  const hasArafat = view.arafatServices.length > 0;
-  if (!hasMina && !hasArafat) return "";
+    const hasMina = view.minaServices.length > 0;
+    const hasArafat = view.arafatServices.length > 0;
+    if (!hasMina && !hasArafat) return "";
 
-  const column = (title: string, items: StyledLine[]) =>
-    items.length === 0
-      ? ""
-      : `<div class="col"><div class="service-box"><h4>${title}</h4>
+    const column = (title: string, items: StyledLine[]) =>
+        items.length === 0
+            ? ""
+            : `<div class="col"><div class="service-box"><h4>${title}</h4>
            <ul>${listItems(items)}</ul></div></div>`;
 
-  return `
+    return `
     <div class="footer-cols services-row">
         ${column("Extra Services in Mina", view.minaServices)}
         ${column("Extra Services in Arafat", view.arafatServices)}
@@ -143,8 +235,8 @@ function servicesSection(view: QuotationPdfView): string {
  * on paper and something is agreed at the counter.
  */
 function remarksSection(view: QuotationPdfView): string {
-  const body = view.remarks ? escapeHtml(view.remarks).replace(/\n/g, "<br>") : "";
-  return `
+    const body = view.remarks ? escapeHtml(view.remarks).replace(/\n/g, "<br>") : "";
+    return `
     <div class="remarks">
         <h4>Remarks</h4>
         <div class="remarks-body">${body}</div>
@@ -152,13 +244,13 @@ function remarksSection(view: QuotationPdfView): string {
 }
 
 function signatureSection(): string {
-  const line = (caption: string) => `
+    const line = (caption: string) => `
         <div class="sign">
             <div class="sign-line"></div>
             <span>${caption}</span>
         </div>`;
 
-  return `
+    return `
     <div class="sign-row">
         ${line("Guest Signature")}
         ${line("For Junaidi Air Travels")}
@@ -167,14 +259,13 @@ function signatureSection(): string {
 
 /** Repeated at the foot of every page. */
 function sheetFooter(view: QuotationPdfView): string {
-  return `
+    return `
         <div class="sheet-footer">
             <span>Powered by <strong>${POWERED_BY.name}</strong> &nbsp;·&nbsp; ${POWERED_BY.url} &nbsp;·&nbsp; ${POWERED_BY.contact}</span>
-            <span>${
-              view.generatedBy
-                ? `Generated by: <strong>${escapeHtml(view.generatedBy)}</strong>`
-                : ""
-            }</span>
+            <span>${view.generatedBy
+            ? `Generated by: <strong>${escapeHtml(view.generatedBy)}</strong>`
+            : ""
+        }</span>
         </div>`;
 }
 
@@ -187,13 +278,13 @@ function sheetFooter(view: QuotationPdfView): string {
  *   overflows.
  */
 export function buildHtml(view: QuotationPdfView, scale = 1): string {
-  const zoom = scale !== 1 ? ` zoom: ${scale};` : "";
-  const bodyHeight = (CONTENT_HEIGHT_MM / scale).toFixed(3);
-  const note = view.includesNote
-    ? `<span class="warning-text">${escapeHtml(view.includesNote)}</span>`
-    : "";
+    const zoom = scale !== 1 ? ` zoom: ${scale};` : "";
+    const bodyHeight = (CONTENT_HEIGHT_MM / scale).toFixed(3);
+    const note = view.includesNote
+        ? `<span class="warning-text">${escapeHtml(view.includesNote)}</span>`
+        : "";
 
-  return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -236,30 +327,42 @@ ${FONT_FACE_CSS}
         .sheet-footer strong { color: #374151; }
 
         /* --------------------------------------------------------- header */
+        .header-wrap { position: relative; }
         .header-table { width: 100%; margin-bottom: 10px; border-bottom: 3px solid #9f0b1f; padding-bottom: 8px; }
         .header-table td { vertical-align: middle; }
         .logo-cell { width: 140px; text-align: left; padding-right: 15px; }
         .logo-cell img { max-width: 130px; max-height: 110px; width: auto; height: auto; display: block; object-fit: contain; object-position: left center; }
         .company-info { text-align: center; padding-right: 140px; }
+
+        /* Social links, pinned to the top-right corner - one per line, the icon
+           in its own platform colour beside the readable link. */
+        .social { position: absolute; top: 0; right: 0; display: flex; flex-direction: column; gap: 16px; align-items: flex-start;}
+        .social a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #374151; font-size: 8pt; }
+        .social svg { width: 14px; height: 14px; flex-shrink: 0; display: block; }
+        .social .url { white-space: nowrap; }
         /* Nexa ships one weight (700), so an extra-heavy look comes from a
            text-stroke that thickens each glyph, tinted to match its own colour. */
+        /* Every header line shares the same gap above it, so the spacing between
+           the name, sub-line, tagline and address reads evenly. */
+        .company-info > * { margin: 6px 0 0; }
+        .company-info > *:first-child { margin-top: 0; }
         .company-info h1 {
-            margin: 0; font-size: 24pt; font-weight: 700; letter-spacing: 1px;
+            font-size: 24pt; font-weight: 700; letter-spacing: 1px; line-height: 1;
             font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif;
         }
         .company-info h1 .red { color: #9f0b1f; -webkit-text-stroke: 3px #9f0b1f; }
         .company-info h1 .dark { color: #111827; -webkit-text-stroke: 3px #111827; }
         .company-info .sub-brand {
-            margin: 2px 0 0; color: #111827; font-size: 13pt; font-weight: 700; letter-spacing: 3px;
+            color: #111827; font-size: 13pt; font-weight: 700; letter-spacing: 3px;
             font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif;
             -webkit-text-stroke: 1.8px #111827;
         }
         .company-info h2 {
-            color: #111827; margin: 4px 0 3px 0; font-size: 12pt; font-weight: 700; letter-spacing: 1px;
+            color: #111827; font-size: 12pt; font-weight: 700; letter-spacing: 1px;
             font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif;
             -webkit-text-stroke: 1.4px #111827;
         }
-        .company-info p { margin: 3px 0; color: #4b5563; font-size: 9pt; }
+        .company-info p { color: #4b5563; font-size: 9pt; }
 
         /* A slim strip so a loose second page is still identifiable. */
         .page-strip {
@@ -307,6 +410,18 @@ ${FONT_FACE_CSS}
         .total-section h2 { margin: 0; color: #9f0b1f; font-size: 18pt; }
         .total-section p { margin: 3px 0 0 0; color: #111827; font-weight: bold; font-size: 11pt; }
 
+        /* A package's two or three prices for one itinerary, side by side. */
+        .tier-caption { margin: 0 0 7px; text-align: center; color: #111827; font-weight: bold; font-size: 11pt; letter-spacing: 0.3px; }
+        .tier-band { display: flex; gap: 10px; }
+        .tier-card { flex: 1 1 0; text-align: center; padding: 12px 10px; background-color: #fef2f2; border: 1px solid #fca5a5; border-top: 4px solid #9f0b1f; }
+        .tier-label { display: block; color: #111827; font-weight: bold; font-size: 10.5pt; letter-spacing: 1px; text-transform: uppercase; }
+        .tier-price { display: block; margin-top: 5px; color: #9f0b1f; font-weight: bold; font-size: 14pt; }
+
+        /* Per-room-type surcharges, a red band under the itinerary. */
+        .addons-band { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; margin-top: 10px; padding: 9px 14px; background-color: #9f0b1f; color: #ffffff; border-radius: 3px; text-align: center; }
+        .addon-item { font-size: 9.5pt; letter-spacing: 0.2px; }
+        .addon-item strong { font-weight: bold; }
+
         /* -------------------------------------------------------- page 2 */
         .footer-cols { display: flex; width: 100%; gap: 12px; margin-bottom: 10px; align-items: stretch; }
         .col { flex: 1 1 0; display: flex; }
@@ -337,42 +452,50 @@ ${FONT_FACE_CSS}
 <!-- ===================================================== page 1 ========= -->
 <div class="sheet">
     <div class="sheet-body">
+        <div class="header-wrap">
+        ${socialIcons(view.company)}
         <table class="header-table">
             <tr>
                 <td class="logo-cell"><img src="${view.logoDataUri}" alt="${escapeHtml(view.company.name)} Logo" /></td>
                 <td class="company-info">
                     <h1>${brandName(view.company.name)}</h1>
                     ${view.company.subheading ? `<div class="sub-brand">${escapeHtml(view.company.subheading)}</div>` : ""}
-                    <h2>${escapeHtml(view.company.tagline)}</h2>
+                    ${view.company.tagline ? `<h2>${escapeHtml(view.company.tagline)}</h2>` : ""}
                     <p>${escapeHtml(view.company.address)}</p>
                     <p>${escapeHtml(view.company.contact)}</p>
                 </td>
             </tr>
         </table>
+        </div>
 
         <table class="meta-table">
-            ${
-              view.hbNumber
-                ? `<tr>
+            ${view.hbNumber
+            ? `<tr>
                 <td class="label">HB Number:</td>
                 <td><strong style="color:#9f0b1f; letter-spacing:0.3px">${escapeHtml(view.hbNumber)}</strong></td>
                 <td class="label">Status:</td>
                 <td><strong>Confirmed</strong></td>
             </tr>`
-                : ""
-            }
-            <tr>
+            : ""
+        }
+            ${view.quotationId
+            ? `<tr>
                 <td class="label">Quotation ID:</td>
                 <td>${escapeHtml(view.quotationId)}</td>
                 <td class="label">Date:</td>
                 <td>${escapeHtml(view.date)}</td>
-            </tr>
-            <tr>
+            </tr>`
+            : ""
+        }
+            ${view.guestName
+            ? `<tr>
                 <td class="label">Guest Name:</td>
                 <td><strong>${escapeHtml(view.guestName)}</strong></td>
                 <td class="label">Valid Until:</td>
                 <td>${escapeHtml(view.validUntil)}</td>
-            </tr>
+            </tr>`
+            : ""
+        }
             <tr>
                 <td class="label">Package:</td>
                 <td colspan="3"><strong>${escapeHtml(view.packageTitle)}</strong></td>
@@ -393,13 +516,9 @@ ${travelSection(view.travel)}
             <tbody>${stayRows(view)}
             </tbody>
         </table>
-
+${addOnsBand(view)}
         <div class="spacer"></div>
-
-        <div class="total-section">
-            <p>Total Estimated Package Price Per Person</p>
-            <h2>${escapeHtml(view.totalPrice)}</h2>
-        </div>
+${priceSection(view)}
     </div>
 ${sheetFooter(view)}
 </div>
@@ -417,10 +536,10 @@ ${servicesSection(view)}
                 <div class="footer-box">
                     <h4>Price Includes:</h4>
                     <ul>${listItems(
-                      // Qurbani is part of the package by default, so it is stated
-                      // plainly rather than left to the free-text list.
-                      view.qurbaniIncluded ? [...view.includes, { text: "Qurbani." }] : view.includes,
-                    )}</ul>
+            // Qurbani is part of the package by default, so it is stated
+            // plainly rather than left to the free-text list.
+            view.qurbaniIncluded ? [...view.includes, { text: "Qurbani." }] : view.includes,
+        )}</ul>
                     ${note}
                 </div>
             </div>
