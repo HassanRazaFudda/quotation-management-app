@@ -95,15 +95,15 @@ describe("toPdfView", () => {
   });
 
   /**
-   * The Hajj row names the Maktab category, which is what the customer
-   * recognises - not the internal tent tier.
+   * The Hajj row names the Maktab category the customer recognises, with the
+   * tent tier in brackets after it.
    */
-  it("shows the Maktab category on the Hajj row", async () => {
+  it("shows the Maktab category and tent tier on the Hajj row", async () => {
     const view = await toPdfView({
       ...quotationWithDiscount,
       packageCategory: "Maktab A Category",
     } as never);
-    expect(view.stays[1]!.accommodation).toBe("Maktab A Category");
+    expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Deluxe)");
   });
 
   it("falls back to the tent name when no category is set", async () => {
@@ -124,8 +124,8 @@ describe("toPdfView", () => {
     expect(view.stays[1]!.accommodation).toBe("Without Mina");
   });
 
-  /** A real tent shows the Maktab even with no tier - the tier is optional. */
-  it("shows the Maktab on a tent that has no tier set", async () => {
+  /** When the tier field is unset, it is read off the tent name. */
+  it("reads the tier off the tent name when the tier field is unset", async () => {
     const view = await toPdfView({
       ...quotationWithDiscount,
       packageCategory: "Maktab B Category",
@@ -139,7 +139,7 @@ describe("toPdfView", () => {
         },
       ],
     } as never);
-    expect(view.stays[1]!.accommodation).toBe("Maktab B Category");
+    expect(view.stays[1]!.accommodation).toBe("Maktab B Category (Standard)");
   });
 
   /**
@@ -193,10 +193,10 @@ describe("toPdfView", () => {
       ],
     };
 
-    it("marks the spanning row 'Including Hajj Days' and prints no nights on the Hajj row", async () => {
+    it("keeps the phase short and notes 'Including Hajj' on the nights line", async () => {
       const view = await toPdfView(spanning as never);
-      expect(view.stays[0]!.phase).toBe("Aziziya Including Hajj Days");
-      expect(view.stays[0]!.nights).toBe("13 Nights");
+      expect(view.stays[0]!.phase).toBe("Aziziya Stay");
+      expect(view.stays[0]!.nights).toBe("13 Nights · Including Hajj");
       expect(view.stays[1]!.phase).toBe("Hajj Days");
       expect(view.stays[1]!.nights).toBe(""); // nested days are not counted again
     });
@@ -204,7 +204,7 @@ describe("toPdfView", () => {
     it("carries the hotel on the spanning row and the Maktab on the Hajj row", async () => {
       const view = await toPdfView(spanning as never);
       expect(view.stays[0]!.accommodation).toBe("Aziziya Executive Hotel (Sharing)");
-      expect(view.stays[1]!.accommodation).toBe("Maktab A Category");
+      expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Standard)");
     });
 
     /** The return date is the fortnight's end, not the nested Hajj row's end. */

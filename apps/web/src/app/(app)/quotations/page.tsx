@@ -29,8 +29,8 @@ const GROUPS = [
 const SORTS = [
   { value: "created-desc", label: "Newest added first" },
   { value: "created-asc", label: "Oldest added first" },
-  { value: "date-desc", label: "Quotation date — newest" },
-  { value: "date-asc", label: "Quotation date — oldest" },
+  { value: "date-desc", label: "Quotation date - newest" },
+  { value: "date-asc", label: "Quotation date - oldest" },
 ];
 
 export default function QuotationsPage() {

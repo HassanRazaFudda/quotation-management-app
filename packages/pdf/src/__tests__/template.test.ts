@@ -8,10 +8,13 @@ describe("the rendered document", () => {
   const html = buildHtml(sampleView);
 
   it("shows the company header and quotation details", () => {
-    // The brand name prints two-tone (JUNAIDI red, GROUP black) with the sub-line.
+    // The brand name prints two-tone (JUNAIDI red, GROUP black).
     expect(html).toContain(">JUNAIDI</span>");
     expect(html).toContain(">GROUP</span>");
-    expect(html).toContain("TRAVEL &amp; TOURS");
+    // The "Travel & Tours" sub-line was dropped from the header.
+    expect(html).not.toContain("TRAVEL &amp; TOURS");
+    expect(html).toContain("contact@junaidigroup.com"); // updated e-mail
+    expect(html).toContain("https://wa.me/92323427101"); // WhatsApp, clickable
     expect(html).toContain("Mona Square"); // the address line
     expect(html).toContain("HQ-1447-0042");
     expect(html).toContain("Rashid Shahid * 02 PAX");
@@ -176,7 +179,7 @@ describe("travel details", () => {
   it("falls back to a dash when the calendar gives no date", () => {
     const html = buildHtml(buildPdfView({ ...sampleInput, travel: { included: true } }));
     expect(html).toContain("Departing on");
-    expect(html).toContain("—");
+    expect(html).toContain(">-<"); // the placeholder dash in the travel card
   });
 });
 
@@ -203,7 +206,11 @@ describe("the two pages", () => {
     expect(html.match(/Powered by/g)).toHaveLength(2);
     expect(html.match(/\+92 317 2036604/g)).toHaveLength(2);
     expect(html.match(/Digitli/g)).toHaveLength(2);
-    expect(html.match(/www\.digitli\.com/g)).toHaveLength(2);
+    // The plain text plus the link href, on each of the two pages.
+    expect(html.match(/www\.digitli\.com/g)).toHaveLength(4);
+    // The software house name and number are clickable on both pages.
+    expect(html.match(/href="https:\/\/www\.digitli\.com"/g)).toHaveLength(2);
+    expect(html.match(/href="tel:\+923172036604"/g)).toHaveLength(2);
     expect(html).not.toContain("Kodex");
   });
 

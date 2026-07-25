@@ -105,7 +105,7 @@ export default function PackagesPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-ink">{pkg.name}</p>
                     <p className="truncate text-xs text-muted">
-                      {pkg.packageCategory || "—"} · {pkg.stays.length} stays
+                      {pkg.packageCategory || "-"} · {pkg.stays.length} stays
                       {pkg.tierPricing?.enabled && " · 3-tier pricing"}
                       {pkg.flight.included && " · flights included"}
                     </p>
@@ -250,7 +250,7 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
   return (
     <Modal open={Boolean(pkg)} onClose={onClose} title={`Print "${pkg?.name ?? ""}"`}>
       <p className="text-sm text-muted">
-        Leave the customer blank for a plain brochure. Enter a name to address it to a guest — or to
+        Leave the customer blank for a plain brochure. Enter a name to address it to a guest - or to
         save it as a quotation you can confirm and give an HB number.
       </p>
       <div className="mt-4 space-y-4">

@@ -9,6 +9,7 @@
 import {
   applyNestedNights,
   buildPackageTitle,
+  PACKAGE_TEMPLATE_SUFFIX,
   calculateTotals,
   makePricingContext,
   makeValidationContext,
@@ -187,6 +188,7 @@ export const useBuilderStore = create<BuilderState>((set) => ({
           sharingWord: stay?.sharingWord ?? null,
           mealId: stay?.mealId ?? null,
           mealNoteId: stay?.mealNoteId ?? null,
+          rooms: stay?.rooms,
         },
       ],
       // Adding a stay reopens the itinerary.
@@ -308,7 +310,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     for (const stay of state.stays) {
       if (!stay.blockId || !stay.accommodationId) continue;
       try {
-        const [priced] = priceStays([stay], pricing);
+        const [priced] = priceStays([stay], pricing, state.pax);
         if (priced) {
           perStayNights[stay.key] = nested.has(stay.blockId) ? 0 : priced.nights;
           perStayTotal[stay.key] = priced.lineTotal;
@@ -322,7 +324,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       complete
         .map((stay) => {
           try {
-            return priceStays([stay], pricing)[0];
+            return priceStays([stay], pricing, state.pax)[0];
           } catch {
             return null;
           }
@@ -336,6 +338,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       flightTotal: flights.total,
       discount: state.discount,
       manualTotal: state.manualTotal,
+      pax: state.pax,
     });
     totalNights = totals.totalNights;
     subtotal = totals.subtotal;
@@ -378,6 +381,7 @@ export function autoPackageTitle(
   state: BuilderState,
   config: ConfigSnapshot,
   totalNights: number,
+  asPackage = false,
 ): string {
   // The Gregorian year comes from the season's calendar, via any resolved block.
   const withDate = config.blocks.find((block) => block.startGregorian);
@@ -391,6 +395,9 @@ export function autoPackageTitle(
     category: state.packageCategory,
     totalNights,
     itineraryComplete: state.itineraryComplete,
+    // A package template names itself plainly; only a quotation drawn from it
+    // wears the "(Customize)" suffix.
+    suffix: asPackage ? PACKAGE_TEMPLATE_SUFFIX : undefined,
   });
 }
 

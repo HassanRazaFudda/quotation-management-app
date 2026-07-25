@@ -252,6 +252,13 @@ interface RateBase {
   accommodationId: string;
   blockId: string;
   season: string;
+  /**
+   * Optional per-person figure for a guest who shares a room without their own
+   * bed - a child, or a fifth pilgrim in a Quad. Cheaper than a bedded rate,
+   * but the stay is still included. Set on room-based locations (hotels and
+   * Aziziya); a Mina tent has no bed to price.
+   */
+  withoutBed?: number;
 }
 
 export interface RateByOccupancy extends RateBase {
@@ -297,8 +304,10 @@ export function emptyRate(
   >;
 
   if (model === "flat") return { ...ids, model, amount: 0 };
-  if (model === "sharingOrSeparate") return { ...ids, model, sharing: 0, separate: zeroes };
-  return { ...ids, model, rates: zeroes };
+  if (model === "sharingOrSeparate") {
+    return { ...ids, model, sharing: 0, separate: zeroes, withoutBed: 0 };
+  }
+  return { ...ids, model, rates: zeroes, withoutBed: 0 };
 }
 
 // ------------------------------------------------------------------- stays
@@ -329,16 +338,58 @@ export interface StayInput {
    * rooms of that size.
    */
   sharingWord?: SharingWord | null;
+  /** This stay is priced at the no-bed rate (rare for a whole party; usual in a mix). */
+  withoutBed?: boolean | null;
 
   mealId?: string | null;
   mealNoteId?: string | null;
+
+  /**
+   * A mix of rooms for one stay, e.g. a family of seven in one Quad and one
+   * Triple room, or two pilgrims in different Mina tiers. Each entry prices its
+   * own headcount at its own rate; the quotation shows the PAX-weighted average
+   * per person. Absent (or empty) means the whole party shares the stay's own
+   * room choice above — the ordinary case, priced exactly as before.
+   */
+  rooms?: RoomEntry[];
+}
+
+/**
+ * One room allocation within a stay: a group of people all in the same room
+ * choice (and possibly its own accommodation, since a Mina tier is a separate
+ * accommodation), priced at that per-person rate.
+ */
+export interface RoomEntry {
+  accommodationId: string;
+  roomType?: AziziyaRoomType | null;
+  occupancy?: Occupancy | null;
+  sharingWord?: SharingWord | null;
+  /** These people share a room without their own bed, at the no-bed rate. */
+  withoutBed?: boolean | null;
+  /** How many people are in rooms of this choice. */
+  headcount: number;
+}
+
+/** A room entry after pricing: the resolved name, its per-person rate and cost. */
+export interface PricedRoom extends RoomEntry {
+  accommodationName: string;
+  /** The per-person block rate for this room choice. */
+  perPerson: number;
+  /** `perPerson × headcount` — the group cost of this entry. */
+  cost: number;
 }
 
 export interface PricedStay extends StayInput {
   nights: number;
   /** The unit rate actually applied, stored so old quotations never change. */
   rateSnapshot: number;
+  /** Per person: the stay's group total divided by PAX (equals the rate when
+   * the whole party shares one room choice). */
   lineTotal: number;
+  /** The cost of the whole party's rooms for this stay. */
+  groupTotal: number;
+  /** The priced allocation — a single entry for an ordinary stay. */
+  rooms: PricedRoom[];
 }
 
 // -------------------------------------------------------------- quotation

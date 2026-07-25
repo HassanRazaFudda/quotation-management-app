@@ -73,7 +73,7 @@ export default function PackagesPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-ink">{pkg.name}</p>
                     <p className="truncate text-xs text-muted">
-                      {pkg.packageCategory || "—"} · {pkg.stays.length} stays
+                      {pkg.packageCategory || "-"} · {pkg.stays.length} stays
                       {pkg.flight.included && " · flights included"}
                     </p>
                   </div>

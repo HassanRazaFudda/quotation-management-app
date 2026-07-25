@@ -322,8 +322,8 @@ function BlockFields({
 
       <p className="rounded-lg bg-canvas px-3 py-2 text-xs text-muted">
         <strong className="text-ink">Hajj days</strong> is only the Mina block itself
-        (e.g. 07&nbsp;–&nbsp;12 Zilhaj). A hotel stay that <em>spans</em> the Hajj days — the guest
-        keeps their room while they are in Mina, e.g. 01&nbsp;–&nbsp;14 Zilhaj Aziziya — is still
+        (e.g. 07&nbsp;–&nbsp;12 Zilhaj). A hotel stay that <em>spans</em> the Hajj days - the guest
+        keeps their room while they are in Mina, e.g. 01&nbsp;–&nbsp;14 Zilhaj Aziziya - is still
         <strong className="text-ink"> Before&nbsp;Hajj</strong>. The quotation adds the Hajj row
         inside it automatically and marks it &ldquo;Including Hajj days&rdquo;.
       </p>
@@ -354,7 +354,7 @@ function BlockFields({
         </div>
         {locationIds.length === 0 && (
           <p className="mt-1 text-xs text-brand-600">
-            Pick at least one — a block with nowhere to stay cannot be quoted.
+            Pick at least one - a block with nowhere to stay cannot be quoted.
           </p>
         )}
       </div>
@@ -434,7 +434,7 @@ function CalendarImport({ onImported }: { onImported: () => void }) {
         dryRun: true,
       });
       setProblems(res.problems);
-      if (res.problems.length === 0) toast.success("Looks good — ready to import.");
+      if (res.problems.length === 0) toast.success("Looks good - ready to import.");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Check failed.");
     } finally {
@@ -476,7 +476,7 @@ function CalendarImport({ onImported }: { onImported: () => void }) {
           <div className="space-y-1">
             {problems.length === 0 ? (
               <p className="flex items-center gap-2 text-sm text-ok">
-                <CheckCircle2 className="size-4" /> Contiguous — safe to import.
+                <CheckCircle2 className="size-4" /> Contiguous - safe to import.
               </p>
             ) : (
               problems.map((p, i) => (

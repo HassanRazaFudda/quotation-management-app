@@ -70,6 +70,16 @@ function restoreFlight(saved: Quotation["flight"] | undefined, flights: FlightOp
   return { ...base, outboundId, inboundId };
 }
 
+/**
+ * A new package starts with the two Aziziya bed upgrades pre-added, since every
+ * package quotes them. They are ordinary add-on rows - the admin can reprice,
+ * remove or add to them.
+ */
+const DEFAULT_PACKAGE_ADDONS = [
+  { label: "Aziziya Triple Bed (per pax)", amount: 200000 },
+  { label: "Aziziya Double Bed (per pax)", amount: 400000 },
+];
+
 /** A package's stored tier pricing, mapped into the builder's per-tier rows. */
 function tiersFromPackage(pkg: Package): {
   tierPricingEnabled: boolean;
@@ -219,8 +229,7 @@ export function Builder({
     if (initialised.current || !config.loaded) return;
     initialised.current = true;
 
-    const defaults = (cat: string) =>
-      servicesByCategory(config, cat).filter((s) => s.defaultSelected).map((s) => s.id);
+    const allOf = (cat: string) => servicesByCategory(config, cat).map((s) => s.id);
 
     // Editing and duplicating fill the form the same way; only the target
     // differs. An edit keeps the id (save updates it) and the original date; a
@@ -268,16 +277,27 @@ export function Builder({
           sharingWord: stay.sharingWord,
           mealId: stay.mealId,
           mealNoteId: stay.mealNoteId,
+          // A room mix is restored so editing/duplicating keeps the family split.
+          rooms: stay.rooms?.map((room) => ({
+            accommodationId: room.accommodationId,
+            roomType: room.roomType,
+            occupancy: room.occupancy,
+            sharingWord: room.sharingWord,
+            withoutBed: room.withoutBed,
+            headcount: room.headcount,
+          })),
         });
       }
       builder.set("itineraryComplete", true);
     } else {
       builder.reset();
-      builder.set("includeIds", defaults("includes"));
-      builder.set("requirementIds", defaults("requirements"));
-      builder.set("termIds", defaults("terms"));
-      builder.set("minaServiceIds", defaults("minaServices"));
-      builder.set("arafatServiceIds", defaults("arafatServices"));
+      // Price Includes / Visa Requirements / Terms & Taxes start fully ticked;
+      // the extra Mina and Arafat services start unticked.
+      builder.set("includeIds", allOf("includes"));
+      builder.set("requirementIds", allOf("requirements"));
+      builder.set("termIds", allOf("terms"));
+      builder.set("minaServiceIds", []);
+      builder.set("arafatServiceIds", []);
       // Start on the first category and the first Mina tier.
       const firstCategory = config.packageCategories[0];
       if (firstCategory) builder.set("packageCategory", firstCategory.label);
@@ -286,14 +306,16 @@ export function Builder({
         builder.set("minaAccommodationId", firstMina.id);
         builder.set("withoutMina", Boolean(firstMina.withoutMina));
       }
+      // A fresh package comes with the standard Aziziya bed upgrades pre-added.
+      if (asPackage) builder.set("addOns", DEFAULT_PACKAGE_ADDONS.map((a) => ({ ...a })));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.loaded, editing, duplicateFrom, editingPackage, startPackage, config]);
+  }, [config.loaded, editing, duplicateFrom, editingPackage, startPackage, asPackage, config]);
 
   const result = useMemo(() => computeLocal(builder, config), [builder, config]);
 
   // Keep the title assembled unless the staff member has typed their own.
-  const suggestedTitle = autoPackageTitle(builder, config, result.totalNights);
+  const suggestedTitle = autoPackageTitle(builder, config, result.totalNights, asPackage);
   useEffect(() => {
     if (!builder.packageTitleEdited && builder.packageTitle !== suggestedTitle) {
       builder.set("packageTitle", suggestedTitle);
@@ -632,7 +654,7 @@ export function Builder({
               className="sm:col-span-2"
               hint={
                 builder.packageTitleEdited
-                  ? "Edited by hand — it will not update itself."
+                  ? "Edited by hand - it will not update itself."
                   : "Built from the season, category and the finished itinerary."
               }
             >
@@ -659,7 +681,7 @@ export function Builder({
         <Card>
           <CardHeader
             title="Itinerary"
-            subtitle="Each stay continues from the last — only the blocks that follow are offered"
+            subtitle="Each stay continues from the last - only the blocks that follow are offered"
           />
           <div className="space-y-2 p-5">
             {builder.stays.length === 0 && (
@@ -730,7 +752,7 @@ export function Builder({
             {builder.itineraryComplete && errors.length === 0 && (
               <div className="flex items-center gap-2 pt-2 text-sm text-ok">
                 <CheckCircle2 className="size-4" />
-                Itinerary complete — {result.totalNights + 1} days.
+                Itinerary complete - {result.totalNights + 1} days.
               </div>
             )}
           </div>
@@ -799,7 +821,7 @@ export function Builder({
             <Card>
               <CardHeader
                 title="Package Prices"
-                subtitle="Quad / Triple / Double — the three prices printed on the brochure"
+                subtitle="Quad / Triple / Double - the three prices printed on the brochure"
               />
               <div className="space-y-4 p-5">
                 <label className="flex items-center gap-2 text-sm font-medium text-ink">
@@ -895,7 +917,7 @@ export function Builder({
 
                           {row.offered && !auto.complete && row.manualTotal === null && (
                             <p className="mt-2 text-xs text-amber-700">
-                              Some hotels have no {occ} rate set — type the price in above.
+                              Some hotels have no {occ} rate set - type the price in above.
                             </p>
                           )}
                         </div>

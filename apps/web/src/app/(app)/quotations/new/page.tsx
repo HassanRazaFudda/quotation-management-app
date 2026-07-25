@@ -47,9 +47,9 @@ function NewQuotation() {
   if (loading) return <Spinner label="Loading…" />;
 
   const subtitle = source
-    ? `Duplicated from ${source.quotationId} — review and save to create`
+    ? `Duplicated from ${source.quotationId} - review and save to create`
     : pkg
-      ? `Started from "${pkg.name}" — review and save to create`
+      ? `Started from "${pkg.name}" - review and save to create`
       : "Build a Hajj package quotation";
 
   return (

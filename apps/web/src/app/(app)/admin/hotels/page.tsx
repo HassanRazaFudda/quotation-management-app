@@ -224,7 +224,7 @@ function HotelRow({
               onToggle={(id) => toggle(sharingWords, setSharingWords, id as SharingWord)}
               hint={
                 sharingWords.length === 0
-                  ? "none — the room is always written “Sharing”"
+                  ? "none - the room is always written “Sharing”"
                   : "wording only, same price as Sharing"
               }
             />
@@ -239,7 +239,7 @@ function HotelRow({
           items={config.packageCategories}
           selected={categoryIds}
           onToggle={(id) => toggle(categoryIds, setCategoryIds, id)}
-          hint={categoryIds.length === 0 ? "none ticked — offered to every category" : undefined}
+          hint={categoryIds.length === 0 ? "none ticked - offered to every category" : undefined}
         />
       )}
 

@@ -155,9 +155,10 @@ function toRate(doc: Record<string, any>): Rate {
         model: "sharingOrSeparate",
         sharing: doc.sharing ?? 0,
         separate: doc.separate ?? { Quad: 0, Triple: 0, Double: 0 },
+        withoutBed: doc.withoutBed ?? 0,
       };
     default:
-      return { ...base, model: "byOccupancy", rates: doc.rates };
+      return { ...base, model: "byOccupancy", rates: doc.rates, withoutBed: doc.withoutBed ?? 0 };
   }
 }
 

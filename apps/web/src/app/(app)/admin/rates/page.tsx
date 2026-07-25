@@ -108,8 +108,9 @@ export default function RatesPage() {
         amount: "amount" in rate ? rate.amount : undefined,
         sharing: "sharing" in rate ? rate.sharing : undefined,
         separate: "separate" in rate ? rate.separate : undefined,
+        withoutBed: rate.model === "flat" ? undefined : (rate.withoutBed ?? 0),
       });
-      toast.success(`Saved — ${hotel.name}, ${block.label}`);
+      toast.success(`Saved - ${hotel.name}, ${block.label}`);
       // Reload so a first-time rate stops being listed as unpriced.
       await config.load(undefined, true);
     } catch (err) {
@@ -134,13 +135,13 @@ export default function RatesPage() {
         <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           Each figure is the negotiated total for that hotel over that whole date
-          block — not a nightly rate. Nothing is multiplied by the night count.
+          block - not a nightly rate. Nothing is multiplied by the night count.
         </p>
 
         {unpriced > 0 && (
           <p className="flex items-start gap-2 rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-700">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            {unpriced} hotel/block {unpriced === 1 ? "pair has" : "pairs have"} no rate yet —
+            {unpriced} hotel/block {unpriced === 1 ? "pair has" : "pairs have"} no rate yet -
             marked <strong className="mx-1">Not priced</strong> below. A stay cannot be quoted
             until its rate is saved.
           </p>
@@ -242,7 +243,7 @@ function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Ra
               onChange((r) => (r.model === "sharingOrSeparate" ? { ...r, sharing: v } : r))
             }
           />
-          <span className="text-xs text-gray-400">one rate — no occupancy</span>
+          <span className="text-xs text-gray-400">one rate - no occupancy</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -262,6 +263,15 @@ function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Ra
             />
           ))}
         </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-16 text-xs text-muted">No bed</span>
+          <NumberBox
+            value={rate.withoutBed ?? 0}
+            onChange={(v) => onChange((r) => ({ ...r, withoutBed: v }))}
+          />
+          <span className="text-xs text-gray-400">guest sharing without their own bed</span>
+        </div>
       </div>
     );
   }
@@ -278,6 +288,11 @@ function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Ra
           }
         />
       ))}
+      <NumberBox
+        label="No bed"
+        value={rate.withoutBed ?? 0}
+        onChange={(v) => onChange((r) => ({ ...r, withoutBed: v }))}
+      />
     </div>
   );
 }

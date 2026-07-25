@@ -117,7 +117,7 @@ export default function FlightsPage() {
                             }`
                           : `${flight.origin} → ${flight.destination}`}
                       </p>
-                      <p className="text-xs text-muted">{flight.airline || "—"}</p>
+                      <p className="text-xs text-muted">{flight.airline || "-"}</p>
                     </div>
                     <NumberInput
                       min={0}

@@ -17,6 +17,17 @@ export const loginSchema = z.object({
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Not a valid id.");
 
+/** One room in a mixed stay: its own room choice (and accommodation) + headcount. */
+const roomEntrySchema = z.object({
+  accommodationId: objectId,
+  roomType: z.enum(AZIZIYA_ROOM_TYPES).nullish(),
+  occupancy: z.enum(OCCUPANCIES).nullish(),
+  sharingWord: z.enum(SHARING_WORDS).nullish(),
+  /** These people share a room without their own bed, at the no-bed rate. */
+  withoutBed: z.boolean().nullish(),
+  headcount: z.number().int().min(0).max(500),
+});
+
 export const staySchema = z.object({
   blockId: objectId,
   locationId: objectId,
@@ -30,6 +41,9 @@ export const staySchema = z.object({
 
   mealId: objectId.nullish(),
   mealNoteId: objectId.nullish(),
+
+  /** A mix of rooms for one stay; empty/absent means the whole party shares one. */
+  rooms: z.array(roomEntrySchema).optional(),
 });
 
 export const flightSchema = z.object({

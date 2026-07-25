@@ -210,6 +210,9 @@ const rateSchema = new Schema(
     sharing: { type: Number, default: null },
     separate: { type: Schema.Types.Mixed, default: null },
 
+    /** Per-person figure for a guest sharing a room without their own bed. */
+    withoutBed: { type: Number, default: 0 },
+
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   timestamps,

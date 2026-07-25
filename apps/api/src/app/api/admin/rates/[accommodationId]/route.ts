@@ -18,6 +18,8 @@ const bodySchema = z.object({
   /** Aziziya: one sharing figure, plus separate broken down by occupancy. */
   sharing: z.number().optional(),
   separate: z.unknown().optional(),
+  /** Hotels / Aziziya: per-person figure for a guest sharing without a bed. */
+  withoutBed: z.number().min(0).optional(),
 });
 
 export const PATCH = route(async (request, { params }) => {
@@ -33,6 +35,7 @@ export const PATCH = route(async (request, { params }) => {
     amount: body.amount,
     sharing: body.sharing,
     separate: body.separate,
+    withoutBed: body.withoutBed,
   });
 
   return json(request, rate);

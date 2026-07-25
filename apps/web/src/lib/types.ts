@@ -60,6 +60,17 @@ export interface QuotationStay {
   occupancy: "Quad" | "Triple" | "Double" | null;
   sharingWord: SharingWord | null;
   roomLabel: string;
+  /** A mix of rooms in this stay; empty (the common case) means one room choice. */
+  rooms?: Array<{
+    accommodationId: string;
+    accommodationName?: string;
+    roomType: "sharing" | "separate" | null;
+    occupancy: "Quad" | "Triple" | "Double" | null;
+    sharingWord: SharingWord | null;
+    withoutBed?: boolean | null;
+    roomLabel?: string;
+    headcount: number;
+  }>;
   meal: string;
   /** Set on newer quotations, so editing/duplicating can restore the choice. */
   mealId: string | null;

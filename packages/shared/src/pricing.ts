@@ -24,10 +24,12 @@ import {
   type Accommodation,
   type Location,
   type Occupancy,
+  type PricedRoom,
   type PricedStay,
   type QuotationTotals,
   type Rate,
   type ResolvedBlock,
+  type RoomEntry,
   type StayInput,
   type TierPricing,
   type TierSetting,
@@ -77,7 +79,23 @@ export function makePricingContext(input: {
  * Each stay carries its room: a guest can take a shared room in Makkah and a
  * private one in Aziziya, so there is no single quotation-wide occupancy.
  */
-export function blockTotal(rate: Rate, stay: Pick<StayInput, "roomType" | "occupancy">): number {
+export function blockTotal(
+  rate: Rate,
+  stay: Pick<StayInput, "roomType" | "occupancy" | "withoutBed">,
+): number {
+  // A guest sharing a room without their own bed is priced at the hotel's own
+  // no-bed figure, whatever the room around them is.
+  if (stay.withoutBed) {
+    const noBed = rate.withoutBed ?? 0;
+    if (noBed <= 0) {
+      throw new PricingError(
+        `No "without bed" rate is set for this accommodation in this block. An admin must add one.`,
+        "NO_RATE",
+      );
+    }
+    return noBed;
+  }
+
   switch (rate.model) {
     case "byOccupancy": {
       // For a hotel the shared room is simply the Quad rate.
@@ -107,21 +125,35 @@ export function blockTotal(rate: Rate, stay: Pick<StayInput, "roomType" | "occup
   }
 }
 
-export function priceStay(stay: StayInput, context: PricingContext): PricedStay {
-  const block = context.blocks.get(stay.blockId);
-  if (!block) {
-    throw new PricingError(`Unknown date block: ${stay.blockId}`, "UNKNOWN_BLOCK");
-  }
+/**
+ * The rooms a stay is priced from. A stay with its own `rooms` list is a mix
+ * (a family across two room types); otherwise the whole party — `pax` people —
+ * shares the stay's single room choice, which is the ordinary case.
+ */
+function stayRooms(stay: StayInput, pax: number): RoomEntry[] {
+  if (stay.rooms && stay.rooms.length > 0) return stay.rooms;
+  return [
+    {
+      accommodationId: stay.accommodationId,
+      roomType: stay.roomType ?? null,
+      occupancy: stay.occupancy ?? null,
+      sharingWord: stay.sharingWord ?? null,
+      headcount: Math.max(1, Math.round(pax)),
+    },
+  ];
+}
 
-  const accommodation = context.accommodations.get(stay.accommodationId);
+/** Price one room entry: resolve its rate and multiply by its headcount. */
+function priceRoom(entry: RoomEntry, block: ResolvedBlock, context: PricingContext): PricedRoom {
+  const accommodation = context.accommodations.get(entry.accommodationId);
   if (!accommodation) {
     throw new PricingError(
-      `Unknown accommodation: ${stay.accommodationId}`,
+      `Unknown accommodation: ${entry.accommodationId}`,
       "UNKNOWN_ACCOMMODATION",
     );
   }
 
-  const rate = context.rates.get(rateKey(stay.accommodationId, stay.blockId));
+  const rate = context.rates.get(rateKey(entry.accommodationId, block.id));
   if (!rate) {
     throw new PricingError(
       `No rate set for "${accommodation.name}" in ${block.label}. An admin must add one.`,
@@ -138,10 +170,39 @@ export function priceStay(stay: StayInput, context: PricingContext): PricedStay 
     );
   }
 
-  // The rate IS the total for the block; nights are informational only.
-  const lineTotal = blockTotal(rate, stay);
+  const perPerson = blockTotal(rate, entry);
+  const headcount = Math.max(0, Math.round(entry.headcount));
+  return { ...entry, headcount, accommodationName: accommodation.name, perPerson, cost: perPerson * headcount };
+}
 
-  return { ...stay, nights: block.nights, rateSnapshot: lineTotal, lineTotal };
+/**
+ * Price a stay for the whole party.
+ *
+ * `pax` is only used to spread a single room choice across the group and to
+ * divide the group total back to a per-person figure; a stay carrying its own
+ * `rooms` mix prices each entry by its own headcount instead.
+ */
+export function priceStay(stay: StayInput, context: PricingContext, pax = 1): PricedStay {
+  const block = context.blocks.get(stay.blockId);
+  if (!block) {
+    throw new PricingError(`Unknown date block: ${stay.blockId}`, "UNKNOWN_BLOCK");
+  }
+
+  const rooms = stayRooms(stay, pax).map((entry) => priceRoom(entry, block, context));
+  const groupTotal = rooms.reduce((sum, room) => sum + room.cost, 0);
+  const heads = Math.max(1, Math.round(pax));
+  // Per person: the party's rooms divided by the party. For one room choice this
+  // is exactly the rate; for a mix it is the PAX-weighted average.
+  const lineTotal = groupTotal / heads;
+
+  return {
+    ...stay,
+    nights: block.nights,
+    rateSnapshot: rooms[0]?.perPerson ?? 0,
+    lineTotal,
+    groupTotal,
+    rooms,
+  };
 }
 
 /**
@@ -166,9 +227,9 @@ export function applyNestedNights<T extends { blockId: string; nights: number }>
   return stays.map((stay) => (nested.has(stay.blockId) ? { ...stay, nights: 0 } : stay));
 }
 
-export function priceStays(stays: StayInput[], context: PricingContext): PricedStay[] {
+export function priceStays(stays: StayInput[], context: PricingContext, pax = 1): PricedStay[] {
   return applyNestedNights(
-    stays.map((stay) => priceStay(stay, context)),
+    stays.map((stay) => priceStay(stay, context, pax)),
     [...context.blocks.values()],
   );
 }
@@ -259,28 +320,38 @@ export function finalTierTotal(auto: number, setting: TierSetting): number {
 
 export interface TotalsInput {
   stays: PricedStay[];
-  /** Air fare, when the package includes flights. Added to the subtotal. */
+  /** Air fare per person, when the package includes flights. */
   flightTotal?: number;
-  /** Fixed amount taken off. Internal only - never shown to the customer. */
+  /** Fixed amount taken off, per person. Internal only - never shown. */
   discount?: number;
-  /** When set, replaces the calculated final total entirely. */
+  /** When set, replaces the calculated final per-person total entirely. */
   manualTotal?: number | null;
+  /**
+   * The party size. Used to divide a mixed stay's group total back to a single
+   * per-person figure. One room choice for everyone leaves the maths unchanged,
+   * so this is optional and defaults to a party of one.
+   */
+  pax?: number;
 }
 
 export function calculateTotals(input: TotalsInput): QuotationTotals {
+  const pax = Math.max(1, Math.round(input.pax ?? 1));
   const totalNights = input.stays.reduce((sum, stay) => sum + stay.nights, 0);
-  const accommodation = input.stays.reduce((sum, stay) => sum + stay.lineTotal, 0);
-  const subtotal = accommodation + Math.max(0, input.flightTotal ?? 0);
+
+  // Work in group totals - the whole party's rooms plus the whole party's air
+  // fare - then divide once, so a mix never drifts from rounding stay by stay.
+  const accommodationGroup = input.stays.reduce((sum, stay) => sum + stay.groupTotal, 0);
+  const flightGroup = pax * Math.max(0, input.flightTotal ?? 0);
+  const subtotal = (accommodationGroup + flightGroup) / pax;
 
   const discount = clampDiscount(input.discount ?? 0, subtotal);
-  const manualOverride =
-    input.manualTotal !== null && input.manualTotal !== undefined;
+  const manualOverride = input.manualTotal !== null && input.manualTotal !== undefined;
 
   const finalTotal = manualOverride
     ? Math.max(0, Math.round(input.manualTotal as number))
-    : subtotal - discount;
+    : Math.max(0, Math.round(subtotal - discount));
 
-  return { totalNights, subtotal, discount, finalTotal, manualOverride };
+  return { totalNights, subtotal: Math.round(subtotal), discount, finalTotal, manualOverride };
 }
 
 /** A discount cannot be negative, nor larger than the subtotal. */

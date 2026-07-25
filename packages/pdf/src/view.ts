@@ -38,7 +38,7 @@ export interface PdfCompany {
   address: string;
   contact: string;
   /** Social links for the header icons; an empty string hides that icon. */
-  social: { facebook: string; instagram: string; youtube: string };
+  social: { facebook: string; instagram: string; youtube: string; whatsapp?: string };
 }
 
 /**
@@ -71,14 +71,15 @@ export const POWERED_BY = {
 
 export const DEFAULT_COMPANY: PdfCompany = {
   name: "JUNAIDI GROUP",
-  subheading: "TRAVEL & TOURS",
+  subheading: "",
   tagline: "",
   address: "Suite No. 7-8, Mona Square, Jahangir Road, Gurumandir, Karachi",
-  contact: "Phone: 021-34130184-87 | E-Mail: junaiditravels@gmail.com",
+  contact: "Phone: 021-34130184-87 | E-Mail: contact@junaidigroup.com",
   social: {
     facebook: "http://www.facebook.com/Junaidigroup/",
     instagram: "https://www.instagram.com/junaidiairtravel",
     youtube: "https://www.youtube.com/@Junaidi-Group",
+    whatsapp: "+92 323 427101",
   },
 };
 

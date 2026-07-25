@@ -32,7 +32,7 @@ export const POST = route(async (request) => {
   // Hajj season never does, it finishes in Zilhaj.
   if (hijriIndex(data.endHijri) <= hijriIndex(data.startHijri)) {
     throw new ApiError(
-      `"${blockLabel(data)}" ends before it starts — check the two dates.`,
+      `"${blockLabel(data)}" ends before it starts - check the two dates.`,
       400,
     );
   }

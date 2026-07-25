@@ -154,6 +154,8 @@ function seedRateFor(basis: { model: string; perNight: Record<string, unknown> }
       separate: Object.fromEntries(
         Object.entries(separate).map(([occ, v]) => [occ, v * nights]),
       ),
+      // A no-bed guest pays roughly half a shared bed. PLACEHOLDER - admin sets it.
+      withoutBed: Math.round(sharing * nights * 0.5),
       rates: null, amount: null,
     };
   }
@@ -162,6 +164,8 @@ function seedRateFor(basis: { model: string; perNight: Record<string, unknown> }
   return {
     model: "byOccupancy",
     rates: Object.fromEntries(Object.entries(src).map(([occ, v]) => [occ, v * nights])),
+    // A no-bed guest pays roughly half a Quad bed. PLACEHOLDER - admin sets it.
+    withoutBed: Math.round((src.Quad ?? 0) * nights * 0.5),
     amount: null, sharing: null, separate: null,
   };
 }

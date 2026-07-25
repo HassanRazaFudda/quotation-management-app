@@ -103,6 +103,129 @@ describe("pricing a quotation", () => {
   });
 });
 
+/**
+ * The client's second example: two pilgrims in one stay, one in a Premium tent
+ * and one in a Deluxe tent, quoted as a single average per person.
+ */
+describe("a mix of rooms in one stay", () => {
+  it("blends two Mina tiers into one average per person", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const acc = (name: string) => bundle.accommodations.find((a) => a.name === name)!;
+    const standard = acc("Mina Standard");
+    const deluxe = acc("Mina Deluxe");
+    const minaStay = baseInput.stays[1]!;
+    const pair = { name: "Two Pilgrims", pax: 2 };
+
+    const allStandard = await priceQuotation({ ...baseInput, guest: pair });
+    const allDeluxe = await priceQuotation({
+      ...baseInput,
+      guest: pair,
+      stays: [baseInput.stays[0]!, { ...minaStay, accommodationId: deluxe.id }],
+    });
+    const mixed = await priceQuotation({
+      ...baseInput,
+      guest: pair,
+      stays: [
+        baseInput.stays[0]!,
+        {
+          ...minaStay,
+          rooms: [
+            { accommodationId: standard.id, headcount: 1 },
+            { accommodationId: deluxe.id, headcount: 1 },
+          ],
+        },
+      ],
+    });
+
+    // Exactly halfway between "everyone Standard" and "everyone Deluxe".
+    expect(mixed.finalTotal).toBe(Math.round((allStandard.finalTotal + allDeluxe.finalTotal) / 2));
+    expect(mixed.finalTotal).toBeGreaterThan(allStandard.finalTotal);
+    expect(mixed.finalTotal).toBeLessThan(allDeluxe.finalTotal);
+  });
+
+  it("prices a passenger without a bed lower, and blends them in", async () => {
+    // The Aziziya stay: one bedded sharing guest + one without a bed.
+    const aziziyaStay = baseInput.stays[0]!;
+    const acc = aziziyaStay.accommodationId;
+
+    const bothBedded = await priceQuotation({ ...baseInput, guest: { name: "Pair", pax: 2 } });
+    const oneNoBed = await priceQuotation({
+      ...baseInput,
+      guest: { name: "Pair", pax: 2 },
+      stays: [
+        {
+          ...aziziyaStay,
+          rooms: [
+            { accommodationId: acc, roomType: "sharing", headcount: 1 },
+            { accommodationId: acc, withoutBed: true, headcount: 1 },
+          ],
+        },
+        baseInput.stays[1]!,
+      ],
+    });
+
+    // The no-bed guest costs less than a bedded one, so the average drops.
+    expect(oneNoBed.finalTotal).toBeLessThan(bothBedded.finalTotal);
+    expect(oneNoBed.finalTotal).toBeGreaterThan(0);
+  });
+
+  it("refuses a without-bed guest where the hotel has no no-bed rate", async () => {
+    // Mina tents carry no no-bed figure, so pricing one there is rejected.
+    const minaStay = baseInput.stays[1]!;
+    await expect(
+      priceQuotation({
+        ...baseInput,
+        guest: { name: "x", pax: 2 },
+        stays: [
+          baseInput.stays[0]!,
+          {
+            ...minaStay,
+            rooms: [
+              { accommodationId: minaStay.accommodationId, headcount: 1 },
+              { accommodationId: minaStay.accommodationId, withoutBed: true, headcount: 1 },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/without bed/i);
+  });
+
+  it("freezes the mix onto the saved quotation, with a single blended price", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const acc = (name: string) => bundle.accommodations.find((a) => a.name === name)!;
+    const minaStay = baseInput.stays[1]!;
+
+    const saved = await createQuotation(
+      {
+        ...baseInput,
+        guest: { name: "Family", pax: 2 },
+        stays: [
+          baseInput.stays[0]!,
+          {
+            ...minaStay,
+            rooms: [
+              { accommodationId: acc("Mina Standard").id, headcount: 1 },
+              { accommodationId: acc("Mina Deluxe").id, headcount: 1 },
+            ],
+          },
+        ],
+      },
+      staff,
+    );
+
+    const mixStay = saved.stays.find((s) => s.rooms && s.rooms.length > 1);
+    expect(mixStay).toBeTruthy();
+    expect(mixStay!.rooms).toHaveLength(2);
+    expect(mixStay!.rooms.map((r) => r.accommodationName).sort()).toEqual([
+      "Mina Deluxe",
+      "Mina Standard",
+    ]);
+    // An ordinary stay stores no mix.
+    const plainStay = saved.stays.find((s) => s.locationType === "aziziya");
+    expect(plainStay!.rooms).toHaveLength(0);
+  });
+});
+
 describe("saving", () => {
   it("numbers quotations per season", async () => {
     const first = await createQuotation(baseInput, staff);

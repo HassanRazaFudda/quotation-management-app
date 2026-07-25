@@ -69,14 +69,17 @@ export async function upsertRate(
     update.rates = null;
     update.sharing = null;
     update.separate = null;
+    update.withoutBed = 0; // a tent has no bed to price
   } else if (model === "sharingOrSeparate") {
     // Sharing is a single figure; only Separate is broken down by occupancy.
     update.sharing = Number(rate.sharing) || 0;
     update.separate = rate.separate ?? {};
+    update.withoutBed = Math.max(0, Number(rate.withoutBed) || 0);
     update.rates = null;
     update.amount = null;
   } else {
     update.rates = rate.rates ?? {};
+    update.withoutBed = Math.max(0, Number(rate.withoutBed) || 0);
     update.amount = null;
     update.sharing = null;
     update.separate = null;

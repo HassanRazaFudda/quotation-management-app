@@ -137,7 +137,8 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     rates: bundle.rates,
   });
 
-  const priced = priceStays(input.stays, pricing);
+  const pax = Math.max(1, input.guest.pax);
+  const priced = priceStays(input.stays, pricing, pax);
   const flights = priceFlights(input.flight, bundle.flights);
 
   if (flights.issues.length > 0) {
@@ -149,6 +150,7 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     flightTotal: flights.total,
     discount: input.discount,
     manualTotal: input.manualTotal,
+    pax,
   });
 
   const blockById = new Map(blocks.map((block) => [block.id, block]));
@@ -240,9 +242,26 @@ export async function buildQuotationDocument(
       mealNoteId: stay.mealNoteId ?? null,
       coversHajj: covering.has(stay.blockId),
 
+      // A genuine mix (two or more room entries) is frozen for the PDF; an
+      // ordinary single-room stay stores nothing extra and reads as it did.
+      rooms:
+        stay.rooms.length > 1
+          ? stay.rooms.map((room) => ({
+              accommodationId: room.accommodationId,
+              accommodationName: room.accommodationName,
+              roomType: room.roomType ?? null,
+              occupancy: room.occupancy ?? null,
+              sharingWord: room.sharingWord ?? null,
+              withoutBed: room.withoutBed ?? false,
+              roomLabel: roomLabel(room),
+              headcount: room.headcount,
+            }))
+          : [],
+
       nights: stay.nights,
       rateSnapshot: stay.rateSnapshot,
       lineTotal: stay.lineTotal,
+      groupTotal: stay.groupTotal,
     };
   });
 

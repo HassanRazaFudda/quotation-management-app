@@ -123,7 +123,7 @@ export const rates: Rate[] = [
   },
   {
     model: "byOccupancy", accommodationId: "acc-swiss", blockId: "blk-pre-makkah", season: SEASON,
-    rates: { Quad: 150_000, Triple: 175_000, Double: 220_000 },
+    rates: { Quad: 150_000, Triple: 175_000, Double: 220_000 }, withoutBed: 50_000,
   },
   {
     model: "byOccupancy", accommodationId: "acc-swiss", blockId: "blk-makkah-8", season: SEASON,

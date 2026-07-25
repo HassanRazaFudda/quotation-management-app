@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { roomChoiceValue, roomChoices, roomLabel, sharingWordsFor } from "../rooms";
+import {
+  allocatedHeadcount,
+  roomChoiceValue,
+  roomChoices,
+  roomLabel,
+  sharingWordsFor,
+} from "../rooms";
 
 /**
  * A shared room is written as "Sharing" rather than a number, because it is
@@ -39,6 +45,7 @@ describe("roomChoices", () => {
       "Sharing",
       "Triple",
       "Double",
+      "Without bed",
     ]);
   });
 
@@ -48,6 +55,7 @@ describe("roomChoices", () => {
       "Hexa",
       "Triple",
       "Double",
+      "Without bed",
     ]);
     expect(roomChoices("byOccupancy", 12).map((c) => c.label)).toEqual([
       "Sharing",
@@ -55,6 +63,7 @@ describe("roomChoices", () => {
       "Hexa",
       "Triple",
       "Double",
+      "Without bed",
     ]);
   });
 
@@ -72,11 +81,62 @@ describe("roomChoices", () => {
       "Sharing",
       "Separate - Triple",
       "Separate - Double",
+      "Without bed",
     ]);
   });
 
   it("offers nothing for a Mina tent", () => {
     expect(roomChoices("flat", 4)).toEqual([]);
+  });
+
+  /**
+   * In a room mix each entry is one explicit room, so a hotel names Quad /
+   * Triple / Double outright - Quad no longer hides behind "Sharing", and it
+   * appears whatever the party size (here seven, not a multiple of four).
+   */
+  describe("per-room choices for a mix", () => {
+    it("offers Quad, Triple, Double and Without bed for a hotel", () => {
+      expect(roomChoices("byOccupancy", 7, [], [], true).map((c) => c.label)).toEqual([
+        "Quad",
+        "Triple",
+        "Double",
+        "Without bed",
+      ]);
+    });
+
+    it("prices the Quad option at the Quad occupancy and prints 'Quad'", () => {
+      const quad = roomChoices("byOccupancy", 7, [], [], true).find((c) => c.label === "Quad")!;
+      expect(quad.occupancy).toBe("Quad");
+      expect(quad.roomType).toBe("sharing");
+      expect(roomLabel(quad)).toBe("Quad");
+      // Its value round-trips, so the dropdown keeps it selected.
+      expect(roomChoiceValue(quad)).toBe(quad.value);
+    });
+
+    it("still limits a hotel to the sizes it actually has", () => {
+      expect(
+        roomChoices("byOccupancy", 7, ["Quad", "Triple"], [], true).map((c) => c.label),
+      ).toEqual(["Quad", "Triple", "Without bed"]);
+    });
+
+    it("offers Aziziya its shared sizes (Quad/Quint/Hexa) plus Separate rooms", () => {
+      expect(roomChoices("sharingOrSeparate", 7, [], [], true).map((c) => c.label)).toEqual([
+        "Sharing",
+        "Quad",
+        "Quint",
+        "Hexa",
+        "Separate - Triple",
+        "Separate - Double",
+        "Without bed",
+      ]);
+    });
+
+    it("prices an Aziziya Quad at the sharing rate but prints 'Quad'", () => {
+      const quad = roomChoices("sharingOrSeparate", 7, [], [], true).find((c) => c.label === "Quad")!;
+      expect(quad.roomType).toBe("sharing"); // one 'sharing' figure, not per-occupancy
+      expect(roomLabel(quad)).toBe("Quad");
+      expect(roomChoiceValue(quad)).toBe(quad.value);
+    });
   });
 
   /** A hotel only has the room sizes the admin recorded for it. */
@@ -86,6 +146,7 @@ describe("roomChoices", () => {
         "Sharing",
         "Quad",
         "Triple",
+        "Without bed",
       ]);
     });
 
@@ -95,13 +156,14 @@ describe("roomChoices", () => {
       expect(roomChoices("byOccupancy", 4, ["Triple", "Double"]).map((c) => c.label)).toEqual([
         "Triple",
         "Double",
+        "Without bed",
       ]);
     });
 
     it("applies to Aziziya too", () => {
       expect(
         roomChoices("sharingOrSeparate", 2, ["Quad", "Double"]).map((c) => c.label),
-      ).toEqual(["Sharing", "Separate - Double"]);
+      ).toEqual(["Sharing", "Separate - Double", "Without bed"]);
     });
 
     it("treats an empty list as every size, so old data keeps working", () => {
@@ -118,20 +180,20 @@ describe("roomChoices", () => {
       // Twelve fills quads and hexas, but this hotel has only quad shares.
       expect(
         roomChoices("byOccupancy", 12, ["Quad", "Triple", "Double"], ["Quad"]).map((c) => c.label),
-      ).toEqual(["Sharing", "Quad", "Triple", "Double"]);
+      ).toEqual(["Sharing", "Quad", "Triple", "Double", "Without bed"]);
     });
 
     it("keeps a wording the hotel does offer", () => {
       expect(
         roomChoices("byOccupancy", 12, ["Quad"], ["Hexa"]).map((c) => c.label),
-      ).toEqual(["Sharing", "Hexa"]);
+      ).toEqual(["Sharing", "Hexa", "Without bed"]);
     });
 
     it("falls back to plain Sharing when the size the group fills is unavailable", () => {
       // Five guests would be a Quint, but this hotel's shares are quad only.
       expect(
         roomChoices("byOccupancy", 5, ["Quad", "Triple", "Double"], ["Quad"]).map((c) => c.label),
-      ).toEqual(["Sharing", "Triple", "Double"]);
+      ).toEqual(["Sharing", "Triple", "Double", "Without bed"]);
     });
 
     it("treats an empty list as every size", () => {
@@ -176,5 +238,18 @@ describe("roomChoiceValue round-trips", () => {
         expect(roomChoiceValue(choice)).toBe(choice.value);
       }
     }
+  });
+});
+
+describe("allocatedHeadcount", () => {
+  it("sums the people across a room mix, and is zero without one", () => {
+    expect(allocatedHeadcount(undefined)).toBe(0);
+    expect(allocatedHeadcount([])).toBe(0);
+    expect(
+      allocatedHeadcount([
+        { accommodationId: "a", occupancy: "Quad", headcount: 4 },
+        { accommodationId: "a", occupancy: "Triple", headcount: 3 },
+      ]),
+    ).toBe(7);
   });
 });

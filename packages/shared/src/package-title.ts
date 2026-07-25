@@ -28,6 +28,12 @@ export interface PackageTitleParts {
 
 export const PACKAGE_TITLE_SUFFIX = "Package (Customize)";
 
+/**
+ * A saved package's own title. It is the template, not a customised copy, so it
+ * carries no "(Customize)" - that word belongs on a quotation drawn from it.
+ */
+export const PACKAGE_TEMPLATE_SUFFIX = "Package";
+
 /** Days quoted for a package: nights plus the arrival day. */
 export const daysForNights = (nights: number): number => (nights > 0 ? nights + 1 : 0);
 

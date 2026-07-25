@@ -10,6 +10,7 @@
 import {
   formatGregorian,
   formatPrice,
+  MINA_TIERS,
   roomLabel,
   type AziziyaRoomType,
   type Occupancy,
@@ -62,6 +63,15 @@ interface QuotationLike {
     sharingWord?: SharingWord | null;
     /** Frozen at save time; falls back to deriving it for an unsaved preview. */
     roomLabel?: string;
+    /** A mix of rooms in this stay (a family across room types). Empty = one room. */
+    rooms?: Array<{
+      accommodationName?: string;
+      roomLabel?: string;
+      roomType?: AziziyaRoomType | null;
+      occupancy?: Occupancy | null;
+      sharingWord?: SharingWord | null;
+      headcount: number;
+    }>;
     meal?: string;
     mealNote?: string;
     nights: number;
@@ -87,17 +97,19 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 /**
- * How the first column reads.
- *
- * A stay that spans the Hajj days says so - "Aziziya Including Hajj Days" -
- * because the guest keeps that room while they are in Mina, and the Hajj row
- * printed under it carries the Maktab rather than a second hotel.
+ * How the first column reads: just "Aziziya Stay" etc. A stay that spans the
+ * Hajj days keeps its short name here; the "Including Hajj" note rides on the
+ * nights sub-line instead, so the phase never wraps to a second line.
  */
 function phaseLabel(stay: QuotationLike["stays"][number]): string {
-  const base = PHASE_LABELS[stay.locationType] ?? `${stay.locationName} Stay`;
-  if (!stay.coversHajj) return base;
+  return PHASE_LABELS[stay.locationType] ?? `${stay.locationName} Stay`;
+}
 
-  return `${base.replace(/\s*Stay$/, "")} Including Hajj Days`;
+/** The nights sub-line: "10 Nights", or "10 Nights · Including Hajj" for a spanning stay. */
+function nightsLabel(stay: QuotationLike["stays"][number]): string {
+  if (stay.nights <= 0) return "";
+  const nights = `${String(stay.nights).padStart(2, "0")} Nights`;
+  return stay.coversHajj ? `${nights} · Including Hajj` : nights;
 }
 
 function formatDate(value: Date | string | null | undefined): string {
@@ -122,15 +134,61 @@ function formatDate(value: Date | string | null | undefined): string {
  * tent has no Maktab to name, so it prints that option's name instead. The tier
  * is optional and no longer decides this; "books no tent" does.
  */
+/** "standard" -> "Standard". */
+const capTier = (tier: string): string => (tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : "");
+/** Read a tier off an accommodation name, e.g. "Mina Premium" -> "Premium". */
+const tierFromName = (name: string): string =>
+  capTier(MINA_TIERS.find((t) => name.toLowerCase().includes(t)) ?? "");
+
+/** The distinct Mina tiers on a Hajj row: ["Standard"], or ["Premium", "Deluxe"] for a mix. */
+function minaTiers(stay: QuotationLike["stays"][number]): string[] {
+  const rooms = stay.rooms ?? [];
+  // A mix stores no tier per room, so read it off each tent's name.
+  if (rooms.length > 1) {
+    return [...new Set(rooms.map((r) => tierFromName(r.accommodationName ?? "")).filter(Boolean))];
+  }
+  // A single tent prefers its stored tier, falling back to its name (some tents
+  // carry the tier only in the name, e.g. "Mina Standard B Category").
+  const tier = stay.minaTier ? capTier(stay.minaTier) : tierFromName(stay.accommodationName);
+  return tier ? [tier] : [];
+}
+
+/**
+ * How the accommodation column reads when a stay holds a mix of rooms - a
+ * family in one Quad and one Triple, or two pilgrims in different Mina tiers.
+ * Hotels share one name with the room sizes beside it; Mina lists each tier,
+ * since the tiers are different accommodations.
+ */
+function roomMixLabel(stay: QuotationLike["stays"][number], packageCategory: string): string {
+  const rooms = stay.rooms ?? [];
+  if (stay.locationType === "mina") {
+    // A Hajj row keeps the Maktab name; the mixed tiers ride in the brackets.
+    return minaLabel(stay, packageCategory);
+  }
+  const parts = rooms.map((room) => room.roomLabel || roomLabel(room) || "Room");
+  return `${stay.accommodationName} (${parts.join(" + ")})`;
+}
+
+/** "Maktab A Category (Standard)", or "(Premium + Deluxe)" when the tents are mixed. */
+function minaLabel(stay: QuotationLike["stays"][number], packageCategory: string): string {
+  if (stay.withoutMina) return stay.accommodationName;
+  const tiers = minaTiers(stay);
+  if (!packageCategory) {
+    // The tent name already carries its tier; only a mix needs it spelled out.
+    return tiers.length > 1 ? `${stay.accommodationName} (${tiers.join(" + ")})` : stay.accommodationName;
+  }
+  return tiers.length ? `${packageCategory} (${tiers.join(" + ")})` : packageCategory;
+}
+
 function accommodationLabel(
   stay: QuotationLike["stays"][number],
   packageCategory: string,
   dropRoom = false,
 ): string {
-  if (stay.locationType === "mina") {
-    if (stay.withoutMina) return stay.accommodationName;
-    return packageCategory || stay.accommodationName;
-  }
+  // A genuine mix (two or more room entries) lists them, whatever the location.
+  if (!dropRoom && stay.rooms && stay.rooms.length > 1) return roomMixLabel(stay, packageCategory);
+
+  if (stay.locationType === "mina") return minaLabel(stay, packageCategory);
 
   // A package prints its room sizes as the tier price columns, so the itinerary
   // names only the hotel - "Aziziya Hotel", not "Aziziya Hotel (Sharing)".
@@ -187,10 +245,10 @@ function travelDetails(quotation: QuotationLike): PdfTravel {
 function travelNote(quotation: QuotationLike): string {
   const flight = quotation.flight;
   if (!flight?.included) {
-    return "Air ticket is not part of this package — the guest arranges their own travel.";
+    return "Air ticket is not part of this package - the guest arranges their own travel.";
   }
   if (!flight.inbound) {
-    return "One-way ticket only — the return sector is not included in this package.";
+    return "One-way ticket only - the return sector is not included in this package.";
   }
   return "";
 }
@@ -246,7 +304,7 @@ export async function toPdfView(
 
     stays: quotation.stays.map((stay) => ({
       phase: phaseLabel(stay),
-      nights: stay.nights > 0 ? `${String(stay.nights).padStart(2, "0")} Nights` : "",
+      nights: nightsLabel(stay),
       dates: stay.blockLabelHijri,
       datesSub: stay.blockLabelGregorian ?? "",
       accommodation: accommodationLabel(stay, quotation.packageCategory ?? "", asPackage),

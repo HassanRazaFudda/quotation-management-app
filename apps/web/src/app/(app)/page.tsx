@@ -40,11 +40,11 @@ export default function DashboardPage() {
 
       <div className="space-y-5 p-5 lg:p-8">
         <div className="grid gap-4 sm:grid-cols-3">
-          <StatCard icon={<FileText className="size-5" />} label="Total quotations" value={data ? String(data.total) : "—"} />
+          <StatCard icon={<FileText className="size-5" />} label="Total quotations" value={data ? String(data.total) : "-"} />
           <StatCard
             icon={<TrendingUp className="size-5" />}
             label="Latest value"
-            value={recent[0] ? formatPrice(recent[0].finalTotal) : "—"}
+            value={recent[0] ? formatPrice(recent[0].finalTotal) : "-"}
           />
           <Link href="/quotations/new" className="block">
             <Card className="flex h-full items-center gap-3 border-dashed p-5 text-brand-600 transition-colors hover:bg-brand-50">
@@ -88,7 +88,7 @@ export default function DashboardPage() {
                     <div className="min-w-0">
                       <p className="truncate font-medium text-ink">{q.guest.name}</p>
                       <p className="text-xs text-muted">
-                        {q.quotationId} · {q.packageCategory || "—"} · {q.totalNights} nights
+                        {q.quotationId} · {q.packageCategory || "-"} · {q.totalNights} nights
                       </p>
                     </div>
                     <div className="flex items-center gap-3">

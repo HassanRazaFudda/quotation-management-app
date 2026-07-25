@@ -260,7 +260,7 @@ function validateDateCoverage(
         severity: "warning",
         code: "GAP",
         message:
-          `Gap between "${current.block.label}" and "${next.block.label}" — ` +
+          `Gap between "${current.block.label}" and "${next.block.label}" - ` +
           "no stay covers the days in between.",
       });
     }

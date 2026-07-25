@@ -1,6 +1,6 @@
 "use client";
 
-import { formatPrice } from "@junaidi/shared";
+import { formatPrice, roomLabel } from "@junaidi/shared";
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -16,6 +16,22 @@ import { isAdmin, useAuthStore } from "@/stores/auth";
 
 const STATUSES = ["draft", "sent", "confirmed", "expired"] as const;
 type Status = (typeof STATUSES)[number];
+
+/**
+ * How the room reads on this row. A stay with a mix of rooms - a family split
+ * across a Quad and a Triple - lists each size joined with " + ", the same way
+ * the PDF does; a single-room stay just uses its frozen label.
+ */
+function stayRoomLabel(stay: Quotation["stays"][number]): string {
+  const rooms = stay.rooms ?? [];
+  if (rooms.length > 1) {
+    return rooms
+      .map((room) => room.roomLabel || roomLabel(room))
+      .filter(Boolean)
+      .join(" + ");
+  }
+  return stay.roomLabel;
+}
 
 export default function QuotationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -157,8 +173,8 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                   <div className="min-w-0">
                     <p className="font-medium text-ink">
                       {stay.accommodationName}
-                      {stay.roomLabel && (
-                        <span className="ml-2 text-xs font-normal text-muted">({stay.roomLabel})</span>
+                      {stayRoomLabel(stay) && (
+                        <span className="ml-2 text-xs font-normal text-muted">({stayRoomLabel(stay)})</span>
                       )}
                       {stay.coversHajj && (
                         <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
@@ -173,13 +189,13 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                     {(stay.meal || stay.mealNote) && (
                       <p className="mt-0.5 text-xs text-muted">
                         {stay.meal}
-                        {stay.mealNote && ` — ${stay.mealNote}`}
+                        {stay.mealNote && ` - ${stay.mealNote}`}
                       </p>
                     )}
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm font-semibold text-ink">{stay.nights}n</p>
-                    <p className="text-xs text-muted">{stay.lineTotal.toLocaleString("en-US")}</p>
+                    <p className="text-xs text-muted">{Math.round(stay.lineTotal).toLocaleString("en-US")}</p>
                   </div>
                 </div>
               ))}
@@ -202,12 +218,12 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                     <p className="text-muted">Return: one-way ticket only</p>
                   )}
                   <p className="pt-1 text-xs text-muted">
-                    Air fare included in the total — {formatPrice(q.flight.total)} per person
+                    Air fare included in the total - {formatPrice(q.flight.total)} per person
                   </p>
                 </div>
               ) : (
                 <p className="text-sm text-muted">
-                  Flight is not part of this package — the guest arranges their own travel.
+                  Flight is not part of this package - the guest arranges their own travel.
                 </p>
               )}
             </div>
@@ -255,7 +271,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             {isAdmin(user) && q.discount > 0 && (
               <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 Internal: {formatPrice(q.discount)} discount applied
-                {q.discountNote && ` — ${q.discountNote}`}
+                {q.discountNote && ` - ${q.discountNote}`}
                 <br />
                 Subtotal was {formatPrice(q.subtotal)}
               </div>
@@ -307,13 +323,13 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
               {q.validUntil && (
                 <Row label="Valid until" value={new Date(q.validUntil).toLocaleDateString("en-GB")} />
               )}
-              <Row label="Created by" value={q.createdByName || "—"} />
+              <Row label="Created by" value={q.createdByName || "-"} />
             </dl>
           </Card>
 
           <Card className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Package</p>
-            <p className="mt-1 text-sm font-medium text-ink">{q.packageTitle || "—"}</p>
+            <p className="mt-1 text-sm font-medium text-ink">{q.packageTitle || "-"}</p>
           </Card>
         </div>
       </div>
@@ -386,7 +402,7 @@ function ConfirmDialog({
         className="space-y-4"
       >
         <p className="text-sm text-muted">
-          Enter the HB number for this booking. It must be unique — the same
+          Enter the HB number for this booking. It must be unique - the same
           number cannot be used on another booking.
         </p>
         <Field label="HB Number">
@@ -447,7 +463,7 @@ function ListCard({ title, items, note }: { title: string; items: StyledLine[]; 
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted">—</p>
+        <p className="text-sm text-muted">-</p>
       )}
       {note && <p className="mt-2 text-xs font-medium text-brand-600">{note}</p>}
     </Card>

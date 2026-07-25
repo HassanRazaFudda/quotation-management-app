@@ -81,7 +81,7 @@ export function FlightSection({ issues }: { issues: string[] }) {
                 <Select
                   options={roundTrips.map((f) => ({
                     value: f.id,
-                    label: `${f.label} — ${formatPrice(f.price)}`,
+                    label: `${f.label} - ${formatPrice(f.price)}`,
                   }))}
                   placeholder={roundTrips.length ? "Select a two-way ticket" : "None configured"}
                   value={flight.roundTripId ?? ""}
@@ -89,7 +89,7 @@ export function FlightSection({ issues }: { issues: string[] }) {
                 />
                 {chosenRt && (
                   <span className="mt-1 block text-xs text-muted">
-                    Both legs, one fare — return from {chosenRt.returnFrom || chosenRt.destination}
+                    Both legs, one fare - return from {chosenRt.returnFrom || chosenRt.destination}
                   </span>
                 )}
               </label>
@@ -101,7 +101,7 @@ export function FlightSection({ issues }: { issues: string[] }) {
                     <Select
                       options={outbound.map((f) => ({
                         value: f.id,
-                        label: `${f.label} — ${formatPrice(f.price)}`,
+                        label: `${f.label} - ${formatPrice(f.price)}`,
                       }))}
                       placeholder="Select departure"
                       value={flight.outboundId ?? ""}
@@ -138,7 +138,7 @@ export function FlightSection({ issues }: { issues: string[] }) {
                     <Select
                       options={inbound.map((f) => ({
                         value: f.id,
-                        label: `${f.label} — ${formatPrice(f.price)}`,
+                        label: `${f.label} - ${formatPrice(f.price)}`,
                       }))}
                       placeholder="Select return"
                       value={flight.inboundId ?? ""}

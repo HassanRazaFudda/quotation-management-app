@@ -44,6 +44,24 @@ const styledLineSchema = new Schema(
   { _id: false },
 );
 
+/** One room in a mixed stay: its own accommodation, room choice and headcount,
+ *  with the name and label frozen so a sent PDF never rewords itself. */
+const roomEntrySchema = new Schema(
+  {
+    accommodationId: { type: Schema.Types.ObjectId, ref: "Accommodation", required: true },
+    accommodationName: { type: String, default: "" },
+    roomType: { type: String, enum: [...AZIZIYA_ROOM_TYPES, null], default: null },
+    occupancy: { type: String, enum: [...OCCUPANCIES, null], default: null },
+    sharingWord: { type: String, enum: [...SHARING_WORDS, null], default: null },
+    /** These people share a room without their own bed, at the no-bed rate. */
+    withoutBed: { type: Boolean, default: false },
+    /** "Quad", "Triple", "Without bed" - what the PDF prints for this room. */
+    roomLabel: { type: String, default: "" },
+    headcount: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
 const staySchema = new Schema(
   {
     // References, kept for reporting.
@@ -87,9 +105,22 @@ const staySchema = new Schema(
      */
     coversHajj: { type: Boolean, default: false },
 
+    /**
+     * A mix of rooms in this one stay - a family across a Quad and a Triple, or
+     * two pilgrims in different Mina tiers. Each entry is frozen with its own
+     * name, label and count so the PDF can list them. Empty (the common case)
+     * means the whole party shares the single room choice above.
+     */
+    rooms: {
+      type: [roomEntrySchema],
+      default: [],
+    },
+
     nights: { type: Number, required: true, min: 0 },
     rateSnapshot: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },
+    /** The whole party's room cost for this stay. */
+    groupTotal: { type: Number, default: 0, min: 0 },
   },
   { _id: false },
 );

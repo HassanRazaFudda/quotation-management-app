@@ -20,8 +20,14 @@ import {
   type AziziyaRoomType,
   type Occupancy,
   type PricingModel,
+  type RoomEntry,
   type SharingWord,
 } from "./types";
+
+/** People assigned across a stay's room mix. Zero when it has no mix at all. */
+export function allocatedHeadcount(rooms: RoomEntry[] | undefined): number {
+  return (rooms ?? []).reduce((sum, room) => sum + Math.max(0, Math.round(room.headcount)), 0);
+}
 
 export interface RoomChoice {
   /** Stable value for a <select>. */
@@ -31,6 +37,8 @@ export interface RoomChoice {
   roomType: AziziyaRoomType | null;
   occupancy: Occupancy | null;
   sharingWord: SharingWord | null;
+  /** Priced at the hotel's no-bed rate; used inside a room mix. */
+  withoutBed?: boolean;
 }
 
 const SHARING: Omit<RoomChoice, "label" | "value"> = {
@@ -66,10 +74,65 @@ export function roomChoices(
   pax: number,
   allowedOccupancies: Occupancy[] = [],
   allowedSharingWords: SharingWord[] = [],
+  perRoom = false,
 ): RoomChoice[] {
   if (model === "flat") return []; // a Mina tent has no room choice
 
   const allowed = allowedOccupancies.length > 0 ? allowedOccupancies : [...OCCUPANCIES];
+
+  // A guest sharing a room without their own bed - a child, or a fifth in a
+  // Quad. Priced at the hotel's own no-bed rate, used inside a room mix.
+  const noBed: RoomChoice = {
+    value: "without-bed",
+    label: "Without bed",
+    roomType: null,
+    occupancy: null,
+    sharingWord: null,
+    withoutBed: true,
+  };
+
+  // Inside a room mix each entry is one explicit room, so the sizes are named
+  // outright - and offered whatever the party count, since each entry carries
+  // its own headcount rather than the whole party's.
+  if (perRoom) {
+    const roomsFor: RoomChoice[] = [];
+
+    if (model === "byOccupancy") {
+      // A hotel: Quad (the shared/Quad rate), Triple, Double.
+      for (const occupancy of OCCUPANCIES) {
+        if (!allowed.includes(occupancy)) continue;
+        roomsFor.push({
+          value: occupancy === "Quad" ? "sharing-quad" : occupancy.toLowerCase(),
+          label: occupancy,
+          roomType: "sharing",
+          occupancy,
+          sharingWord: occupancy === "Quad" ? "Quad" : null,
+        });
+      }
+    } else {
+      // Aziziya: one shared figure, named generically or by its size (Quad /
+      // Quint / Hexa), plus a private Triple or Double.
+      roomsFor.push({ ...SHARING, value: "sharing", label: "Sharing" });
+      const words = allowedSharingWords.length > 0 ? allowedSharingWords : [...SHARING_WORDS];
+      for (const word of words) {
+        roomsFor.push({ ...SHARING, value: `sharing-${word.toLowerCase()}`, label: word, sharingWord: word });
+      }
+      for (const occupancy of ["Triple", "Double"] as const) {
+        if (!allowed.includes(occupancy)) continue;
+        roomsFor.push({
+          value: `separate-${occupancy.toLowerCase()}`,
+          label: `Separate - ${occupancy}`,
+          roomType: "separate",
+          occupancy,
+          sharingWord: null,
+        });
+      }
+    }
+
+    roomsFor.push(noBed);
+    return roomsFor;
+  }
+
   const choices: RoomChoice[] = [];
 
   // The shared room is priced as a Quad, so a hotel without quad rooms has no
@@ -104,6 +167,7 @@ export function roomChoices(
         sharingWord: null,
       });
     }
+    choices.push(noBed);
     return choices;
   }
 
@@ -120,6 +184,7 @@ export function roomChoices(
       sharingWord: null,
     });
   }
+  choices.push(noBed);
   return choices;
 }
 
@@ -127,10 +192,12 @@ interface StayRoom {
   roomType?: AziziyaRoomType | null;
   occupancy?: Occupancy | null;
   sharingWord?: SharingWord | null;
+  withoutBed?: boolean | null;
 }
 
 /** Which choice a stay currently represents, for populating a <select>. */
 export function roomChoiceValue(stay: StayRoom): string {
+  if (stay.withoutBed) return "without-bed";
   if (stay.roomType === "separate") {
     return stay.occupancy ? `separate-${stay.occupancy.toLowerCase()}` : "";
   }
@@ -144,6 +211,7 @@ export function roomChoiceValue(stay: StayRoom): string {
 
 /** How the room reads on the quotation: "Sharing", "Quint", "Separate - Triple". */
 export function roomLabel(stay: StayRoom): string {
+  if (stay.withoutBed) return "Without bed";
   if (stay.roomType === "separate") {
     return stay.occupancy ? `Separate - ${stay.occupancy}` : "Separate";
   }

@@ -249,6 +249,124 @@ describe("totals", () => {
   });
 });
 
+/**
+ * A family that splits across room types in one stay. The quotation blends them
+ * into a single PAX-weighted average, rather than two separate per-person rates.
+ */
+describe("a mix of rooms in one stay", () => {
+  it("spreads one room choice across the whole party (the ordinary case)", () => {
+    // Seven people, all Quad: still the plain per-person rate, not seven times it.
+    const priced = priceStay(
+      { blockId: "blk-pre-makkah", locationId: "loc-makkah", accommodationId: "acc-swiss", ...sharing },
+      context,
+      7,
+    );
+    expect(priced.groupTotal).toBe(7 * 150_000);
+    expect(priced.lineTotal).toBe(150_000);
+    expect(priced.rooms).toHaveLength(1);
+    expect(priced.rooms[0]!.headcount).toBe(7);
+  });
+
+  it("prices a Quad + Triple family at one average per person", () => {
+    // 4 in a Quad room, 3 in a Triple room, one Makkah stay.
+    const priced = priceStay(
+      {
+        blockId: "blk-pre-makkah",
+        locationId: "loc-makkah",
+        accommodationId: "acc-swiss",
+        rooms: [
+          { accommodationId: "acc-swiss", occupancy: "Quad", headcount: 4 },
+          { accommodationId: "acc-swiss", occupancy: "Triple", headcount: 3 },
+        ],
+      },
+      context,
+      7,
+    );
+
+    expect(priced.groupTotal).toBe(4 * 150_000 + 3 * 175_000); // 1,125,000
+    expect(priced.rooms).toHaveLength(2);
+    // One blended figure, not two separate rates.
+    const totals = calculateTotals({ stays: [priced], pax: 7 });
+    expect(totals.finalTotal).toBe(Math.round(1_125_000 / 7)); // 160,714
+  });
+
+  it("blends two different Mina tiers for a two-person party", () => {
+    // One Premium tent, one Deluxe tent - different accommodations, one average.
+    const priced = priceStay(
+      {
+        blockId: "blk-hajj-5n",
+        locationId: "loc-mina",
+        accommodationId: "acc-mina-std",
+        rooms: [
+          { accommodationId: "acc-mina-std", headcount: 1 },
+          { accommodationId: "acc-mina-dlx", headcount: 1 },
+        ],
+      },
+      context,
+      2,
+    );
+
+    expect(priced.groupTotal).toBe(145_000 + 260_000);
+    expect(calculateTotals({ stays: [priced], pax: 2 }).finalTotal).toBe((145_000 + 260_000) / 2);
+  });
+
+  it("prices a fifth passenger without a bed at the hotel's no-bed rate", () => {
+    // Four in a Quad, one sharing the room without a bed.
+    const priced = priceStay(
+      {
+        blockId: "blk-pre-makkah",
+        locationId: "loc-makkah",
+        accommodationId: "acc-swiss",
+        rooms: [
+          { accommodationId: "acc-swiss", occupancy: "Quad", headcount: 4 },
+          { accommodationId: "acc-swiss", withoutBed: true, headcount: 1 },
+        ],
+      },
+      context,
+      5,
+    );
+
+    expect(priced.groupTotal).toBe(4 * 150_000 + 1 * 50_000); // 650,000
+    expect(calculateTotals({ stays: [priced], pax: 5 }).finalTotal).toBe(650_000 / 5); // 130,000
+  });
+
+  it("refuses a without-bed guest when the hotel has no no-bed rate", () => {
+    // Sofitel in this block has rates but no withoutBed figure.
+    expect(() =>
+      priceStay(
+        {
+          blockId: "blk-pre-madinah",
+          locationId: "loc-madinah",
+          accommodationId: "acc-sofitel",
+          rooms: [{ accommodationId: "acc-sofitel", withoutBed: true, headcount: 1 }],
+        },
+        context,
+        1,
+      ),
+    ).toThrow(/without bed/i);
+  });
+
+  it("keeps the air fare and discount per person across the group", () => {
+    const priced = priceStay(
+      {
+        blockId: "blk-pre-makkah",
+        locationId: "loc-makkah",
+        accommodationId: "acc-swiss",
+        rooms: [
+          { accommodationId: "acc-swiss", occupancy: "Quad", headcount: 4 },
+          { accommodationId: "acc-swiss", occupancy: "Double", headcount: 2 },
+        ],
+      },
+      context,
+      6,
+    );
+    // (4*150k + 2*220k)/6 = 173,333.33 per person, + 100k flight, - 20k discount.
+    const totals = calculateTotals({ stays: [priced], pax: 6, flightTotal: 100_000, discount: 20_000 });
+    const perPerson = (4 * 150_000 + 2 * 220_000) / 6 + 100_000;
+    expect(totals.finalTotal).toBe(Math.round(perPerson - 20_000));
+  });
+});
+
 describe("the PDF must never learn about the discount", () => {
   const priced = priceStays(
     [{ blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std" }],
@@ -366,12 +484,14 @@ describe("emptyRate", () => {
       ...ids,
       model: "byOccupancy",
       rates: { Quad: 0, Triple: 0, Double: 0 },
+      withoutBed: 0,
     });
     expect(emptyRate("sharingOrSeparate", ids)).toEqual({
       ...ids,
       model: "sharingOrSeparate",
       sharing: 0,
       separate: { Quad: 0, Triple: 0, Double: 0 },
+      withoutBed: 0,
     });
   });
 
