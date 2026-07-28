@@ -184,6 +184,7 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
   const [validUntil, setValidUntil] = useState("");
   const [discount, setDiscount] = useState(0);
   const [tier, setTier] = useState<Occupancy | "">("");
+  const [branding, setBranding] = useState(true);
   const [printing, setPrinting] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -197,6 +198,7 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
     setPax(1);
     setValidUntil("");
     setDiscount(0);
+    setBranding(true);
     const first = pkg?.tierPricing?.enabled
       ? OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ])
       : undefined;
@@ -208,7 +210,7 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
     setPrinting(true);
     try {
       const blob = await api.pdf(`/api/packages/${pkg._id}/pdf`, {
-        body: { guest: { name: name.trim(), pax }, validUntil: validUntil || null, discount },
+        body: { guest: { name: name.trim(), pax }, validUntil: validUntil || null, discount, branding },
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -289,6 +291,20 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
         <Field label="Discount (optional, not shown on the PDF)">
           <NumberInput min={0} value={discount} onChange={setDiscount} placeholder="0" />
         </Field>
+        <label className="flex items-center gap-2 text-sm font-medium text-ink">
+          <input
+            type="checkbox"
+            checked={branding}
+            onChange={(e) => setBranding(e.target.checked)}
+            className="size-4 accent-brand-500"
+          />
+          Include Junaidi branding
+        </label>
+        {!branding && (
+          <p className="-mt-2 text-xs text-muted">
+            The PDF prints with no logo, letterhead or agency signature - a neutral copy.
+          </p>
+        )}
       </div>
       <div className="mt-5 flex flex-wrap justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={onClose}>

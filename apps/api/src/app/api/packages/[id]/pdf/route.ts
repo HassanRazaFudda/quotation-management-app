@@ -24,7 +24,7 @@ export const POST = route(async (request, { params }) => {
 
   // The body may be empty (print with no customer), so parse defensively.
   const body = await readJson(request).catch(() => ({}));
-  const { guest, validUntil, discount } = packagePrintSchema.parse(body ?? {});
+  const { guest, validUntil, discount, branding } = packagePrintSchema.parse(body ?? {});
 
   const { doc, tierPrices, addOns, name } = await buildPackagePdfBundle(id!, {
     guest,
@@ -33,7 +33,7 @@ export const POST = route(async (request, { params }) => {
     generatedBy: session.name,
   });
 
-  const view = await toPdfView(doc as never, { asPackage: true, tierPrices, addOns });
+  const view = await toPdfView(doc as never, { asPackage: true, tierPrices, addOns, branding });
   const pdf = await renderQuotation(view);
 
   const safe = name.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");

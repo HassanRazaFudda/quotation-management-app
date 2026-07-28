@@ -40,6 +40,8 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
   const [q, setQ] = useState<Quotation | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [showPrint, setShowPrint] = useState(false);
+  const [branding, setBranding] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -57,13 +59,14 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
     if (!q) return;
     setDownloading(true);
     try {
-      const blob = await api.pdf(`/api/quotations/${q._id}/pdf`);
+      const blob = await api.pdf(`/api/quotations/${q._id}/pdf`, { body: { branding } });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${q.quotationId}_${q.guest.name.replace(/\s+/g, "_")}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      setShowPrint(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not download.");
     } finally {
@@ -143,7 +146,14 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                 </Button>
               </Link>
             )}
-            <Button size="sm" icon={<Download className="size-4" />} loading={downloading} onClick={download}>
+            <Button
+              size="sm"
+              icon={<Download className="size-4" />}
+              onClick={() => {
+                setBranding(true);
+                setShowPrint(true);
+              }}
+            >
               PDF
             </Button>
             {canEdit && (
@@ -341,6 +351,37 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         onCancel={() => setConfirming(false)}
         onConfirm={(hb) => changeStatus("confirmed", hb)}
       />
+
+      <Modal open={showPrint} onClose={() => setShowPrint(false)} title="Print quotation">
+        <p className="text-sm text-muted">Download this quotation as a PDF.</p>
+        <label className="mt-4 flex items-center gap-2 text-sm font-medium text-ink">
+          <input
+            type="checkbox"
+            checked={branding}
+            onChange={(e) => setBranding(e.target.checked)}
+            className="size-4 accent-brand-500"
+          />
+          Include Junaidi branding
+        </label>
+        {!branding && (
+          <p className="mt-1 text-xs text-muted">
+            The PDF prints with no logo, letterhead or agency signature - a neutral copy.
+          </p>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowPrint(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            icon={<Download className="size-4" />}
+            loading={downloading}
+            onClick={download}
+          >
+            Download PDF
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete quotation">
         <p className="text-sm text-muted">

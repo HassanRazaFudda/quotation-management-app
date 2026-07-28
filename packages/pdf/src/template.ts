@@ -259,10 +259,12 @@ function signatureSection(): string {
             <span>${caption}</span>
         </div>`;
 
+    // The agency never names itself on the signature line - it always reads
+    // "Authorised Signature", branded or not.
     return `
     <div class="sign-row">
         ${line("Guest Signature")}
-        ${line("For Junaidi Air Travels")}
+        ${line("Authorised Signature")}
     </div>`;
 }
 
@@ -300,7 +302,7 @@ export function buildHtml(view: QuotationPdfView, scale = 1): string {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>${escapeHtml(view.company.name)} - Quotation ${escapeHtml(view.quotationId)}</title>
+    <title>${escapeHtml(view.branding ? `${view.company.name} - ` : "")}Quotation ${escapeHtml(view.quotationId)}</title>
     <style>
 ${FONT_FACE_CSS}
         @page { size: A4; margin: 0; }
@@ -469,7 +471,7 @@ ${FONT_FACE_CSS}
 <!-- ===================================================== page 1 ========= -->
 <div class="sheet">
     <div class="sheet-body">
-        <div class="header-wrap">
+        ${view.branding ? `<div class="header-wrap">
         ${socialIcons(view.company)}
         <table class="header-table">
             <tr>
@@ -483,7 +485,7 @@ ${FONT_FACE_CSS}
                 </td>
             </tr>
         </table>
-        </div>
+        </div>` : ""}
 
         <table class="meta-table">
             ${view.hbNumber
@@ -544,7 +546,7 @@ ${sheetFooter(view)}
 <div class="sheet">
     <div class="sheet-body">
         <div class="page-strip">
-            <strong>${escapeHtml(view.company.name)}</strong>
+            ${view.branding ? `<strong>${escapeHtml(view.company.name)}</strong>` : "<span></span>"}
             <span>${escapeHtml(view.quotationId)} &nbsp;·&nbsp; ${escapeHtml(view.guestName)}</span>
         </div>
 ${servicesSection(view)}

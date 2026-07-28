@@ -141,6 +141,15 @@ export interface QuotationPdfView {
   /** Staff member named in the page footer. Empty hides the line. */
   generatedBy: string;
 
+  /**
+   * Print Junaidi's own marks - the letterhead (logo, name, address, contact,
+   * socials) and the name atop page 2. Off produces a neutral document for a
+   * sub-agent to stamp; the "Powered by Digitli" footer is a software mark, not
+   * Junaidi's, and stays either way. The signature line reads "Authorised
+   * Signature" whichever way this is set.
+   */
+  branding: boolean;
+
   company: PdfCompany;
   /** data: URI, embedded so the page needs no network. */
   logoDataUri: string;
@@ -171,6 +180,8 @@ export interface PdfViewInput {
   arafatServices?: Array<string | StyledLine>;
   remarks?: string;
   generatedBy?: string;
+  /** Print Junaidi's letterhead and signature. Defaults to on. */
+  branding?: boolean;
   company?: PdfCompany;
   logoDataUri?: string;
 }
@@ -224,6 +235,8 @@ export function buildPdfView(input: PdfViewInput): QuotationPdfView {
     remarks: text(input.remarks),
 
     generatedBy: text(input.generatedBy),
+
+    branding: input.branding ?? true,
 
     company: input.company ?? DEFAULT_COMPANY,
     logoDataUri: input.logoDataUri ?? "",

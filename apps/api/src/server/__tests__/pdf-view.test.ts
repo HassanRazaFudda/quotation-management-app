@@ -268,6 +268,36 @@ describe("toPdfView", () => {
     expect(pdfFilename(quotationWithDiscount as never)).toBe("HQ-1448-0007_Rashid_Shahid.pdf");
   });
 
+  describe("branding", () => {
+    it("prints Junaidi's letterhead by default, but never the agency signature", async () => {
+      const html = buildHtml(await toPdfView(quotationWithDiscount as never));
+      expect(html).toContain("JUNAIDI GROUP");
+      expect(html).toContain("contact@junaidigroup.com");
+      // The signature always reads "Authorised Signature", even branded.
+      expect(html).toContain("Authorised Signature");
+      expect(html).not.toContain("For Junaidi Air Travels");
+    });
+
+    it("strips the letterhead and signature when branding is off", async () => {
+      const html = buildHtml(await toPdfView(quotationWithDiscount as never, { branding: false }));
+      // No letterhead: the company name, address and socials are all gone.
+      expect(html).not.toContain("JUNAIDI GROUP");
+      expect(html).not.toContain("contact@junaidigroup.com");
+      expect(html).not.toContain("For Junaidi Air Travels");
+      // A neutral signature replaces the agency's.
+      expect(html).toContain("Authorised Signature");
+      // The quotation content itself is untouched.
+      expect(html).toContain("PKR 249,000 /-");
+      expect(html).toContain("Rashid Shahid");
+    });
+
+    it("keeps the 'Powered by Digitli' footer even when unbranded", async () => {
+      const html = buildHtml(await toPdfView(quotationWithDiscount as never, { branding: false }));
+      // That mark belongs to the software house, not Junaidi.
+      expect(html).toContain("Digitli");
+    });
+  });
+
   describe("the HB number", () => {
     it("is absent from a quotation that is not yet confirmed", async () => {
       const html = buildHtml(await toPdfView(quotationWithDiscount as never));

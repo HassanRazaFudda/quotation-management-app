@@ -150,6 +150,14 @@ export const packagePrintSchema = z.object({
   validUntil: z.string().nullish(),
   /** A negotiated discount off every printed price. Internal - never printed. */
   discount: z.number().min(0).default(0),
+  /** Print Junaidi's letterhead and signature. Off prints a neutral copy. */
+  branding: z.boolean().default(true),
+});
+
+/** Options for printing an existing quotation to a PDF. */
+export const quotationPrintSchema = z.object({
+  /** Print Junaidi's letterhead and signature. Off prints a neutral copy. */
+  branding: z.boolean().default(true),
 });
 
 /**

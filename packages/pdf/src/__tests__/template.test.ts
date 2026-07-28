@@ -197,7 +197,7 @@ describe("the two pages", () => {
     expect(html.indexOf("Price Includes:")).toBeGreaterThan(secondSheet);
     expect(html.indexOf("Remarks")).toBeGreaterThan(secondSheet);
     expect(html.indexOf("Guest Signature")).toBeGreaterThan(html.indexOf("Remarks"));
-    expect(html).toContain("For Junaidi Air Travels");
+    expect(html).toContain("Authorised Signature");
   });
 
   it("footers both pages with the staff member and the software house", () => {

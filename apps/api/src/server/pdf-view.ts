@@ -265,6 +265,8 @@ export interface PdfViewOptions {
   tierPrices?: Array<{ label: string; total: number }>;
   /** A package's per-room-type surcharges. */
   addOns?: Array<{ label: string; amount: number }>;
+  /** Print Junaidi's letterhead and signature. Defaults to on. */
+  branding?: boolean;
 }
 
 export async function toPdfView(
@@ -324,6 +326,10 @@ export async function toPdfView(
 
     // Named in the page footer, so a customer knows who to call back.
     generatedBy: quotation.createdByName ?? "",
+
+    // Junaidi's letterhead and signature print unless the staff member turned
+    // branding off for this print - a neutral copy for a sub-agent.
+    branding: options.branding ?? true,
 
     company: DEFAULT_COMPANY,
     logoDataUri: await loadLogoDataUri(),
