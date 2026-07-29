@@ -82,6 +82,8 @@ export const quotationSchema = z.object({
 
   discount: z.number().min(0).default(0),
   discountNote: z.string().default(""),
+  /** Signed rounding adjustment on the net; may be negative. Internal only. */
+  roundOff: z.number().default(0),
   manualTotal: z.number().min(0).nullish(),
   status: z.enum(["draft", "sent", "confirmed", "expired"]).default("draft"),
 });
@@ -181,6 +183,7 @@ export const calculateSchema = quotationSchema.pick({
   stays: true,
   flight: true,
   discount: true,
+  roundOff: true,
   manualTotal: true,
 });
 

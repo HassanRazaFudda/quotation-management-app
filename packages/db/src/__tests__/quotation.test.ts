@@ -88,6 +88,16 @@ describe("pricing a quotation", () => {
     expect(priced.finalTotal).toBe(priced.subtotal);
   });
 
+  it("applies a signed round-off after the discount and stores it", async () => {
+    const priced = await priceQuotation({ ...baseInput, discount: 1_000, roundOff: -250 });
+    expect(priced.roundOff).toBe(-250);
+    expect(priced.finalTotal).toBe(priced.subtotal - 1_000 - 250);
+
+    const saved = await createQuotation({ ...baseInput, roundOff: 500 }, staff);
+    expect(saved.roundOff).toBe(500);
+    expect(saved.finalTotal).toBe(saved.subtotal + 500);
+  });
+
   it("refuses an itinerary with errors instead of saving nonsense", async () => {
     const broken: QuotationInput = {
       ...baseInput,

@@ -6,7 +6,7 @@ import { Plane, Plus, Save, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
-import { Button, Card, Field, Input, NumberInput, Select, Spinner } from "@/components/ui";
+import { Button, Card, Field, Input, MoneyInput, Select, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useConfigStore } from "@/stores/config";
 
@@ -119,7 +119,7 @@ export default function FlightsPage() {
                       </p>
                       <p className="text-xs text-muted">{flight.airline || "-"}</p>
                     </div>
-                    <NumberInput
+                    <MoneyInput
                       min={0}
                       value={prices[flight.id] ?? flight.price}
                       onChange={(v) => setPrices((p) => ({ ...p, [flight.id]: v }))}
@@ -239,7 +239,7 @@ function AddFlight({ season, onDone }: { season: string; onDone: () => void }) {
           <Input value={airline} onChange={(e) => setAirline(e.target.value)} placeholder="PIA" />
         </Field>
         <Field label="Fare" className="w-36">
-          <NumberInput min={0} value={price} onChange={setPrice} required />
+          <MoneyInput min={0} value={price} onChange={setPrice} required />
         </Field>
         <Button type="submit" loading={saving} disabled={!origin || !destination}>
           Add

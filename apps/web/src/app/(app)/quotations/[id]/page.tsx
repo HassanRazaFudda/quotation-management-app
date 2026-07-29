@@ -277,13 +277,24 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                 : " · flight not included"}
             </p>
 
-            {/* Discount is admin-visible only, and never on the PDF. */}
-            {isAdmin(user) && q.discount > 0 && (
-              <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Internal: {formatPrice(q.discount)} discount applied
-                {q.discountNote && ` - ${q.discountNote}`}
-                <br />
-                Subtotal was {formatPrice(q.subtotal)}
+            {/* Discount and round-off are admin-visible only, never on the PDF. */}
+            {isAdmin(user) && (q.discount > 0 || q.roundOff !== 0) && (
+              <div className="mt-3 space-y-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {q.discount > 0 && (
+                  <p>
+                    Internal: {formatPrice(q.discount)} discount applied
+                    {q.discountNote && ` - ${q.discountNote}`}
+                    <br />
+                    Subtotal was {formatPrice(q.subtotal)}
+                  </p>
+                )}
+                {q.roundOff !== 0 && (
+                  <p>
+                    Rounded {q.roundOff > 0 ? "up" : "down"} by{" "}
+                    {formatPrice(Math.abs(q.roundOff))} (net was{" "}
+                    {formatPrice(q.subtotal - q.discount)})
+                  </p>
+                )}
               </div>
             )}
 

@@ -6,6 +6,7 @@ import {
   formatPrice,
   nextBlockOptions,
   OCCUPANCIES,
+  roundOffSuggestions,
   sharingWordsFor,
   type FlightOption,
   type Occupancy,
@@ -259,6 +260,8 @@ export function Builder({
         // A discount is per-customer; a duplicate starts it fresh.
         discount: editing ? source.discount : 0,
         discountNote: editing ? source.discountNote : "",
+        // Round-off is per-customer too, so a duplicate starts unrounded.
+        roundOff: editing ? (source.roundOff ?? 0) : 0,
         manualTotal: editing && source.manualOverride ? source.finalTotal : null,
         minaServiceIds: source.minaServiceIds ?? [],
         arafatServiceIds: source.arafatServiceIds ?? [],
@@ -795,6 +798,12 @@ export function Builder({
                       placeholder="Internal note (e.g. repeat customer)"
                     />
                   )}
+
+                  <RoundOffField
+                    net={result.subtotal - result.discount}
+                    value={builder.roundOff}
+                    onChange={(v) => builder.set("roundOff", v)}
+                  />
                 </>
               )}
             </div>
@@ -809,6 +818,12 @@ export function Builder({
               {result.discount > 0 && (
                 <p className="mt-1 text-xs text-amber-700">
                   after {formatPrice(result.discount)} discount
+                </p>
+              )}
+              {result.roundOff !== 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  rounded {result.roundOff > 0 ? "+" : "−"}
+                  {Math.abs(result.roundOff).toLocaleString("en-US")}
                 </p>
               )}
             </div>
@@ -1066,6 +1081,77 @@ function paxHint(pax: number): string | undefined {
 function shortCategory(label: string): string {
   const match = /maktab\s+(\S+)/i.exec(label);
   return match ? match[1]! : label;
+}
+
+/**
+ * Round the net price to a tidy figure. It suggests the nearest thousand either
+ * side - a chip that both shows the resulting total and applies the signed step
+ * - and takes any custom amount too. The adjustment is internal, like the
+ * discount; only the rounded final reaches the quotation.
+ */
+function RoundOffField({
+  net,
+  value,
+  onChange,
+}: {
+  net: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const { down, up } = roundOffSuggestions(net, 1000);
+  const final = Math.max(0, Math.round(net + value));
+
+  const chip = (delta: number) =>
+    delta === 0 ? null : (
+      <button
+        type="button"
+        onClick={() => onChange(delta)}
+        className={cn(
+          "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors hover:border-brand-300",
+          value === delta ? "border-brand-400 bg-brand-50 text-brand-700" : "border-line bg-white text-ink",
+        )}
+      >
+        {formatPrice(net + delta)}
+        <span className="ml-1 text-muted">
+          ({delta > 0 ? "+" : "−"}
+          {Math.abs(delta).toLocaleString("en-US")})
+        </span>
+      </button>
+    );
+
+  return (
+    <Field label="Round off (not shown on the quotation)">
+      <div className="space-y-2">
+        <p className="text-xs text-muted">
+          Net {formatPrice(net)} · shows as <strong className="text-ink">{formatPrice(final)}</strong>
+        </p>
+        {(down !== 0 || up !== 0) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">Round to:</span>
+            {chip(down)}
+            {chip(up)}
+            {value !== 0 && (
+              <button
+                type="button"
+                onClick={() => onChange(0)}
+                className="text-xs text-muted underline hover:text-ink"
+              >
+                clear
+              </button>
+            )}
+          </div>
+        )}
+        <NumberInput
+          value={value}
+          onChange={onChange}
+          min={-Math.round(net)}
+          fallback={0}
+          placeholder="0 (+ to add, − to subtract)"
+          className="w-full"
+        />
+      </div>
+    </Field>
+  );
 }
 
 function IssueLine({ tone, message }: { tone: "error" | "warn"; message: string }) {

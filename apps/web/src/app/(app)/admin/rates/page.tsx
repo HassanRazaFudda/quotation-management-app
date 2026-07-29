@@ -13,7 +13,7 @@ import { AlertTriangle, Save } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
-import { Button, Card, NumberInput, Spinner } from "@/components/ui";
+import { Button, Card, MoneyInput, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useConfigStore } from "@/stores/config";
 
@@ -301,7 +301,7 @@ function NumberBox({ label, value, onChange }: { label?: string; value: number; 
   return (
     <label className="flex items-center gap-1">
       {label && <span className="text-xs text-muted">{label}</span>}
-      <NumberInput min={0} value={value} onChange={onChange} className="h-9 w-28" />
+      <MoneyInput min={0} value={value} onChange={onChange} className="h-9 w-28" />
     </label>
   );
 }

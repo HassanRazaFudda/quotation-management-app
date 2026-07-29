@@ -10,6 +10,7 @@ import {
   priceStay,
   priceStays,
   priceTiers,
+  roundOffSuggestions,
   toPdfTotals,
 } from "../pricing";
 import { OCCUPANCIES, emptyRate, type StayInput } from "../types";
@@ -246,6 +247,46 @@ describe("totals", () => {
     const totals = calculateTotals({ stays: priced, discount: 27_000, manualTotal: 300_000 });
     expect(totals.manualOverride).toBe(true);
     expect(totals.finalTotal).toBe(300_000);
+  });
+
+  it("nudges the net up or down by a signed round-off", () => {
+    const up = calculateTotals({ stays: priced, roundOff: 500 });
+    expect(up.roundOff).toBe(500);
+    expect(up.finalTotal).toBe(accommodationTotal + 500);
+
+    const down = calculateTotals({ stays: priced, roundOff: -500 });
+    expect(down.roundOff).toBe(-500);
+    expect(down.finalTotal).toBe(accommodationTotal - 500);
+  });
+
+  it("rounds off the net after the discount, never below zero", () => {
+    // Net is 277,000 - 27,000 = 250,000; +250 tidies it to 250,250.
+    const totals = calculateTotals({ stays: priced, discount: 27_000, roundOff: 250 });
+    expect(totals.finalTotal).toBe(accommodationTotal - 27_000 + 250);
+
+    const clamped = calculateTotals({ stays: priced, roundOff: -999_999 });
+    expect(clamped.finalTotal).toBe(0);
+  });
+
+  it("ignores the round-off when a manual total is set", () => {
+    const totals = calculateTotals({ stays: priced, roundOff: 500, manualTotal: 300_000 });
+    expect(totals.roundOff).toBe(0);
+    expect(totals.finalTotal).toBe(300_000);
+  });
+});
+
+describe("roundOffSuggestions - the nearest tidy figures", () => {
+  it("offers the step to the previous and next thousand", () => {
+    expect(roundOffSuggestions(384_990)).toEqual({ down: -990, up: 10 });
+    expect(roundOffSuggestions(385_250)).toEqual({ down: -250, up: 750 });
+  });
+
+  it("offers nothing either side of a figure already on the step", () => {
+    expect(roundOffSuggestions(385_000)).toEqual({ down: 0, up: 0 });
+  });
+
+  it("honours a custom step", () => {
+    expect(roundOffSuggestions(384_990, 100)).toEqual({ down: -90, up: 10 });
   });
 });
 

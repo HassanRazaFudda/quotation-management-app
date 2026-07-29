@@ -324,6 +324,12 @@ export interface TotalsInput {
   flightTotal?: number;
   /** Fixed amount taken off, per person. Internal only - never shown. */
   discount?: number;
+  /**
+   * A signed rounding adjustment on the net (subtotal - discount), per person.
+   * Positive rounds up, negative rounds down. Internal only - never shown, and
+   * ignored when a manual total is set.
+   */
+  roundOff?: number;
   /** When set, replaces the calculated final per-person total entirely. */
   manualTotal?: number | null;
   /**
@@ -345,19 +351,45 @@ export function calculateTotals(input: TotalsInput): QuotationTotals {
   const subtotal = (accommodationGroup + flightGroup) / pax;
 
   const discount = clampDiscount(input.discount ?? 0, subtotal);
+  const net = subtotal - discount;
   const manualOverride = input.manualTotal !== null && input.manualTotal !== undefined;
+
+  // The rounding sits on top of the net, so a manual override (which sets the
+  // final outright) leaves no net for it to adjust.
+  const roundOff = manualOverride ? 0 : clampRoundOff(input.roundOff ?? 0, net);
 
   const finalTotal = manualOverride
     ? Math.max(0, Math.round(input.manualTotal as number))
-    : Math.max(0, Math.round(subtotal - discount));
+    : Math.max(0, Math.round(net + roundOff));
 
-  return { totalNights, subtotal: Math.round(subtotal), discount, finalTotal, manualOverride };
+  return { totalNights, subtotal: Math.round(subtotal), discount, roundOff, finalTotal, manualOverride };
 }
 
 /** A discount cannot be negative, nor larger than the subtotal. */
 function clampDiscount(discount: number, subtotal: number): number {
   if (!Number.isFinite(discount) || discount <= 0) return 0;
   return Math.min(Math.round(discount), subtotal);
+}
+
+/** Rounding may go either way, but never below a free price. */
+function clampRoundOff(roundOff: number, net: number): number {
+  if (!Number.isFinite(roundOff) || roundOff === 0) return 0;
+  return Math.round(Math.max(-net, roundOff));
+}
+
+/**
+ * The two tidy figures nearest a net price and the signed step that reaches
+ * each: `down` (<= 0) rounds to the previous multiple of `step`, `up` (>= 0) to
+ * the next. A net already on a multiple yields zero on both sides. Drives the
+ * builder's round-off suggestions.
+ */
+export function roundOffSuggestions(net: number, step = 1000): { down: number; up: number } {
+  const base = Math.max(0, Math.round(net));
+  const size = Math.max(1, Math.round(step));
+  return {
+    down: Math.floor(base / size) * size - base,
+    up: Math.ceil(base / size) * size - base,
+  };
 }
 
 // ---------------------------------------------------------------- currency

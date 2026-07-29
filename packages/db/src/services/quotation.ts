@@ -81,6 +81,8 @@ export interface QuotationInput {
   /** Internal only. Reported to the admin, never printed. */
   discount?: number;
   discountNote?: string;
+  /** Signed rounding adjustment on the net. Internal only. */
+  roundOff?: number;
   manualTotal?: number | null;
   status?: "draft" | "sent" | "confirmed" | "expired";
 }
@@ -100,6 +102,7 @@ export interface PricedQuotation {
   totalNights: number;
   subtotal: number;
   discount: number;
+  roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
   warnings: string[];
@@ -149,6 +152,7 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     stays: priced,
     flightTotal: flights.total,
     discount: input.discount,
+    roundOff: input.roundOff,
     manualTotal: input.manualTotal,
     pax,
   });
@@ -307,6 +311,7 @@ export async function buildQuotationDocument(
     subtotal: priced.subtotal,
     discount: priced.discount,
     discountNote: input.discountNote ?? "",
+    roundOff: priced.roundOff,
     finalTotal: priced.finalTotal,
     manualOverride: priced.manualOverride,
 

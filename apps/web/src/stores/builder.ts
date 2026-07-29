@@ -68,6 +68,8 @@ export interface BuilderState {
 
   discount: number;
   discountNote: string;
+  /** Signed rounding adjustment on the net (subtotal - discount). Internal. */
+  roundOff: number;
   manualTotal: number | null;
 
   // Package-only three-price pricing. Ignored entirely in quotation mode.
@@ -163,6 +165,7 @@ const EMPTY: BuilderData = {
   remarks: "",
   discount: 0,
   discountNote: "",
+  roundOff: 0,
   manualTotal: null,
   tierPricingEnabled: false,
   tiers: emptyTiers(),
@@ -236,6 +239,8 @@ export interface LocalResult {
   subtotal: number;
   flightTotal: number;
   discount: number;
+  /** Signed rounding adjustment settled into the final. Internal. */
+  roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
   issues: Issue[];
@@ -283,6 +288,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
   let subtotal = 0;
   let manualOverride = state.manualTotal !== null;
   let finalTotal = 0;
+  let roundOff = 0;
   const tierAuto: LocalResult["tierAuto"] = {
     Quad: { total: 0, complete: false },
     Triple: { total: 0, complete: false },
@@ -337,6 +343,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       stays: pricedComplete,
       flightTotal: flights.total,
       discount: state.discount,
+      roundOff: state.roundOff,
       manualTotal: state.manualTotal,
       pax: state.pax,
     });
@@ -344,6 +351,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     subtotal = totals.subtotal;
     finalTotal = totals.finalTotal;
     manualOverride = totals.manualOverride;
+    roundOff = totals.roundOff;
 
     // Tier suggestions: the hotels priced at each occupancy, plus the flight
     // (which is the same across tiers). Matches the server on save/print.
@@ -362,6 +370,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     subtotal,
     flightTotal: flights.total,
     discount: Math.min(state.discount, subtotal),
+    roundOff,
     finalTotal,
     manualOverride,
     issues,
@@ -425,6 +434,7 @@ export function toApiPayload(state: BuilderState, season: string) {
     remarks: state.remarks,
     discount: state.discount,
     discountNote: state.discountNote,
+    roundOff: state.roundOff,
     manualTotal: state.manualTotal,
   };
 }

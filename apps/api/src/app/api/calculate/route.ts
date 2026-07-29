@@ -27,6 +27,7 @@ export const POST = route(async (request) => {
     totalNights: priced.totalNights,
     subtotal: priced.subtotal,
     discount: priced.discount,
+    roundOff: priced.roundOff,
     finalTotal: priced.finalTotal,
     finalTotalFormatted: formatPrice(priced.finalTotal),
     manualOverride: priced.manualOverride,

@@ -36,6 +36,7 @@ export interface CalculateResponse {
   totalNights: number;
   subtotal: number;
   discount: number;
+  roundOff: number;
   finalTotal: number;
   finalTotalFormatted: string;
   manualOverride: boolean;
@@ -124,6 +125,8 @@ export interface Quotation {
   subtotal: number;
   discount: number;
   discountNote: string;
+  /** Signed rounding adjustment on the net. Internal, admin-visible only. */
+  roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
   createdBy: string;

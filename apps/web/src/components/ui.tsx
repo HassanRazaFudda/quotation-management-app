@@ -6,10 +6,20 @@
 
 "use client";
 
-import { forwardRef, useEffect, useState, type ReactNode } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+
+/** Layout effect on the client, a no-op on the server, without the SSR warning. */
+const useIsoLayoutEffect = typeof document !== "undefined" ? useLayoutEffect : useEffect;
 
 // ------------------------------------------------------------------ Button
 
@@ -150,6 +160,115 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
           // Show what was actually kept, not what was typed over the limit.
           setDraft(String(clamp(Number(draft))));
         }
+        onBlur?.(event);
+      }}
+      {...props}
+    />
+  );
+});
+
+interface MoneyInputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type" | "max" | "min"> {
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  /** Typing past this is clamped. */
+  max?: number;
+  /** Used when the field is left empty. */
+  fallback?: number;
+}
+
+/**
+ * A money field.
+ *
+ * It shows thousands separators as the admin types ("200,000") so a large
+ * figure is readable, but it only ever hands back a plain `number` - the commas
+ * are display only and never reach `onChange`, so the value sent to the API
+ * stays a number, not a formatted string. Whole rupees only: non-digits are
+ * stripped, which is also how the separators are removed on the way in.
+ *
+ * A `type="number"` input cannot show commas (the browser rejects them as
+ * invalid), so this is a text field carrying its own numeric discipline.
+ */
+const digitsOnly = (raw: string): string => raw.replace(/[^\d]/g, "");
+
+/** The caret index in `text` that sits just after its `n`-th digit. */
+function caretAfterDigits(text: string, n: number): number {
+  if (n <= 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i]! >= "0" && text[i]! <= "9" && ++seen === n) return i + 1;
+  }
+  return text.length;
+}
+
+export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function MoneyInput(
+  { value, onChange, min = 0, max, fallback, className, onBlur, ...props },
+  forwardedRef,
+) {
+  const settled = fallback ?? min;
+  const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min, n));
+  const format = (n: number) => n.toLocaleString("en-US");
+  // Only the digits carry meaning; commas and stray characters are sugar.
+  const parse = (raw: string): number => {
+    const digits = digitsOnly(raw);
+    return digits === "" ? NaN : Number(digits);
+  };
+
+  const innerRef = useRef<HTMLInputElement | null>(null);
+  // How many digits sat left of the caret when the value last changed. Counting
+  // in digits (not characters) means an inserted comma does not drag the caret.
+  const caretDigits = useRef<number | null>(null);
+
+  const [draft, setDraft] = useState(() => format(value));
+
+  // Follow a value set from elsewhere, but never reformat mid-keystroke.
+  useEffect(() => {
+    setDraft((current) => (parse(current) === value ? current : format(value)));
+  }, [value]);
+
+  // Restore the caret after a reformat, so typing "250000" reads left to right
+  // instead of scrambling as the separators shift the characters along.
+  useIsoLayoutEffect(() => {
+    const el = innerRef.current;
+    if (!el || caretDigits.current === null) return;
+    const pos = caretAfterDigits(draft, caretDigits.current);
+    caretDigits.current = null;
+    el.setSelectionRange(pos, pos);
+  }, [draft]);
+
+  const setRefs = (el: HTMLInputElement | null) => {
+    innerRef.current = el;
+    if (typeof forwardedRef === "function") forwardedRef(el);
+    else if (forwardedRef) forwardedRef.current = el;
+  };
+
+  return (
+    <input
+      ref={setRefs}
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      className={cn(inputClass, className)}
+      onChange={(event) => {
+        const raw = event.target.value;
+        // Digits to the left of the caret survive reformatting; count them now.
+        caretDigits.current = digitsOnly(raw.slice(0, event.target.selectionStart ?? raw.length)).length;
+        const parsed = parse(raw);
+        if (Number.isNaN(parsed)) {
+          setDraft(""); // an empty field is allowed while editing
+          return;
+        }
+        const clamped = clamp(parsed);
+        onChange(clamped);
+        setDraft(format(clamped));
+      }}
+      onBlur={(event) => {
+        const parsed = parse(draft);
+        const next = Number.isNaN(parsed) ? settled : clamp(parsed);
+        caretDigits.current = null; // no caret games once focus leaves
+        setDraft(format(next));
+        onChange(next);
         onBlur?.(event);
       }}
       {...props}

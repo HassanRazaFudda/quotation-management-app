@@ -399,6 +399,12 @@ export interface QuotationTotals {
   subtotal: number;
   /** Internal only. Must never reach the PDF. */
   discount: number;
+  /**
+   * A signed adjustment applied to the net (subtotal - discount) to reach a
+   * tidy final figure - "+10" to lift 384,990 to 385,000, "-250" to bring
+   * 385,250 down. Internal, like the discount; only the rounded final is shown.
+   */
+  roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
 }

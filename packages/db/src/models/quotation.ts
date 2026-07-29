@@ -188,6 +188,8 @@ const quotationSchema = new Schema(
     /** Internal only. Never rendered on the customer's PDF. */
     discount: { type: Number, default: 0, min: 0 },
     discountNote: { type: String, default: "" },
+    /** Signed rounding adjustment on the net. Internal, like the discount. */
+    roundOff: { type: Number, default: 0 },
 
     finalTotal: { type: Number, default: 0 },
     manualOverride: { type: Boolean, default: false },
