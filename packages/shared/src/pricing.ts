@@ -313,7 +313,7 @@ export function finalTierTotal(auto: number, setting: TierSetting): number {
   if (setting.manualTotal !== null && setting.manualTotal !== undefined) {
     return Math.max(0, Math.round(setting.manualTotal));
   }
-  return Math.max(0, auto - clampDiscount(setting.discount, auto));
+  return Math.max(0, auto - clampDiscount(setting.discount, auto, Math.round));
 }
 
 // ------------------------------------------------------------------ totals
@@ -338,43 +338,64 @@ export interface TotalsInput {
    * so this is optional and defaults to a party of one.
    */
   pax?: number;
+  /**
+   * PKR per one unit of the quotation's currency (1 USD = 280 PKR -> 280). The
+   * base rates are PKR; the subtotal is converted at this rate, then the
+   * discount and round-off - which are given in the currency - are applied.
+   * Defaults to 1 (PKR).
+   */
+  exchangeRate?: number;
+  /** Decimal places for the currency; defaults to 0 for PKR, 2 otherwise. */
+  decimals?: number;
 }
 
 export function calculateTotals(input: TotalsInput): QuotationTotals {
   const pax = Math.max(1, Math.round(input.pax ?? 1));
   const totalNights = input.stays.reduce((sum, stay) => sum + stay.nights, 0);
 
+  const rate = Number.isFinite(input.exchangeRate) && (input.exchangeRate ?? 0) > 0 ? input.exchangeRate! : 1;
+  const decimals = input.decimals ?? (rate === 1 ? 0 : 2);
+  // Round to the currency's precision - whole rupees, or cents for a foreign one.
+  const roundMoney = (value: number): number => {
+    const factor = 10 ** decimals;
+    return Math.round(value * factor) / factor;
+  };
+
   // Work in group totals - the whole party's rooms plus the whole party's air
   // fare - then divide once, so a mix never drifts from rounding stay by stay.
   const accommodationGroup = input.stays.reduce((sum, stay) => sum + stay.groupTotal, 0);
   const flightGroup = pax * Math.max(0, input.flightTotal ?? 0);
-  const subtotal = (accommodationGroup + flightGroup) / pax;
+  const subtotalPkr = (accommodationGroup + flightGroup) / pax;
 
-  const discount = clampDiscount(input.discount ?? 0, subtotal);
+  // The base rates are PKR; convert to the quotation's currency, then take the
+  // discount and round-off off in that currency (both are given in it).
+  const subtotal = roundMoney(subtotalPkr / rate);
+
+  const discount = clampDiscount(input.discount ?? 0, subtotal, roundMoney);
   const net = subtotal - discount;
   const manualOverride = input.manualTotal !== null && input.manualTotal !== undefined;
 
   // The rounding sits on top of the net, so a manual override (which sets the
   // final outright) leaves no net for it to adjust.
-  const roundOff = manualOverride ? 0 : clampRoundOff(input.roundOff ?? 0, net);
+  const roundOff = manualOverride ? 0 : clampRoundOff(input.roundOff ?? 0, net, roundMoney);
 
   const finalTotal = manualOverride
-    ? Math.max(0, Math.round(input.manualTotal as number))
-    : Math.max(0, Math.round(net + roundOff));
+    ? Math.max(0, roundMoney(input.manualTotal as number))
+    : Math.max(0, roundMoney(net + roundOff));
 
-  return { totalNights, subtotal: Math.round(subtotal), discount, roundOff, finalTotal, manualOverride };
+  return { totalNights, subtotal, discount, roundOff, finalTotal, manualOverride };
 }
 
 /** A discount cannot be negative, nor larger than the subtotal. */
-function clampDiscount(discount: number, subtotal: number): number {
+function clampDiscount(discount: number, subtotal: number, roundMoney: (v: number) => number): number {
   if (!Number.isFinite(discount) || discount <= 0) return 0;
-  return Math.min(Math.round(discount), subtotal);
+  return Math.min(roundMoney(discount), subtotal);
 }
 
 /** Rounding may go either way, but never below a free price. */
-function clampRoundOff(roundOff: number, net: number): number {
+function clampRoundOff(roundOff: number, net: number, roundMoney: (v: number) => number): number {
   if (!Number.isFinite(roundOff) || roundOff === 0) return 0;
-  return Math.round(Math.max(-net, roundOff));
+  return roundMoney(Math.max(-net, roundOff));
 }
 
 /**
@@ -384,11 +405,13 @@ function clampRoundOff(roundOff: number, net: number): number {
  * builder's round-off suggestions.
  */
 export function roundOffSuggestions(net: number, step = 1000): { down: number; up: number } {
-  const base = Math.max(0, Math.round(net));
+  const base = Math.max(0, net);
   const size = Math.max(1, Math.round(step));
+  // Keep two decimals so a foreign-currency net (1,428.57) yields a clean step.
+  const clean = (value: number): number => Math.round(value * 100) / 100;
   return {
-    down: Math.floor(base / size) * size - base,
-    up: Math.ceil(base / size) * size - base,
+    down: clean(Math.floor(base / size) * size - base),
+    up: clean(Math.ceil(base / size) * size - base),
   };
 }
 
@@ -396,6 +419,31 @@ export function roundOffSuggestions(net: number, step = 1000): { down: number; u
 
 export function formatPrice(amount: number): string {
   return `PKR ${Math.round(amount).toLocaleString("en-US")} /-`;
+}
+
+/** Convert a PKR amount into a currency's units. `rate` is PKR per one unit. */
+export function convertFromPkr(pkr: number, rate: number): number {
+  const r = Number.isFinite(rate) && rate > 0 ? rate : 1;
+  return pkr / r;
+}
+
+/**
+ * Money in the quotation's currency. PKR keeps its familiar "PKR X /-" form;
+ * any other currency prints its code and its configured decimals, so a USD
+ * quote reads "USD 1,374.96".
+ */
+export function formatMoney(
+  amount: number,
+  currency?: { code?: string; decimals?: number } | null,
+): string {
+  const code = currency?.code || "PKR";
+  if (code === "PKR") return formatPrice(amount);
+  const decimals = currency?.decimals ?? 2;
+  const shown = amount.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return `${code} ${shown}`;
 }
 
 // ------------------------------------------------------- the PDF firewall

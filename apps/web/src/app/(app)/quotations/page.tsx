@@ -1,6 +1,6 @@
 "use client";
 
-import { formatPrice } from "@junaidi/shared";
+import { formatMoney } from "@junaidi/shared";
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { Copy, FileText, Plus, Search } from "lucide-react";
@@ -109,7 +109,7 @@ export default function QuotationsPage() {
               <Input
                 value={search}
                 onChange={(e) => change(setSearch)(e.target.value)}
-                placeholder="Search by guest or quotation number"
+                placeholder="Search by guest, quotation number, or HB number"
                 className="pl-9"
               />
             </div>
@@ -167,12 +167,16 @@ export default function QuotationsPage() {
                         <Badge tone={q.status}>{q.status}</Badge>
                       </div>
                       <p className="truncate text-xs text-muted">
-                        {q.quotationId} · {new Date(q.date).toLocaleDateString("en-GB")} ·{" "}
-                        {q.totalNights} nights · {q.createdByName}
+                        {q.quotationId}
+                        {q.hbNumber && (
+                          <span className="font-medium text-brand-600"> · {q.hbNumber}</span>
+                        )}{" "}
+                        · {new Date(q.date).toLocaleDateString("en-GB")} · {q.totalNights} nights ·{" "}
+                        {q.createdByName}
                       </p>
                     </Link>
                     <span className="hidden text-sm font-semibold text-ink sm:block">
-                      {formatPrice(q.finalTotal)}
+                      {formatMoney(q.finalTotal, q.currency)}
                     </span>
                     <button
                       onClick={() => duplicate(q)}

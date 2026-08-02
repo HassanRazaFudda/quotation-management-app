@@ -1,6 +1,6 @@
 "use client";
 
-import { formatPrice } from "@junaidi/shared";
+import { formatMoney } from "@junaidi/shared";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FileText, Plus, TrendingUp } from "lucide-react";
@@ -44,7 +44,7 @@ export default function DashboardPage() {
           <StatCard
             icon={<TrendingUp className="size-5" />}
             label="Latest value"
-            value={recent[0] ? formatPrice(recent[0].finalTotal) : "-"}
+            value={recent[0] ? formatMoney(recent[0].finalTotal, recent[0].currency) : "-"}
           />
           <Link href="/quotations/new" className="block">
             <Card className="flex h-full items-center gap-3 border-dashed p-5 text-brand-600 transition-colors hover:bg-brand-50">
@@ -93,7 +93,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="hidden text-sm font-semibold text-ink sm:block">
-                        {formatPrice(q.finalTotal)}
+                        {formatMoney(q.finalTotal, q.currency)}
                       </span>
                       <Badge tone={q.status}>{q.status}</Badge>
                     </div>

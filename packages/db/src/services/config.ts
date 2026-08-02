@@ -12,6 +12,7 @@ import {
   type Accommodation,
   type CalendarEntry,
   type ConfigBundle,
+  type Currency,
   type DateBlock,
   type FlightOption,
   type Location,
@@ -24,6 +25,7 @@ import {
 import {
   AccommodationModel,
   CalendarEntryModel,
+  CurrencyModel,
   DateBlockModel,
   FlightModel,
   LocationModel,
@@ -42,7 +44,7 @@ const activeOnly = { active: true } as const;
 export async function getConfigBundle(season: string): Promise<ConfigBundle> {
   const [
     blocks, locations, accommodations, meals, mealNotes,
-    services, categories, rates, calendar, flights,
+    services, categories, rates, calendar, flights, currencies,
   ] = await Promise.all([
       DateBlockModel.find({ ...activeOnly, season }).sort({ sortOrder: 1 }).lean(),
       LocationModel.find(activeOnly).sort({ sortOrder: 1 }).lean(),
@@ -54,6 +56,7 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
       RateModel.find({ season }).lean(),
       CalendarEntryModel.find({ hijriYear: Number(season) }).lean(),
       FlightModel.find({ ...activeOnly, season }).sort({ direction: 1, sortOrder: 1 }).lean(),
+      CurrencyModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
     ]);
 
   return {
@@ -67,7 +70,20 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
     packageCategories: categories.map(toLabelled),
     flights: flights.map(toFlight),
     rates: rates.map(toRate),
+    currencies: currencies.map(toCurrency),
     calendar: calendar.map(toCalendarEntry),
+  };
+}
+
+function toCurrency(doc: Record<string, any>): Currency {
+  return {
+    id: id(doc._id),
+    code: doc.code,
+    name: doc.name ?? "",
+    symbol: doc.symbol ?? "",
+    rate: doc.rate ?? 1,
+    decimals: doc.decimals ?? 2,
+    enabled: doc.enabled ?? true,
   };
 }
 

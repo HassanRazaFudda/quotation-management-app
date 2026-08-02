@@ -80,6 +80,8 @@ export const quotationSchema = z.object({
   includesNote: z.string().default(""),
   remarks: z.string().default(""),
 
+  /** The currency code to price in; the server resolves and freezes its rate. */
+  currencyCode: z.string().default("PKR"),
   discount: z.number().min(0).default(0),
   discountNote: z.string().default(""),
   /** Signed rounding adjustment on the net; may be negative. Internal only. */
@@ -176,12 +178,29 @@ export const packageQuoteSchema = z.object({
   tier: z.enum(["Quad", "Triple", "Double"]).nullish(),
 });
 
+/**
+ * A payment against a confirmed booking. Amounts are in `paymentCurrency`,
+ * which defaults to the quotation's own; the rate converts to the quotation
+ * currency and is 1 when they match.
+ */
+export const paymentInputSchema = z.object({
+  date: z.string().min(1, "A payment date is required."),
+  amount: z.number().positive("The amount received must be greater than zero."),
+  paymentCurrency: z.string().default(""),
+  exchangeRate: z.number().positive().default(1),
+  method: z.string().default(""),
+  notes: z.string().default(""),
+  receivedByUserId: objectId.nullish(),
+  receivedByName: z.string().default(""),
+});
+
 /** Live pricing needs less than a full save. */
 export const calculateSchema = quotationSchema.pick({
   season: true,
   withoutMina: true,
   stays: true,
   flight: true,
+  currencyCode: true,
   discount: true,
   roundOff: true,
   manualTotal: true,

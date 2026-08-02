@@ -55,7 +55,13 @@ const roomEntrySchema = new Schema(
     sharingWord: { type: String, enum: [...SHARING_WORDS, null], default: null },
     /** These people share a room without their own bed, at the no-bed rate. */
     withoutBed: { type: Boolean, default: false },
-    /** "Quad", "Triple", "Without bed" - what the PDF prints for this room. */
+    /** A Mina split entry: the tent's tier, and whether it books no tent. */
+    minaTier: { type: String, default: null },
+    withoutMina: { type: Boolean, default: false },
+    /**
+     * "Quad", "Triple", "Without bed" for a room; "Standard", "Deluxe",
+     * "Without Mina" for a Mina tier - what the PDF prints for this entry.
+     */
     roomLabel: { type: String, default: "" },
     headcount: { type: Number, required: true, min: 0 },
   },
@@ -125,6 +131,34 @@ const staySchema = new Schema(
   { _id: false },
 );
 
+/**
+ * A payment taken against a confirmed booking. Each entry freezes its own rate
+ * and the amount it converts to in the quotation currency, so money already
+ * received never shifts when a rate later changes. Keeps its own `_id` so a
+ * single entry can be corrected or removed.
+ */
+const paymentSchema = new Schema(
+  {
+    date: { type: Date, required: true },
+    /** The amount as received, in `paymentCurrency`. */
+    amount: { type: Number, required: true, min: 0 },
+    paymentCurrency: { type: String, default: "PKR", trim: true },
+    /** Quotation-currency units per one payment-currency unit; 1 when the same. */
+    exchangeRate: { type: Number, default: 1, min: 0 },
+    /** `amount x exchangeRate`, frozen, in the quotation currency. */
+    convertedAmount: { type: Number, required: true, min: 0 },
+    method: { type: String, default: "", trim: true },
+    notes: { type: String, default: "" },
+    /** The sales staff who received it: a system user, or a free-typed name. */
+    receivedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    receivedByName: { type: String, default: "", trim: true },
+    /** Who entered the record, for audit. */
+    recordedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    recordedByName: { type: String, default: "", trim: true },
+  },
+  { timestamps: { createdAt: true, updatedAt: false } },
+);
+
 const quotationSchema = new Schema(
   {
     quotationId: { type: String, required: true, unique: true, trim: true },
@@ -185,6 +219,19 @@ const quotationSchema = new Schema(
     totalNights: { type: Number, default: 0 },
     subtotal: { type: Number, default: 0 },
 
+    /**
+     * The currency this quotation is priced in, frozen at save so a later rate
+     * change never alters a sent quote. Base rates are PKR; the rate is how many
+     * PKR one unit costs. All money below (subtotal, discount, finalTotal ...)
+     * is in this currency; the per-stay line totals stay PKR and convert on show.
+     */
+    currency: {
+      code: { type: String, default: "PKR" },
+      symbol: { type: String, default: "PKR" },
+      decimals: { type: Number, default: 0 },
+    },
+    exchangeRate: { type: Number, default: 1 },
+
     /** Internal only. Never rendered on the customer's PDF. */
     discount: { type: Number, default: 0, min: 0 },
     discountNote: { type: String, default: "" },
@@ -193,6 +240,9 @@ const quotationSchema = new Schema(
 
     finalTotal: { type: Number, default: 0 },
     manualOverride: { type: Boolean, default: false },
+
+    /** Payments taken against this booking (only meaningful once confirmed). */
+    payments: { type: [paymentSchema], default: [] },
 
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     createdByName: { type: String, default: "" },

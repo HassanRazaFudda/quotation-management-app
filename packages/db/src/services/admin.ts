@@ -10,6 +10,7 @@ import type { PricingModel } from "@junaidi/shared";
 
 import {
   AccommodationModel,
+  CurrencyModel,
   DateBlockModel,
   FlightModel,
   LocationModel,
@@ -189,4 +190,16 @@ export async function upsertFlight(id: string | null, data: Record<string, unkno
 /** Soft delete: saved quotations already hold their own copy of the sector. */
 export async function deactivateFlight(id: string) {
   return FlightModel.findByIdAndUpdate(id, { $set: { active: false } }).lean();
+}
+
+export async function upsertCurrency(id: string | null, data: Record<string, unknown>) {
+  if (id) {
+    return CurrencyModel.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean();
+  }
+  return CurrencyModel.create(data);
+}
+
+/** Soft delete: a quotation already froze its own rate, so this is safe. */
+export async function deactivateCurrency(id: string) {
+  return CurrencyModel.findByIdAndUpdate(id, { $set: { active: false } }).lean();
 }

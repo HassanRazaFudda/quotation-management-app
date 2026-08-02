@@ -14,6 +14,7 @@
  */
 
 import {
+  MINA_TIERS,
   OCCUPANCIES,
   SHARING_WORDS,
   SHARING_WORD_SIZE,
@@ -221,4 +222,22 @@ export function roomLabel(stay: StayRoom): string {
     return "Sharing";
   }
   return "";
+}
+
+/**
+ * How a Mina tier reads on the quotation - the counterpart to `roomLabel`, but
+ * for the Hajj days. Each split entry is a whole accommodation (a tier or the
+ * "Without Mina" option), not a room size, so its category is named from the
+ * tent: "Standard", "Deluxe", "Premium", or "Without Mina". A tent that carries
+ * its tier only in its name (e.g. "Mina Standard B Category") still resolves.
+ */
+export function minaCategoryLabel(input: {
+  minaTier?: string | null;
+  withoutMina?: boolean | null;
+  accommodationName?: string | null;
+}): string {
+  if (input.withoutMina) return "Without Mina";
+  const name = input.accommodationName ?? "";
+  const tier = input.minaTier || MINA_TIERS.find((t) => name.toLowerCase().includes(t)) || "";
+  return tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : name;
 }

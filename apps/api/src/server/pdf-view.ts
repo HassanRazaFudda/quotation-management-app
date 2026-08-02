@@ -9,8 +9,10 @@
 
 import {
   formatGregorian,
+  formatMoney,
   formatPrice,
   MINA_TIERS,
+  minaCategoryLabel,
   roomLabel,
   type AziziyaRoomType,
   type Occupancy,
@@ -37,6 +39,8 @@ interface QuotationLike {
   guest: { name: string; pax: number };
   totalNights: number;
   finalTotal: number;
+  /** The currency the final is in; absent (or PKR) prints the familiar "PKR X /-". */
+  currency?: { code?: string; symbol?: string; decimals?: number } | null;
   qurbaniIncluded?: boolean;
   flight?: {
     included?: boolean;
@@ -70,6 +74,9 @@ interface QuotationLike {
       roomType?: AziziyaRoomType | null;
       occupancy?: Occupancy | null;
       sharingWord?: SharingWord | null;
+      /** For a Mina split: the tent's tier, and whether it books no tent. */
+      minaTier?: string | null;
+      withoutMina?: boolean | null;
       headcount: number;
     }>;
     meal?: string;
@@ -159,13 +166,33 @@ function minaTiers(stay: QuotationLike["stays"][number]): string[] {
  * Hotels share one name with the room sizes beside it; Mina lists each tier,
  * since the tiers are different accommodations.
  */
+/** Two-digit people count, e.g. 3 -> "03". */
+const paxTag = (headcount: number): string =>
+  `[${String(Math.max(0, Math.round(headcount))).padStart(2, "0")}]`;
+
 function roomMixLabel(stay: QuotationLike["stays"][number], packageCategory: string): string {
   const rooms = stay.rooms ?? [];
   if (stay.locationType === "mina") {
-    // A Hajj row keeps the Maktab name; the mixed tiers ride in the brackets.
-    return minaLabel(stay, packageCategory);
+    // A Mina split names its categories directly, joined with " + ", exactly as
+    // rooms do - "Premium[03] + Standard[01] + Without Mina[01]". "Without Mina"
+    // is a category in its own right, so it is never dropped.
+    const parts = rooms
+      .map((room) => {
+        const label =
+          room.roomLabel ||
+          minaCategoryLabel({
+            minaTier: room.minaTier,
+            withoutMina: room.withoutMina,
+            accommodationName: room.accommodationName,
+          });
+        return label ? `${label} ${paxTag(room.headcount)}` : "";
+      })
+      .filter(Boolean);
+    return parts.join(" + ");
   }
-  const parts = rooms.map((room) => room.roomLabel || roomLabel(room) || "Room");
+  const parts = rooms.map(
+    (room) => `${room.roomLabel || roomLabel(room) || "Room"} ${paxTag(room.headcount)}`,
+  );
   return `${stay.accommodationName} (${parts.join(" + ")})`;
 }
 
@@ -291,8 +318,9 @@ export async function toPdfView(
     validUntil: formatDate(quotation.validUntil),
     packageTitle: quotation.packageTitle ?? "",
 
-    // The final, already-discounted figure. Nothing else about money is passed.
-    totalPriceFormatted: formatPrice(quotation.finalTotal),
+    // The final, already-discounted figure, in the quotation's currency.
+    // Nothing else about money is passed.
+    totalPriceFormatted: formatMoney(quotation.finalTotal, quotation.currency),
     tierPrices: options.tierPrices?.map((tier) => ({
       label: tier.label,
       priceFormatted: formatPrice(tier.total),

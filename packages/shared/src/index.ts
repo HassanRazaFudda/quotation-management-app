@@ -5,3 +5,4 @@ export * from "./validation";
 export * from "./rooms";
 export * from "./flights";
 export * from "./package-title";
+export * from "./payments";

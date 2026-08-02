@@ -25,6 +25,8 @@ export const POST = route(async (request) => {
 
   return json(request, {
     totalNights: priced.totalNights,
+    currency: priced.currency,
+    exchangeRate: priced.exchangeRate,
     subtotal: priced.subtotal,
     discount: priced.discount,
     roundOff: priced.roundOff,

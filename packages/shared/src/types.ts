@@ -447,6 +447,39 @@ export interface PackageAddOn {
   amount: number;
 }
 
+// -------------------------------------------------------------- currency
+
+/**
+ * A currency a quotation can be priced in. Base rates live in PKR; a currency
+ * carries the exchange rate to convert them.
+ *
+ * `rate` is how many PKR one unit of this currency costs (1 USD = 280 PKR), so
+ * a PKR amount is converted by dividing. PKR itself is the implicit base with a
+ * rate of 1 and no decimals - it is never stored as a row.
+ */
+export interface Currency {
+  id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  /** PKR per one unit of this currency. */
+  rate: number;
+  /** Decimal places shown, e.g. 2 for USD. */
+  decimals: number;
+  enabled: boolean;
+}
+
+/** The implicit base currency. Every quotation is PKR unless another is chosen. */
+export const BASE_CURRENCY: Currency = {
+  id: "",
+  code: "PKR",
+  name: "Pakistani Rupee",
+  symbol: "PKR",
+  rate: 1,
+  decimals: 0,
+  enabled: true,
+};
+
 // ------------------------------------------------------- config bundle
 
 import type { FlightOption } from "./flights";
@@ -463,5 +496,6 @@ export interface ConfigBundle {
   packageCategories: PackageCategory[];
   flights: FlightOption[];
   rates: Rate[];
+  currencies: Currency[];
   calendar: CalendarEntry[];
 }

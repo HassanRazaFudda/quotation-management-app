@@ -38,6 +38,12 @@ export async function listUsers(): Promise<UserView[]> {
   return docs.map(toView);
 }
 
+/** Active staff as just id + name, for pickers open to any signed-in user. */
+export async function listStaffNames(): Promise<Array<{ id: string; name: string }>> {
+  const docs = await UserModel.find({ active: true }).select("name").sort({ name: 1 }).lean();
+  return docs.map((doc: Record<string, any>) => ({ id: String(doc._id), name: doc.name }));
+}
+
 export async function createUser(input: {
   email: string;
   name: string;

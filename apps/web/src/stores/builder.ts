@@ -9,6 +9,7 @@
 import {
   applyNestedNights,
   buildPackageTitle,
+  convertFromPkr,
   PACKAGE_TEMPLATE_SUFFIX,
   calculateTotals,
   makePricingContext,
@@ -66,6 +67,8 @@ export interface BuilderState {
   includesNote: string;
   remarks: string;
 
+  /** The currency to price in. "PKR" is the base; others convert from it. */
+  currencyCode: string;
   discount: number;
   discountNote: string;
   /** Signed rounding adjustment on the net (subtotal - discount). Internal. */
@@ -163,6 +166,7 @@ const EMPTY: BuilderData = {
   termIds: [],
   includesNote: "",
   remarks: "",
+  currencyCode: "PKR",
   discount: 0,
   discountNote: "",
   roundOff: 0,
@@ -236,7 +240,11 @@ export const useBuilderStore = create<BuilderState>((set) => ({
 
 export interface LocalResult {
   totalNights: number;
+  /** The resolved currency and PKR-per-unit rate the amounts below are in. */
+  currency: { code: string; symbol: string; decimals: number };
+  exchangeRate: number;
   subtotal: number;
+  /** Air fare per person, in the selected currency. */
   flightTotal: number;
   discount: number;
   /** Signed rounding adjustment settled into the final. Internal. */
@@ -283,6 +291,16 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
   const perStayTotal: Record<string, number> = {};
 
   const flights = priceFlights(state.flight, config.flights);
+
+  // Resolve the quotation's currency from config; PKR (or an unknown code) is
+  // the base. Its rate converts the PKR base rates into the shown currency.
+  const picked = config.currencies.find(
+    (c) => c.enabled && c.code.toUpperCase() === state.currencyCode.toUpperCase(),
+  );
+  const exchangeRate = picked && picked.rate > 0 ? picked.rate : 1;
+  const currency = picked
+    ? { code: picked.code, symbol: picked.symbol, decimals: picked.decimals }
+    : { code: "PKR", symbol: "PKR", decimals: 0 };
 
   let totalNights = 0;
   let subtotal = 0;
@@ -346,6 +364,8 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       roundOff: state.roundOff,
       manualTotal: state.manualTotal,
       pax: state.pax,
+      exchangeRate,
+      decimals: currency.decimals,
     });
     totalNights = totals.totalNights;
     subtotal = totals.subtotal;
@@ -367,8 +387,11 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
 
   return {
     totalNights,
+    currency,
+    exchangeRate,
     subtotal,
-    flightTotal: flights.total,
+    // The air fare shown per person, converted into the quotation's currency.
+    flightTotal: convertFromPkr(flights.total, exchangeRate),
     discount: Math.min(state.discount, subtotal),
     roundOff,
     finalTotal,
@@ -432,6 +455,7 @@ export function toApiPayload(state: BuilderState, season: string) {
     termIds: state.termIds,
     includesNote: state.includesNote,
     remarks: state.remarks,
+    currencyCode: state.currencyCode,
     discount: state.discount,
     discountNote: state.discountNote,
     roundOff: state.roundOff,

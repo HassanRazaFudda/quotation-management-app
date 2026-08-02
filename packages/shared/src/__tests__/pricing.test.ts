@@ -273,6 +273,27 @@ describe("totals", () => {
     expect(totals.roundOff).toBe(0);
     expect(totals.finalTotal).toBe(300_000);
   });
+
+  it("converts the subtotal to the currency, then discounts and rounds in it", () => {
+    // 277,000 PKR at 1 USD = 200 PKR is 1,385.00; a USD discount and round-off
+    // then apply in USD, to two decimals.
+    const totals = calculateTotals({
+      stays: priced,
+      exchangeRate: 200,
+      decimals: 2,
+      discount: 85, // USD
+      roundOff: 0.5, // USD
+    });
+    expect(totals.subtotal).toBe(1385);
+    expect(totals.discount).toBe(85);
+    expect(totals.finalTotal).toBe(1300.5);
+  });
+
+  it("keeps whole rupees when no currency is given (rate defaults to 1)", () => {
+    const totals = calculateTotals({ stays: priced, discount: 27_000 });
+    expect(totals.subtotal).toBe(accommodationTotal);
+    expect(totals.finalTotal).toBe(accommodationTotal - 27_000);
+  });
 });
 
 describe("roundOffSuggestions - the nearest tidy figures", () => {

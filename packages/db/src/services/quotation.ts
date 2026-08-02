@@ -12,6 +12,7 @@
  */
 
 import {
+  BASE_CURRENCY,
   calculateTotals,
   errorsOnly,
   formatPrice,
@@ -20,6 +21,7 @@ import {
   makePricingContext,
   nestedHajjBlocks,
   makeValidationContext,
+  minaCategoryLabel,
   priceFlights,
   priceStays,
   resolveBlocks,
@@ -78,10 +80,12 @@ export interface QuotationInput {
   includesNote?: string;
   remarks?: string;
 
-  /** Internal only. Reported to the admin, never printed. */
+  /** The currency to price in; resolved against config for its frozen rate. */
+  currencyCode?: string;
+  /** Internal only. Reported to the admin, never printed. In the currency. */
   discount?: number;
   discountNote?: string;
-  /** Signed rounding adjustment on the net. Internal only. */
+  /** Signed rounding adjustment on the net. Internal only. In the currency. */
   roundOff?: number;
   manualTotal?: number | null;
   status?: "draft" | "sent" | "confirmed" | "expired";
@@ -105,6 +109,9 @@ export interface PricedQuotation {
   roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
+  /** The frozen currency and its rate (PKR per unit) this quote was priced at. */
+  currency: { code: string; symbol: string; decimals: number };
+  exchangeRate: number;
   warnings: string[];
 }
 
@@ -148,6 +155,13 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     throw new QuotationError("The flight selection is incomplete.", flights.issues);
   }
 
+  // Resolve the quotation's currency against the current config, freezing its
+  // rate. PKR (or an unknown/disabled code) falls back to the base.
+  const wanted = (input.currencyCode ?? "PKR").toUpperCase();
+  const picked = bundle.currencies.find((c) => c.enabled && c.code.toUpperCase() === wanted);
+  const currency = picked ?? BASE_CURRENCY;
+  const exchangeRate = currency.rate > 0 ? currency.rate : 1;
+
   const totals = calculateTotals({
     stays: priced,
     flightTotal: flights.total,
@@ -155,6 +169,8 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     roundOff: input.roundOff,
     manualTotal: input.manualTotal,
     pax,
+    exchangeRate,
+    decimals: currency.decimals,
   });
 
   const blockById = new Map(blocks.map((block) => [block.id, block]));
@@ -163,6 +179,8 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     stays: priced.map((stay) => ({ ...stay, block: blockById.get(stay.blockId)! })),
     flights,
     ...totals,
+    currency: { code: currency.code, symbol: currency.symbol, decimals: currency.decimals },
+    exchangeRate,
     warnings: issues.map((issue) => issue.message),
   };
 }
@@ -220,6 +238,39 @@ export async function buildQuotationDocument(
     const accommodation = accommodationById.get(stay.accommodationId)!;
     const location = locationById.get(accommodation.locationId)!;
 
+    // A genuine mix (two or more room entries) is frozen for the PDF; an
+    // ordinary single-room stay stores nothing extra and reads as it did.
+    // Each entry is resolved against the config so its name, Mina tier and
+    // printed label are authoritative, not whatever the form happened to send
+    // - a Mina split only carries the tent id, so the label is derived here.
+    const roomsSnapshot =
+      stay.rooms.length > 1
+        ? stay.rooms.map((room) => {
+            const roomAcc = accommodationById.get(room.accommodationId);
+            const isMinaEntry = location.type === "mina";
+            return {
+              accommodationId: room.accommodationId,
+              accommodationName: roomAcc?.name ?? room.accommodationName ?? "",
+              minaTier: roomAcc?.minaTier ?? null,
+              withoutMina: roomAcc?.withoutMina ?? false,
+              roomType: room.roomType ?? null,
+              occupancy: room.occupancy ?? null,
+              sharingWord: room.sharingWord ?? null,
+              withoutBed: room.withoutBed ?? false,
+              // Mina entries name their tier ("Standard", "Without Mina");
+              // hotel/Aziziya entries name their room size.
+              roomLabel: isMinaEntry
+                ? minaCategoryLabel({
+                    minaTier: roomAcc?.minaTier,
+                    withoutMina: roomAcc?.withoutMina,
+                    accommodationName: roomAcc?.name,
+                  })
+                : roomLabel(room),
+              headcount: room.headcount,
+            };
+          })
+        : [];
+
     return {
       blockId: stay.blockId,
       locationId: location.id,
@@ -246,21 +297,7 @@ export async function buildQuotationDocument(
       mealNoteId: stay.mealNoteId ?? null,
       coversHajj: covering.has(stay.blockId),
 
-      // A genuine mix (two or more room entries) is frozen for the PDF; an
-      // ordinary single-room stay stores nothing extra and reads as it did.
-      rooms:
-        stay.rooms.length > 1
-          ? stay.rooms.map((room) => ({
-              accommodationId: room.accommodationId,
-              accommodationName: room.accommodationName,
-              roomType: room.roomType ?? null,
-              occupancy: room.occupancy ?? null,
-              sharingWord: room.sharingWord ?? null,
-              withoutBed: room.withoutBed ?? false,
-              roomLabel: roomLabel(room),
-              headcount: room.headcount,
-            }))
-          : [],
+      rooms: roomsSnapshot,
 
       nights: stay.nights,
       rateSnapshot: stay.rateSnapshot,
@@ -308,6 +345,8 @@ export async function buildQuotationDocument(
     termIds: input.termIds ?? [],
 
     totalNights: priced.totalNights,
+    currency: priced.currency,
+    exchangeRate: priced.exchangeRate,
     subtotal: priced.subtotal,
     discount: priced.discount,
     discountNote: input.discountNote ?? "",
@@ -526,7 +565,8 @@ export async function listQuotations(filter: QuotationFilter) {
   }
   if (filter.search?.trim()) {
     const pattern = new RegExp(escapeRegex(filter.search.trim()), "i");
-    query.$or = [{ quotationId: pattern }, { "guest.name": pattern }];
+    // A confirmed booking is often looked up by its HB number, so search it too.
+    query.$or = [{ quotationId: pattern }, { "guest.name": pattern }, { hbNumber: pattern }];
   }
 
   const pipeline: PipelineStage[] = [{ $match: query }];

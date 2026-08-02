@@ -397,6 +397,9 @@ const BADGE_TONES: Record<string, string> = {
   expired: "bg-amber-50 text-amber-700",
   admin: "bg-brand-50 text-brand-600",
   staff: "bg-gray-100 text-gray-600",
+  paid: "bg-emerald-50 text-emerald-700",
+  partial: "bg-amber-50 text-amber-700",
+  unpaid: "bg-brand-50 text-brand-600",
 };
 
 export function Badge({ children, tone = "draft" }: { children: ReactNode; tone?: string }) {

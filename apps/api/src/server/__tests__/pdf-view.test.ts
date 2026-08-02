@@ -142,6 +142,62 @@ describe("toPdfView", () => {
     expect(view.stays[1]!.accommodation).toBe("Maktab B Category (Standard)");
   });
 
+  it("labels a hotel room mix with sizes and pax counts", async () => {
+    const view = await toPdfView({
+      ...quotationWithDiscount,
+      stays: [
+        {
+          ...quotationWithDiscount.stays[0]!, // Aziziya Hotel
+          rooms: [
+            { roomType: "sharing", occupancy: "Quad", sharingWord: null, roomLabel: "Sharing", headcount: 1 },
+            { roomType: "sharing", occupancy: "Quad", sharingWord: "Quad", roomLabel: "Quad", headcount: 4 },
+          ],
+        },
+        quotationWithDiscount.stays[1]!,
+      ],
+    } as never);
+    expect(view.stays[0]!.accommodation).toBe("Aziziya Hotel (Sharing [01] + Quad [04])");
+  });
+
+  /**
+   * A Mina stay can be split across tiers, exactly like a room can be split
+   * across sizes. The Hajj row then names the categories directly, joined with
+   * " + " - and "Without Mina" is a category in its own right, never dropped.
+   */
+  describe("a Mina split across tiers", () => {
+    const minaSplit = (
+      rooms: Array<Record<string, unknown>>,
+    ) => ({
+      ...quotationWithDiscount,
+      packageCategory: "Maktab A Category",
+      stays: [
+        quotationWithDiscount.stays[0]!,
+        { ...quotationWithDiscount.stays[1]!, rooms },
+      ],
+    });
+
+    it("names two tiers with a '+' and their pax counts, from the frozen labels", async () => {
+      const view = await toPdfView(
+        minaSplit([
+          { accommodationName: "Mina Premium", minaTier: "premium", roomLabel: "Premium", headcount: 3 },
+          { accommodationName: "Mina Standard", minaTier: "standard", roomLabel: "Standard", headcount: 1 },
+        ]) as never,
+      );
+      expect(view.stays[1]!.accommodation).toBe("Premium [03] + Standard [01]");
+    });
+
+    it("keeps 'Without Mina' as a category, deriving labels when unfrozen", async () => {
+      // No roomLabel here, so the label is derived from tier / withoutMina.
+      const view = await toPdfView(
+        minaSplit([
+          { accommodationName: "Mina Standard", minaTier: "standard", withoutMina: false, headcount: 2 },
+          { accommodationName: "Without Mina", minaTier: null, withoutMina: true, headcount: 3 },
+        ]) as never,
+      );
+      expect(view.stays[1]!.accommodation).toBe("Standard [02] + Without Mina [03]");
+    });
+  });
+
   /**
    * The travel dates are the itinerary's own edges, so they are known even for
    * a land-only package; only the sectors depend on selling the ticket.
@@ -266,6 +322,22 @@ describe("toPdfView", () => {
 
   it("builds a safe filename", () => {
     expect(pdfFilename(quotationWithDiscount as never)).toBe("HQ-1448-0007_Rashid_Shahid.pdf");
+  });
+
+  describe("currency", () => {
+    it("prints the final in the quotation's currency, to its decimals", async () => {
+      const view = await toPdfView({
+        ...quotationWithDiscount,
+        finalTotal: 1374.96,
+        currency: { code: "USD", symbol: "$", decimals: 2 },
+      } as never);
+      expect(view.totalPrice).toBe("USD 1,374.96");
+    });
+
+    it("keeps PKR's familiar form when no currency is set", async () => {
+      const view = await toPdfView(quotationWithDiscount as never);
+      expect(view.totalPrice).toBe("PKR 249,000 /-");
+    });
   });
 
   describe("branding", () => {

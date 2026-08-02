@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allocatedHeadcount,
+  minaCategoryLabel,
   roomChoiceValue,
   roomChoices,
   roomLabel,
@@ -251,5 +252,27 @@ describe("allocatedHeadcount", () => {
         { accommodationId: "a", occupancy: "Triple", headcount: 3 },
       ]),
     ).toBe(7);
+  });
+});
+
+describe("minaCategoryLabel", () => {
+  it("names a tier from the stored field", () => {
+    expect(minaCategoryLabel({ minaTier: "standard" })).toBe("Standard");
+    expect(minaCategoryLabel({ minaTier: "deluxe" })).toBe("Deluxe");
+    expect(minaCategoryLabel({ minaTier: "premium" })).toBe("Premium");
+  });
+
+  it("reads the tier off the tent name when the field is unset", () => {
+    expect(minaCategoryLabel({ accommodationName: "Mina Premium B Category" })).toBe("Premium");
+  });
+
+  it("names the without-Mina option as its own category", () => {
+    expect(minaCategoryLabel({ withoutMina: true, accommodationName: "Without Mina" })).toBe(
+      "Without Mina",
+    );
+  });
+
+  it("falls back to the name when there is no tier", () => {
+    expect(minaCategoryLabel({ accommodationName: "Special Camp" })).toBe("Special Camp");
   });
 });

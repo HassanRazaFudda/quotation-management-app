@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   BedDouble,
   CalendarDays,
+  Coins,
   FileText,
   LayoutDashboard,
   ListChecks,
@@ -18,6 +19,7 @@ import {
   Settings,
   Tags,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 
@@ -38,9 +40,11 @@ const NAV: NavItem[] = [
   { href: "/quotations", label: "Quotations", icon: <FileText className="size-5" /> },
   { href: "/quotations/new", label: "New Quotation", icon: <Plus className="size-5" /> },
   { href: "/packages", label: "Packages", icon: <Package className="size-5" /> },
+  { href: "/payments", label: "Payments", icon: <Wallet className="size-5" /> },
   { href: "/admin/rates", label: "Rates", icon: <Tags className="size-5" />, adminOnly: true },
   { href: "/admin/hotels", label: "Hotels", icon: <BedDouble className="size-5" />, adminOnly: true },
   { href: "/admin/flights", label: "Flights", icon: <Plane className="size-5" />, adminOnly: true },
+  { href: "/admin/currencies", label: "Currencies", icon: <Coins className="size-5" />, adminOnly: true },
   { href: "/admin/blocks", label: "Date Blocks", icon: <CalendarDays className="size-5" />, adminOnly: true },
   { href: "/admin/services", label: "Services", icon: <ListChecks className="size-5" />, adminOnly: true },
   { href: "/admin/users", label: "Users", icon: <Users className="size-5" />, adminOnly: true },

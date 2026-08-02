@@ -1,12 +1,13 @@
 "use client";
 
-import { formatPrice, roomLabel } from "@junaidi/shared";
+import { convertFromPkr, formatMoney, minaCategoryLabel, roomLabel } from "@junaidi/shared";
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Copy, Download, Pencil, Plane, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
+import { PaymentsCard } from "@/components/payments-card";
 import { toast } from "@/components/toast";
 import { Badge, Button, Card, Field, Input, Modal, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -22,16 +23,42 @@ type Status = (typeof STATUSES)[number];
  * across a Quad and a Triple - lists each size joined with " + ", the same way
  * the PDF does; a single-room stay just uses its frozen label.
  */
+/** Two-digit people count, e.g. 3 -> "03". */
+const paxTag = (headcount: number): string =>
+  `[${String(Math.max(0, Math.round(headcount))).padStart(2, "0")}]`;
+
+/**
+ * How the room reads on this row - the same "Label[NN]" combination the PDF
+ * prints. A mix names each room/tier with its pax count joined by " + "
+ * ("Triple[03] + Double[02]", "Premium[03] + Without Mina[01]"); a single-room
+ * stay just uses its frozen label.
+ */
 function stayRoomLabel(stay: Quotation["stays"][number]): string {
   const rooms = stay.rooms ?? [];
   if (rooms.length > 1) {
+    const isMina = stay.locationType === "mina";
     return rooms
-      .map((room) => room.roomLabel || roomLabel(room))
+      .map((room) => {
+        const label =
+          room.roomLabel ||
+          (isMina
+            ? minaCategoryLabel({
+                minaTier: room.minaTier,
+                withoutMina: room.withoutMina,
+                accommodationName: room.accommodationName,
+              })
+            : roomLabel(room));
+        return label ? `${label} ${paxTag(room.headcount)}` : "";
+      })
       .filter(Boolean)
       .join(" + ");
   }
   return stay.roomLabel;
 }
+
+/** A Mina stay split across tiers shows its categories bare, with no tent-name prefix. */
+const isMinaMix = (stay: Quotation["stays"][number]): boolean =>
+  stay.locationType === "mina" && (stay.rooms?.length ?? 0) > 1;
 
 export default function QuotationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -129,6 +156,19 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
 
   const canEdit = isAdmin(user) || q.createdBy === user?.userId;
 
+  // The totals (finalTotal, subtotal, discount, roundOff) are stored in the
+  // quotation's currency; the per-stay and flight figures are PKR and convert.
+  // Quotations saved before currencies existed carry none, so default to PKR.
+  const currency = q.currency ?? { code: "PKR", symbol: "PKR", decimals: 0 };
+  const exchangeRate = q.exchangeRate || 1;
+  const money = (value: number) => formatMoney(value, currency);
+  const inCurrency = (pkr: number) => convertFromPkr(pkr, exchangeRate);
+  const stayAmount = (pkr: number) =>
+    inCurrency(pkr).toLocaleString("en-US", {
+      minimumFractionDigits: currency.decimals,
+      maximumFractionDigits: currency.decimals,
+    });
+
   return (
     <>
       <PageHeader
@@ -182,9 +222,19 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                 <div key={i} className="flex items-start justify-between gap-4 px-5 py-3">
                   <div className="min-w-0">
                     <p className="font-medium text-ink">
-                      {stay.accommodationName}
-                      {stayRoomLabel(stay) && (
-                        <span className="ml-2 text-xs font-normal text-muted">({stayRoomLabel(stay)})</span>
+                      {isMinaMix(stay) ? (
+                        // A Mina split reads bare, exactly as it prints:
+                        // "Premium[03] + Standard[01] + Without Mina[01]".
+                        stayRoomLabel(stay)
+                      ) : (
+                        <>
+                          {stay.accommodationName}
+                          {stayRoomLabel(stay) && (
+                            <span className="ml-2 text-xs font-normal text-muted">
+                              ({stayRoomLabel(stay)})
+                            </span>
+                          )}
+                        </>
                       )}
                       {stay.coversHajj && (
                         <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
@@ -205,7 +255,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm font-semibold text-ink">{stay.nights}n</p>
-                    <p className="text-xs text-muted">{Math.round(stay.lineTotal).toLocaleString("en-US")}</p>
+                    <p className="text-xs text-muted">{stayAmount(stay.lineTotal)}</p>
                   </div>
                 </div>
               ))}
@@ -228,7 +278,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                     <p className="text-muted">Return: one-way ticket only</p>
                   )}
                   <p className="pt-1 text-xs text-muted">
-                    Air fare included in the total - {formatPrice(q.flight.total)} per person
+                    Air fare included in the total - {money(inCurrency(q.flight.total))} per person
                   </p>
                 </div>
               ) : (
@@ -238,6 +288,9 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
               )}
             </div>
           </Card>
+
+          {/* ---------------- payments (confirmed bookings only) ---------------- */}
+          {q.status === "confirmed" && <PaymentsCard quotation={q} onUpdated={setQ} />}
 
           {/* ---------------- services & terms ---------------- */}
           {(q.minaServices.length > 0 || q.arafatServices.length > 0) && (
@@ -269,11 +322,11 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         <div className="space-y-5">
           <Card className="p-5">
             <p className="text-xs font-semibold text-muted">TOTAL PER PERSON</p>
-            <p className="text-3xl font-bold text-brand-600">{formatPrice(q.finalTotal)}</p>
+            <p className="text-3xl font-bold text-brand-600">{money(q.finalTotal)}</p>
             <p className="mt-1 text-sm text-muted">
               {q.totalNights} nights
               {q.flight?.included
-                ? ` · incl. ${formatPrice(q.flight.total)} air fare`
+                ? ` · incl. ${money(inCurrency(q.flight.total))} air fare`
                 : " · flight not included"}
             </p>
 
@@ -282,17 +335,17 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
               <div className="mt-3 space-y-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 {q.discount > 0 && (
                   <p>
-                    Internal: {formatPrice(q.discount)} discount applied
+                    Internal: {money(q.discount)} discount applied
                     {q.discountNote && ` - ${q.discountNote}`}
                     <br />
-                    Subtotal was {formatPrice(q.subtotal)}
+                    Subtotal was {money(q.subtotal)}
                   </p>
                 )}
                 {q.roundOff !== 0 && (
                   <p>
                     Rounded {q.roundOff > 0 ? "up" : "down"} by{" "}
-                    {formatPrice(Math.abs(q.roundOff))} (net was{" "}
-                    {formatPrice(q.subtotal - q.discount)})
+                    {money(Math.abs(q.roundOff))} (net was{" "}
+                    {money(q.subtotal - q.discount)})
                   </p>
                 )}
               </div>

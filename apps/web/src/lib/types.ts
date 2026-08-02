@@ -1,8 +1,15 @@
 /** Shapes returned by the API, mirrored for the client. */
 
-import type { ConfigBundle, SharingWord, StyledLine } from "@junaidi/shared";
+import type { ConfigBundle, Currency, SharingWord, StyledLine } from "@junaidi/shared";
 
-export type { StyledLine };
+export type { Currency, StyledLine };
+
+/** The currency a quotation is priced in, frozen at save. PKR is the base. */
+export interface QuotationCurrency {
+  code: string;
+  symbol: string;
+  decimals: number;
+}
 
 export interface SessionUser {
   userId: string;
@@ -34,6 +41,8 @@ export interface CalculateLine {
 
 export interface CalculateResponse {
   totalNights: number;
+  currency: QuotationCurrency;
+  exchangeRate: number;
   subtotal: number;
   discount: number;
   roundOff: number;
@@ -69,6 +78,9 @@ export interface QuotationStay {
     occupancy: "Quad" | "Triple" | "Double" | null;
     sharingWord: SharingWord | null;
     withoutBed?: boolean | null;
+    /** For a Mina split: the tent's tier, and whether it books no tent. */
+    minaTier?: string | null;
+    withoutMina?: boolean | null;
     roomLabel?: string;
     headcount: number;
   }>;
@@ -82,6 +94,22 @@ export interface QuotationStay {
   lineTotal: number;
   /** This stay spans the Hajj days, listed again as their own row. */
   coversHajj?: boolean;
+}
+
+/** A payment recorded against a confirmed quotation (in the quotation currency once converted). */
+export interface QuotationPayment {
+  _id: string;
+  date: string;
+  amount: number;
+  paymentCurrency: string;
+  exchangeRate: number;
+  convertedAmount: number;
+  method: string;
+  notes: string;
+  receivedByUserId: string | null;
+  receivedByName: string;
+  recordedByName: string;
+  createdAt: string;
 }
 
 export interface QuotationFlight {
@@ -122,6 +150,12 @@ export interface Quotation {
   termIds?: string[];
   remarks: string;
   totalNights: number;
+  /**
+   * The currency this quotation is priced in (frozen). PKR is the base.
+   * Optional: quotations saved before currencies existed carry neither field.
+   */
+  currency?: QuotationCurrency;
+  exchangeRate?: number;
   subtotal: number;
   discount: number;
   discountNote: string;
@@ -129,6 +163,8 @@ export interface Quotation {
   roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
+  /** Payments taken against this booking; present once confirmed. */
+  payments?: QuotationPayment[];
   createdBy: string;
   createdByName: string;
   createdAt: string;

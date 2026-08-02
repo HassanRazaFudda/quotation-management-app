@@ -3,6 +3,7 @@
 import {
   blockContains,
   finalTierTotal,
+  formatMoney,
   formatPrice,
   nextBlockOptions,
   OCCUPANCIES,
@@ -257,6 +258,8 @@ export function Builder({
         itineraryComplete: true,
         includesNote: source.includesNote,
         remarks: source.remarks,
+        // The currency is a pricing choice, kept on both edit and duplicate.
+        currencyCode: source.currency?.code ?? "PKR",
         // A discount is per-customer; a duplicate starts it fresh.
         discount: editing ? source.discount : 0,
         discountNote: editing ? source.discountNote : "",
@@ -783,7 +786,30 @@ export function Builder({
                   has no customer - does not carry one. */}
               {!asPackage && (
                 <>
-                  <Field label="Discount (not shown on the quotation)">
+                  <Field label="Currency">
+                    <Select
+                      options={[
+                        { value: "PKR", label: "PKR - Pakistani Rupee (base)" },
+                        ...config.currencies
+                          .filter((c) => c.enabled)
+                          .map((c) => ({
+                            value: c.code,
+                            label: `${c.code}${c.name ? ` - ${c.name}` : ""} (1 = ${c.rate.toLocaleString("en-US")} PKR)`,
+                          })),
+                      ]}
+                      value={builder.currencyCode}
+                      onChange={(e) => builder.set("currencyCode", e.target.value)}
+                    />
+                  </Field>
+                  {result.currency.code !== "PKR" && (
+                    <p className="-mt-2 text-xs text-muted">
+                      Converted from PKR at 1 {result.currency.code} ={" "}
+                      {result.exchangeRate.toLocaleString("en-US")} PKR. Discount and round-off are
+                      in {result.currency.code}.
+                    </p>
+                  )}
+
+                  <Field label={`Discount in ${result.currency.code} (not shown on the quotation)`}>
                     <NumberInput
                       min={0}
                       value={builder.discount}
@@ -803,6 +829,8 @@ export function Builder({
                     net={result.subtotal - result.discount}
                     value={builder.roundOff}
                     onChange={(v) => builder.set("roundOff", v)}
+                    currency={result.currency}
+                    step={result.currency.code === "PKR" ? 1000 : 1}
                   />
                 </>
               )}
@@ -810,14 +838,17 @@ export function Builder({
 
             <div className="flex flex-col items-end justify-center rounded-lg bg-brand-50 p-5">
               <p className="text-xs font-semibold text-muted">TOTAL PER PERSON</p>
-              <p className="text-3xl font-bold text-brand-600">{formatPrice(result.finalTotal)}</p>
+              <p className="text-3xl font-bold text-brand-600">
+                {formatMoney(result.finalTotal, result.currency)}
+              </p>
               <p className="mt-1 text-xs text-muted">
                 {result.totalNights} nights
-                {result.flightTotal > 0 && ` · incl. ${formatPrice(result.flightTotal)} air fare`}
+                {result.flightTotal > 0 &&
+                  ` · incl. ${formatMoney(result.flightTotal, result.currency)} air fare`}
               </p>
               {result.discount > 0 && (
                 <p className="mt-1 text-xs text-amber-700">
-                  after {formatPrice(result.discount)} discount
+                  after {formatMoney(result.discount, result.currency)} discount
                 </p>
               )}
               {result.roundOff !== 0 && (
@@ -1093,13 +1124,18 @@ function RoundOffField({
   net,
   value,
   onChange,
+  currency,
+  step,
 }: {
   net: number;
   value: number;
   onChange: (value: number) => void;
+  currency: { code: string; symbol: string; decimals: number };
+  step: number;
 }) {
-  const { down, up } = roundOffSuggestions(net, 1000);
-  const final = Math.max(0, Math.round(net + value));
+  const { down, up } = roundOffSuggestions(net, step);
+  const money = (v: number) => formatMoney(v, currency);
+  const final = Math.max(0, net + value);
 
   const chip = (delta: number) =>
     delta === 0 ? null : (
@@ -1111,7 +1147,7 @@ function RoundOffField({
           value === delta ? "border-brand-400 bg-brand-50 text-brand-700" : "border-line bg-white text-ink",
         )}
       >
-        {formatPrice(net + delta)}
+        {money(net + delta)}
         <span className="ml-1 text-muted">
           ({delta > 0 ? "+" : "−"}
           {Math.abs(delta).toLocaleString("en-US")})
@@ -1120,10 +1156,10 @@ function RoundOffField({
     );
 
   return (
-    <Field label="Round off (not shown on the quotation)">
+    <Field label={`Round off in ${currency.code} (not shown on the quotation)`}>
       <div className="space-y-2">
         <p className="text-xs text-muted">
-          Net {formatPrice(net)} · shows as <strong className="text-ink">{formatPrice(final)}</strong>
+          Net {money(net)} · shows as <strong className="text-ink">{money(final)}</strong>
         </p>
         {(down !== 0 || up !== 0) && (
           <div className="flex flex-wrap items-center gap-2">

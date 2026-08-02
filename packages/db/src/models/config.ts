@@ -126,6 +126,34 @@ flightSchema.index({ season: 1, direction: 1, active: 1, sortOrder: 1 });
 
 export const FlightModel = model("Flight", flightSchema);
 
+// --------------------------------------------------------------- currency
+
+/**
+ * A currency a quotation can be priced in. Base rates are PKR; `rate` is how
+ * many PKR one unit of this currency costs (1 USD = 280 PKR). PKR is the
+ * implicit base and is never stored here. `enabled` toggles whether it is
+ * offered; `active` is the soft-delete flag shared with every other config.
+ */
+const currencySchema = new Schema(
+  {
+    season: { type: String, required: true, trim: true },
+    code: { type: String, required: true, trim: true, uppercase: true },
+    name: { type: String, default: "", trim: true },
+    symbol: { type: String, default: "", trim: true },
+    /** PKR per one unit of this currency. */
+    rate: { type: Number, required: true, min: 0 },
+    decimals: { type: Number, default: 2, min: 0, max: 4 },
+    enabled: { type: Boolean, default: true },
+    sortOrder: { type: Number, default: 0 },
+    active: { type: Boolean, default: true },
+  },
+  timestamps,
+);
+
+currencySchema.index({ season: 1, code: 1, active: 1 });
+
+export const CurrencyModel = model("Currency", currencySchema);
+
 // ----------------------------------------------------------- service items
 
 const serviceItemSchema = new Schema(

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { QuotationModel } from "../models/quotation";
 import { DEFAULT_SEASON, seed } from "../seed";
 import { getConfigBundle } from "../services/config";
-import { updateLabelled, upsertDateBlock, upsertRate } from "../services/admin";
+import { updateLabelled, upsertCurrency, upsertDateBlock, upsertRate } from "../services/admin";
 import {
   QuotationError,
   buildQuotationDocument,
@@ -20,6 +20,7 @@ import {
   type QuotationAuthor,
   type QuotationInput,
 } from "../services/quotation";
+import { addPayment, deletePayment, updatePayment } from "../services/payment";
 import { connectTestDb, dropTestDb } from "./setup";
 
 const staff: QuotationAuthor = { userId: "64b000000000000000000001", name: "Bilal", role: "staff" };
@@ -96,6 +97,37 @@ describe("pricing a quotation", () => {
     const saved = await createQuotation({ ...baseInput, roundOff: 500 }, staff);
     expect(saved.roundOff).toBe(500);
     expect(saved.finalTotal).toBe(saved.subtotal + 500);
+  });
+
+  it("prices in a chosen currency, converting from PKR and freezing the rate", async () => {
+    await upsertCurrency(null, {
+      season: DEFAULT_SEASON,
+      code: "USD",
+      name: "US Dollar",
+      symbol: "$",
+      rate: 200,
+      decimals: 2,
+      enabled: true,
+    });
+
+    const pkr = await priceQuotation(baseInput);
+    const usd = await priceQuotation({ ...baseInput, currencyCode: "USD" });
+    expect(usd.currency.code).toBe("USD");
+    expect(usd.exchangeRate).toBe(200);
+    // The PKR subtotal converts at the rate; discount/round-off then apply in USD.
+    expect(usd.subtotal).toBeCloseTo(pkr.subtotal / 200, 2);
+
+    const withAdjust = await priceQuotation({
+      ...baseInput,
+      currencyCode: "USD",
+      discount: 50,
+      roundOff: -0.25,
+    });
+    expect(withAdjust.finalTotal).toBeCloseTo(pkr.subtotal / 200 - 50 - 0.25, 2);
+
+    const saved = await createQuotation({ ...baseInput, currencyCode: "USD" }, staff);
+    expect(saved.currency?.code).toBe("USD");
+    expect(saved.exchangeRate).toBe(200);
   });
 
   it("refuses an itinerary with errors instead of saving nonsense", async () => {
@@ -230,9 +262,49 @@ describe("a mix of rooms in one stay", () => {
       "Mina Deluxe",
       "Mina Standard",
     ]);
+    // Each entry freezes its tier and printed label, so the PDF can read the
+    // split ("Standard + Deluxe") without re-resolving the tents.
+    expect(mixStay!.rooms.map((r) => r.roomLabel).sort()).toEqual(["Deluxe", "Standard"]);
+    expect(mixStay!.rooms.map((r) => r.minaTier).sort()).toEqual(["deluxe", "standard"]);
     // An ordinary stay stores no mix.
     const plainStay = saved.stays.find((s) => s.locationType === "aziziya");
     expect(plainStay!.rooms).toHaveLength(0);
+  });
+
+  it("keeps 'Without Mina' as a category in a Mina split", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const acc = (name: string) => bundle.accommodations.find((a) => a.name === name);
+    const standard = acc("Mina Standard");
+    const withoutMina = bundle.accommodations.find(
+      (a) => a.withoutMina && bundle.locations.find((l) => l.id === a.locationId)?.type === "mina",
+    );
+    // The season must offer a "Without Mina" tent for this scenario to exist.
+    if (!standard || !withoutMina) return;
+
+    const minaStay = baseInput.stays[1]!;
+    const saved = await createQuotation(
+      {
+        ...baseInput,
+        guest: { name: "Split", pax: 5 },
+        stays: [
+          baseInput.stays[0]!,
+          {
+            ...minaStay,
+            rooms: [
+              { accommodationId: standard.id, headcount: 2 },
+              { accommodationId: withoutMina.id, headcount: 3 },
+            ],
+          },
+        ],
+      },
+      staff,
+    );
+
+    const mixStay = saved.stays.find((s) => s.rooms && s.rooms.length > 1)!;
+    const labels = mixStay.rooms.map((r) => r.roomLabel);
+    expect(labels).toContain("Standard");
+    expect(labels).toContain("Without Mina");
+    expect(mixStay.rooms.find((r) => r.roomLabel === "Without Mina")!.withoutMina).toBe(true);
   });
 });
 
@@ -897,5 +969,71 @@ describe("a package sold without Mina", () => {
   it("refuses a real tent under a without-Mina package", async () => {
     const contradiction: QuotationInput = { ...baseInput, withoutMina: true };
     await expect(createQuotation(contradiction, staff)).rejects.toThrow(QuotationError);
+  });
+});
+
+describe("payments against a confirmed booking", () => {
+  async function confirmed() {
+    const q = await createQuotation({ ...baseInput, guest: { name: "Payer", pax: 4 } }, staff);
+    await changeQuotationStatus(String(q._id), { status: "confirmed", hbNumber: `HB-${Date.now()}` }, staff);
+    return String(q._id);
+  }
+
+  it("records a payment in the quotation currency and totals it", async () => {
+    const id = await confirmed();
+    const updated: any = await addPayment(
+      id,
+      { date: "2027-03-01", amount: 50_000, receivedByName: "Front Desk", method: "Cash" },
+      { userId: staff.userId, name: staff.name },
+    );
+    expect(updated.payments).toHaveLength(1);
+    expect(updated.payments[0].convertedAmount).toBe(50_000);
+    expect(updated.payments[0].receivedByName).toBe("Front Desk");
+  });
+
+  it("converts a foreign-currency payment at its own frozen rate", async () => {
+    const id = await confirmed();
+    // The quotation is PKR (decimals 0); a USD payment at 1 USD = 280 PKR.
+    const updated: any = await addPayment(
+      id,
+      { date: "2027-03-02", amount: 100, paymentCurrency: "USD", exchangeRate: 280, receivedByName: "Bank" },
+      { userId: staff.userId, name: staff.name },
+    );
+    expect(updated.payments[0].convertedAmount).toBe(28_000);
+  });
+
+  it("refuses a payment on a booking that is not confirmed", async () => {
+    const q = await createQuotation(baseInput, staff);
+    await expect(
+      addPayment(String(q._id), { date: "2027-03-01", amount: 100, receivedByName: "X" }, { userId: staff.userId, name: staff.name }),
+    ).rejects.toThrow(/confirmed/i);
+  });
+
+  it("refuses a payment with no receiver named", async () => {
+    const id = await confirmed();
+    await expect(
+      addPayment(id, { date: "2027-03-01", amount: 100 }, { userId: staff.userId, name: staff.name }),
+    ).rejects.toThrow(/received/i);
+  });
+
+  it("edits and removes a payment", async () => {
+    const id = await confirmed();
+    const added: any = await addPayment(
+      id,
+      { date: "2027-03-01", amount: 10_000, receivedByName: "A" },
+      { userId: staff.userId, name: staff.name },
+    );
+    const paymentId = String(added.payments[0]._id);
+
+    const edited: any = await updatePayment(
+      id,
+      paymentId,
+      { date: "2027-03-01", amount: 15_000, receivedByName: "A" },
+      { userId: staff.userId, name: staff.name },
+    );
+    expect(edited.payments[0].convertedAmount).toBe(15_000);
+
+    const removed: any = await deletePayment(id, paymentId);
+    expect(removed.payments).toHaveLength(0);
   });
 });
