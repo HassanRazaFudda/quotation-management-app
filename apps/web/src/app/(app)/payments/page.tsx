@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Search, Wallet } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Search, Wallet } from "lucide-react";
 
 import { formatMoney, paymentSummary, type PaymentStatus } from "@junaidi/shared";
 
 import { PageHeader } from "@/components/app-shell";
 import { Badge, Card, EmptyState, Input, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Quotation, QuotationList } from "@/lib/types";
+import type { Quotation, QuotationCurrency, QuotationList } from "@/lib/types";
 
 const STATUS_LABEL: Record<PaymentStatus, string> = {
   paid: "Paid",
@@ -27,6 +27,15 @@ export default function PaymentsPage() {
   const [items, setItems] = useState<Quotation[] | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     const params = new URLSearchParams({ status: "confirmed", pageSize: "100", sort: "created-desc" });
@@ -101,7 +110,9 @@ export default function PaymentsPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
                 <tr>
+                  <th className="w-8 px-2 py-3"></th>
                   <th className="px-4 py-3 font-semibold">Guest</th>
+                  <th className="px-4 py-3 font-semibold">Assigned staff</th>
                   <th className="px-4 py-3 font-semibold">HB Number</th>
                   <th className="px-4 py-3 text-right font-semibold">Grand total</th>
                   <th className="px-4 py-3 text-right font-semibold">Received</th>
@@ -110,32 +121,122 @@ export default function PaymentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {visible.map(({ q, currency, summary }) => (
-                  <tr key={q._id} className="hover:bg-canvas">
-                    <td className="px-4 py-3">
-                      <Link href={`/quotations/${q._id}`} className="font-medium text-ink hover:text-brand-600">
-                        {q.guest.name}
-                      </Link>
-                      <p className="text-xs text-muted">
-                        {q.quotationId} · {q.guest.pax} pax
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-muted">{q.hbNumber || "—"}</td>
-                    <td className="px-4 py-3 text-right text-ink">{formatMoney(summary.grandTotal, currency)}</td>
-                    <td className="px-4 py-3 text-right text-emerald-600">{formatMoney(summary.totalReceived, currency)}</td>
-                    <td className="px-4 py-3 text-right font-medium text-brand-600">
-                      {formatMoney(summary.outstanding, currency)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge tone={summary.status}>{STATUS_LABEL[summary.status]}</Badge>
-                    </td>
-                  </tr>
-                ))}
+                {visible.map(({ q, currency, summary }) => {
+                  const isOpen = expanded.has(q._id);
+                  return (
+                    <Fragment key={q._id}>
+                      <tr className="hover:bg-canvas">
+                        <td className="px-2 py-3 align-top">
+                          <button
+                            onClick={() => toggle(q._id)}
+                            className="rounded p-1 text-gray-400 hover:bg-canvas hover:text-ink"
+                            title={isOpen ? "Collapse" : "Expand payment history"}
+                            aria-label="Toggle payment history"
+                          >
+                            {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/quotations/${q._id}`} className="font-medium text-ink hover:text-brand-600">
+                            {q.guest.name}
+                          </Link>
+                          <p className="text-xs text-muted">
+                            {q.quotationId} · {q.guest.pax} pax
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-ink">{q.assignedStaff?.name || "—"}</td>
+                        <td className="px-4 py-3 text-muted">{q.hbNumber || "—"}</td>
+                        <td className="px-4 py-3 text-right text-ink">{formatMoney(summary.grandTotal, currency)}</td>
+                        <td className="px-4 py-3 text-right text-emerald-600">{formatMoney(summary.totalReceived, currency)}</td>
+                        <td className="px-4 py-3 text-right font-medium text-brand-600">
+                          {formatMoney(summary.outstanding, currency)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge tone={summary.status}>{STATUS_LABEL[summary.status]}</Badge>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={8} className="bg-canvas/60 px-4 py-3">
+                            <PaymentHistory quotation={q} currency={currency} grandTotal={summary.grandTotal} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </Card>
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * The full payment breakdown for one quotation, shown inline when a row is
+ * expanded: every instalment with its running balance, so the money owed can be
+ * traced without opening the quotation.
+ */
+function PaymentHistory({
+  quotation,
+  currency,
+  grandTotal,
+}: {
+  quotation: Quotation;
+  currency: QuotationCurrency;
+  grandTotal: number;
+}) {
+  const payments = quotation.payments ?? [];
+  if (payments.length === 0) {
+    return <p className="text-xs text-muted">No payments recorded yet.</p>;
+  }
+
+  // Payments in date order, with the balance remaining after each one.
+  const ordered = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+  let running = 0;
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-line bg-white">
+      <table className="w-full text-xs">
+        <thead className="border-b border-line text-left uppercase tracking-wide text-muted">
+          <tr>
+            <th className="px-3 py-2 font-semibold">Date</th>
+            <th className="px-3 py-2 text-right font-semibold">Amount</th>
+            <th className="px-3 py-2 text-right font-semibold">In {currency.code}</th>
+            <th className="px-3 py-2 font-semibold">Method</th>
+            <th className="px-3 py-2 font-semibold">Sales staff</th>
+            <th className="px-3 py-2 font-semibold">Notes</th>
+            <th className="px-3 py-2 text-right font-semibold">Balance</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {ordered.map((p) => {
+            running += p.convertedAmount;
+            const balance = Math.max(0, grandTotal - running);
+            const foreign = p.paymentCurrency && p.paymentCurrency !== currency.code;
+            return (
+              <tr key={p._id}>
+                <td className="px-3 py-2 text-muted">{new Date(p.date).toLocaleDateString("en-GB")}</td>
+                <td className="px-3 py-2 text-right text-ink">
+                  {p.amount.toLocaleString("en-US")} {p.paymentCurrency}
+                  {foreign && <span className="ml-1 text-muted">@ {p.exchangeRate}</span>}
+                </td>
+                <td className="px-3 py-2 text-right text-emerald-600">
+                  {formatMoney(p.convertedAmount, currency)}
+                </td>
+                <td className="px-3 py-2 text-muted">{p.method || "—"}</td>
+                <td className="px-3 py-2 text-ink">{p.receivedByName || "—"}</td>
+                <td className="px-3 py-2 text-muted">{p.notes || "—"}</td>
+                <td className="px-3 py-2 text-right font-medium text-brand-600">
+                  {formatMoney(balance, currency)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

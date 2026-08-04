@@ -38,6 +38,7 @@ import { Types, type PipelineStage } from "mongoose";
 
 import { nextSequence } from "../models/counter";
 import { QuotationModel } from "../models/quotation";
+import { UserModel } from "../models/user";
 import { getConfigBundle } from "./config";
 
 export class QuotationError extends Error {
@@ -406,7 +407,13 @@ export async function updateQuotation(
  */
 export async function changeQuotationStatus(
   id: string,
-  input: { status: "draft" | "sent" | "confirmed" | "expired"; hbNumber?: string },
+  input: {
+    status: "draft" | "sent" | "confirmed" | "expired";
+    hbNumber?: string;
+    /** The primary staff handling the booking: a system user, or a typed name. */
+    assignedStaffUserId?: string | null;
+    assignedStaffName?: string;
+  },
   author: QuotationAuthor,
 ) {
   const existing = await QuotationModel.findById(id);
@@ -434,6 +441,18 @@ export async function changeQuotationStatus(
     }
 
     existing.hbNumber = hb;
+
+    // The assigned staff: a picked system user (name snapshotted), or a typed
+    // name. Only touched on confirmation, and only when something is provided.
+    if (input.assignedStaffUserId && Types.ObjectId.isValid(input.assignedStaffUserId)) {
+      const user = await UserModel.findById(input.assignedStaffUserId).select("name").lean();
+      existing.assignedStaff = {
+        userId: new Types.ObjectId(input.assignedStaffUserId),
+        name: (user as Record<string, any> | null)?.name ?? (input.assignedStaffName ?? "").trim(),
+      };
+    } else if ((input.assignedStaffName ?? "").trim()) {
+      existing.assignedStaff = { userId: null, name: input.assignedStaffName!.trim() };
+    }
   }
 
   existing.status = input.status;

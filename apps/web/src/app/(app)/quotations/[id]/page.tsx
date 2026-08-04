@@ -9,7 +9,7 @@ import { Copy, Download, Pencil, Plane, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/app-shell";
 import { PaymentsCard } from "@/components/payments-card";
 import { toast } from "@/components/toast";
-import { Badge, Button, Card, Field, Input, Modal, Spinner } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import type { Quotation, QuotationFlight, StyledLine } from "@/lib/types";
@@ -122,23 +122,31 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  /** Confirming needs an HB number, so it goes through the dialog. */
+  /**
+   * Confirming needs an HB number (and optionally the assigned staff), so it
+   * goes through the dialog - which also reopens on an already-confirmed
+   * booking to correct the HB number or staff.
+   */
   function pickStatus(status: Status) {
-    if (!q || status === q.status) return;
+    if (!q) return;
     if (status === "confirmed") {
       setConfirming(true);
       return;
     }
+    if (status === q.status) return;
     void changeStatus(status);
   }
 
-  async function changeStatus(status: Status, hbNumber?: string) {
+  async function changeStatus(
+    status: Status,
+    extra?: { hbNumber?: string; assignedStaffUserId?: string | null; assignedStaffName?: string },
+  ) {
     if (!q) return;
     setSavingStatus(true);
     try {
       const updated = await api.post<Quotation>(`/api/quotations/${q._id}/status`, {
         status,
-        hbNumber,
+        ...extra,
       });
       setQ(updated);
       setConfirming(false);
@@ -376,10 +384,25 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                 })}
               </div>
               {q.status === "confirmed" && q.hbNumber && (
-                <p className="mt-2 text-sm">
-                  <span className="text-muted">HB Number: </span>
-                  <span className="font-semibold text-ink">{q.hbNumber}</span>
-                </p>
+                <div className="mt-2 space-y-1 text-sm">
+                  <p>
+                    <span className="text-muted">HB Number: </span>
+                    <span className="font-semibold text-ink">{q.hbNumber}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted">Assigned staff: </span>
+                    <span className="font-semibold text-ink">{q.assignedStaff?.name || "—"}</span>
+                  </p>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(true)}
+                      className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      Edit HB / assigned staff
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </Card>
@@ -388,6 +411,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
             <dl className="space-y-2">
               <Row label="Quotation ID" value={q.quotationId} />
               {q.hbNumber && <Row label="HB Number" value={q.hbNumber} />}
+              {q.assignedStaff?.name && <Row label="Assigned staff" value={q.assignedStaff.name} />}
               <Row label="Guest" value={q.guest.name} />
               <Row label="PAX" value={String(q.guest.pax)} />
               {q.packageCategory && <Row label="Category" value={q.packageCategory} />}
@@ -412,8 +436,9 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         open={confirming}
         saving={savingStatus}
         initialHb={q.hbNumber}
+        initialStaff={q.assignedStaff}
         onCancel={() => setConfirming(false)}
-        onConfirm={(hb) => changeStatus("confirmed", hb)}
+        onConfirm={(payload) => changeStatus("confirmed", payload)}
       />
 
       <Modal open={showPrint} onClose={() => setShowPrint(false)} title="Print quotation">
@@ -475,25 +500,54 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
  * rejects one already used elsewhere - that error surfaces as a toast while
  * this dialog stays open so the number can be corrected.
  */
+const OTHER_STAFF = "__other__";
+
 function ConfirmDialog({
   open,
   saving,
   initialHb,
+  initialStaff,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   saving: boolean;
   initialHb: string;
+  initialStaff?: { userId: string | null; name: string };
   onCancel: () => void;
-  onConfirm: (hbNumber: string) => void;
+  onConfirm: (payload: {
+    hbNumber: string;
+    assignedStaffUserId: string | null;
+    assignedStaffName: string;
+  }) => void;
 }) {
   const [hb, setHb] = useState(initialHb);
+  const [staff, setStaff] = useState<Array<{ id: string; name: string }>>([]);
+  const [staffChoice, setStaffChoice] = useState("");
+  const [otherName, setOtherName] = useState("");
 
-  // Reset the field each time the dialog is opened.
   useEffect(() => {
-    if (open) setHb(initialHb);
-  }, [open, initialHb]);
+    api
+      .get<{ users: Array<{ id: string; name: string }> }>("/api/users/basic")
+      .then((r) => setStaff(r.users))
+      .catch(() => undefined);
+  }, []);
+
+  // Reset the fields each time the dialog opens, seeding the assigned staff.
+  useEffect(() => {
+    if (!open) return;
+    setHb(initialHb);
+    if (initialStaff?.userId) {
+      setStaffChoice(initialStaff.userId);
+      setOtherName("");
+    } else if (initialStaff?.name) {
+      setStaffChoice(OTHER_STAFF);
+      setOtherName(initialStaff.name);
+    } else {
+      setStaffChoice("");
+      setOtherName("");
+    }
+  }, [open, initialHb, initialStaff]);
 
   const trimmed = hb.trim();
 
@@ -502,7 +556,12 @@ function ConfirmDialog({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (trimmed) onConfirm(trimmed);
+          if (!trimmed) return;
+          onConfirm({
+            hbNumber: trimmed,
+            assignedStaffUserId: staffChoice && staffChoice !== OTHER_STAFF ? staffChoice : null,
+            assignedStaffName: staffChoice === OTHER_STAFF ? otherName.trim() : "",
+          });
         }}
         className="space-y-4"
       >
@@ -519,6 +578,24 @@ function ConfirmDialog({
             required
           />
         </Field>
+        <Field label="Assigned staff (optional)">
+          <Select
+            options={[
+              { value: "", label: "— none —" },
+              ...staff.map((s) => ({ value: s.id, label: s.name })),
+              { value: OTHER_STAFF, label: "Other (type a name)" },
+            ]}
+            value={staffChoice}
+            onChange={(e) => setStaffChoice(e.target.value)}
+          />
+        </Field>
+        {staffChoice === OTHER_STAFF && (
+          <Input
+            value={otherName}
+            onChange={(e) => setOtherName(e.target.value)}
+            placeholder="Staff name"
+          />
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
             Cancel

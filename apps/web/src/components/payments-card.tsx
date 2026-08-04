@@ -177,6 +177,7 @@ export function PaymentsCard({
         currency={currency}
         currencyOptions={currencyOptions(currency.code, config.currencies)}
         staff={staff}
+        assignedStaff={quotation.assignedStaff}
         editing={editing}
         onSaved={(q) => {
           onUpdated(q);
@@ -240,6 +241,7 @@ function PaymentModal({
   currency,
   currencyOptions,
   staff,
+  assignedStaff,
   editing,
   onSaved,
 }: {
@@ -249,6 +251,7 @@ function PaymentModal({
   currency: { code: string; symbol: string; decimals: number };
   currencyOptions: string[];
   staff: Array<{ id: string; name: string }>;
+  assignedStaff?: { userId: string | null; name: string };
   editing: QuotationPayment | null;
   onSaved: (q: Quotation) => void;
 }) {
@@ -283,8 +286,18 @@ function PaymentModal({
       setRate(1);
       setMethod("");
       setNotes("");
-      setStaffChoice(staff[0]?.id ?? OTHER);
-      setOtherName("");
+      // Pre-fill with the staff assigned at confirmation, still changeable.
+      const assignedIsUser = assignedStaff?.userId && staff.some((s) => s.id === assignedStaff.userId);
+      if (assignedIsUser) {
+        setStaffChoice(assignedStaff!.userId!);
+        setOtherName("");
+      } else if (assignedStaff?.name) {
+        setStaffChoice(OTHER);
+        setOtherName(assignedStaff.name);
+      } else {
+        setStaffChoice(staff[0]?.id ?? OTHER);
+        setOtherName("");
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);

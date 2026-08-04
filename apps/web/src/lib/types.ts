@@ -127,6 +127,8 @@ export interface Quotation {
   status: "draft" | "sent" | "confirmed" | "expired";
   /** The unique booking reference, set when the quotation is confirmed. */
   hbNumber: string;
+  /** The primary staff handling the booking, set on confirmation. */
+  assignedStaff?: { userId: string | null; name: string };
   guest: { name: string; pax: number };
   date: string;
   validUntil: string | null;

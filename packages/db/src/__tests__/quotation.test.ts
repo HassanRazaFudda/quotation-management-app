@@ -1037,3 +1037,27 @@ describe("payments against a confirmed booking", () => {
     expect(removed.payments).toHaveLength(0);
   });
 });
+
+describe("assigning staff on confirmation", () => {
+  it("stores a typed staff name and leaves the userId null", async () => {
+    const q = await createQuotation(baseInput, staff);
+    const updated: any = await changeQuotationStatus(
+      String(q._id),
+      { status: "confirmed", hbNumber: `HB-STAFF-${Date.now()}`, assignedStaffName: "Walk-in Agent" },
+      admin,
+    );
+    expect(updated.assignedStaff.name).toBe("Walk-in Agent");
+    expect(updated.assignedStaff.userId).toBe(null);
+  });
+
+  it("does not require an assigned staff to confirm", async () => {
+    const q = await createQuotation(baseInput, staff);
+    const updated: any = await changeQuotationStatus(
+      String(q._id),
+      { status: "confirmed", hbNumber: `HB-NOSTAFF-${Date.now()}` },
+      admin,
+    );
+    expect(updated.status).toBe("confirmed");
+    expect(updated.assignedStaff.name).toBe("");
+  });
+});

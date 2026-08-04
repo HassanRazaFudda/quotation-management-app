@@ -173,6 +173,15 @@ const quotationSchema = new Schema(
      * Unique across all bookings - the same HB number cannot sit on two.
      */
     hbNumber: { type: String, default: "", trim: true },
+    /**
+     * The primary staff member handling this booking, set on confirmation. A
+     * system user (name snapshotted) or a free-typed name. Defaults the sales
+     * staff on a payment.
+     */
+    assignedStaff: {
+      userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+      name: { type: String, default: "" },
+    },
 
     guest: {
       name: { type: String, required: true, trim: true },

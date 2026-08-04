@@ -12,6 +12,12 @@ const statusSchema = z.object({
   status: z.enum(["draft", "sent", "confirmed", "expired"]),
   /** Required when confirming; the unique booking reference. */
   hbNumber: z.string().max(60).optional(),
+  /** Optional on confirm: the primary staff - a system user or a typed name. */
+  assignedStaffUserId: z
+    .string()
+    .regex(/^[a-f\d]{24}$/i)
+    .nullish(),
+  assignedStaffName: z.string().max(120).optional(),
 });
 
 /**
