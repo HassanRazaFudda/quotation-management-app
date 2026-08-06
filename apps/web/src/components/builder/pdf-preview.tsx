@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Card } from "@/components/ui";
 import { API_BASE } from "@/lib/api";
-import { toApiPayload, useBuilderStore } from "@/stores/builder";
+import { toApiPayload, toPackagePayload, useBuilderStore } from "@/stores/builder";
 import { useConfigStore } from "@/stores/config";
 import { useAuthStore } from "@/stores/auth";
 
@@ -13,7 +13,17 @@ import { useAuthStore } from "@/stores/auth";
  * Live PDF preview. Debounces a render of the current draft and shows the real
  * document in an iframe, so staff see the finished page as they build it.
  */
-export function PdfPreview({ canPreview }: { canPreview: boolean }) {
+export function PdfPreview({
+  canPreview,
+  asPackage = false,
+  packageName = "",
+}: {
+  canPreview: boolean;
+  /** Preview as a package brochure (tier prices, add-ons) instead of a customer quotation. */
+  asPackage?: boolean;
+  /** The package name being typed - only used to satisfy the preview payload, never saved. */
+  packageName?: string;
+}) {
   const builder = useBuilderStore();
   const season = useConfigStore((s) => s.season);
   const [url, setUrl] = useState<string | null>(null);
@@ -22,13 +32,20 @@ export function PdfPreview({ canPreview }: { canPreview: boolean }) {
   const lastUrl = useRef<string | null>(null);
 
   // A signature of everything that affects the document, so we only re-render
-  // when something visible actually changed. The guest name is still being
-  // typed while the itinerary is built, so stand in a placeholder for the
-  // preview rather than letting an empty name fail validation.
-  const payload = toApiPayload(builder, season);
-  const signature = JSON.stringify(
-    payload.guest.name ? payload : { ...payload, guest: { ...payload.guest, name: "Guest Name" } },
-  );
+  // when something visible actually changed. The guest/package name is still
+  // being typed while the itinerary is built, so stand in a placeholder for
+  // the preview rather than letting an empty name fail validation.
+  const signature = asPackage
+    ? JSON.stringify(toPackagePayload(builder, season, packageName || "Package"))
+    : JSON.stringify(
+        (() => {
+          const payload = toApiPayload(builder, season);
+          return payload.guest.name
+            ? payload
+            : { ...payload, guest: { ...payload.guest, name: "Guest Name" } };
+        })(),
+      );
+  const endpoint = asPackage ? "/api/packages/preview-pdf" : "/api/quotations/preview-pdf";
 
   useEffect(() => {
     if (!canPreview) {
@@ -42,7 +59,7 @@ export function PdfPreview({ canPreview }: { canPreview: boolean }) {
       setError(null);
       try {
         const token = useAuthStore.getState().token;
-        const response = await fetch(`${API_BASE}/api/quotations/preview-pdf`, {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -72,7 +89,7 @@ export function PdfPreview({ canPreview }: { canPreview: boolean }) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [signature, canPreview]);
+  }, [signature, canPreview, endpoint]);
 
   // Clean up the last object URL on unmount.
   useEffect(() => () => {

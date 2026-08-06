@@ -76,8 +76,8 @@ export interface BuilderState {
   roundOff: number;
   manualTotal: number | null;
 
-  // Package-only three-price pricing. Ignored entirely in quotation mode.
-  tierPricingEnabled: boolean;
+  // Package-only three-price pricing. Ignored entirely in quotation mode. A
+  // package always prints all three tiers - there is no single-price mode.
   tiers: Record<TierOccupancy, TierRow>;
   addOns: Array<{ label: string; amount: number }>;
 
@@ -172,7 +172,6 @@ const EMPTY: BuilderData = {
   discountNote: "",
   roundOff: 0,
   manualTotal: null,
-  tierPricingEnabled: false,
   tiers: emptyTiers(),
   addOns: [],
 };
@@ -495,7 +494,8 @@ export function toPackagePayload(state: BuilderState, season: string, name: stri
     // it, not PKR-then-converted.
     currencyCode: state.currencyCode,
     tierPricing: {
-      enabled: state.tierPricingEnabled,
+      // A package always prints all three tiers - there is no single-price mode.
+      enabled: true,
       Quad: tierDoc(state.tiers.Quad),
       Triple: tierDoc(state.tiers.Triple),
       Double: tierDoc(state.tiers.Double),

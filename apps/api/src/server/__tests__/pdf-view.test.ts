@@ -343,10 +343,12 @@ describe("toPdfView", () => {
       const view = await toPdfView(quotationWithDiscount as never, {
         asPackage: true,
         tierPrices: [{ label: "Quad", total: 1_925.5 }],
-        addOns: [{ label: "Aziziya Double Bed", amount: 200 }],
+        addOns: [{ label: "Aziziya Double Bed", amount: 200, included: true }],
       });
       expect(view.tierPrices).toEqual([{ label: "Quad", priceFormatted: "PKR 1,926 /-" }]);
-      expect(view.addOns).toEqual([{ label: "Aziziya Double Bed", amountFormatted: "+PKR 200 /-" }]);
+      expect(view.addOns).toEqual([
+        { label: "Aziziya Double Bed", amountFormatted: "+PKR 200 /-", included: true },
+      ]);
     });
 
     it("formats a package's tier prices and add-ons in USD when the package is priced in USD", async () => {
@@ -355,11 +357,13 @@ describe("toPdfView", () => {
         {
           asPackage: true,
           tierPrices: [{ label: "Quad", total: 1925.5 }],
-          addOns: [{ label: "Aziziya Double Bed", amount: 200 }],
+          addOns: [{ label: "Aziziya Double Bed", amount: 200, included: false }],
         },
       );
       expect(view.tierPrices).toEqual([{ label: "Quad", priceFormatted: "USD 1,925.50" }]);
-      expect(view.addOns).toEqual([{ label: "Aziziya Double Bed", amountFormatted: "+USD 200.00" }]);
+      expect(view.addOns).toEqual([
+        { label: "Aziziya Double Bed", amountFormatted: "+USD 200.00", included: false },
+      ]);
     });
   });
 

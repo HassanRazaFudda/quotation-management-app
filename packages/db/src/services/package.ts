@@ -200,6 +200,16 @@ export async function getPackage(id: string) {
   return PackageModel.findById(id).lean();
 }
 
+/** The handful of fields `packageFlight` reads - a saved doc and a raw `FlightSelection` both satisfy this. */
+interface FlightLike {
+  included?: boolean | null;
+  roundTrip?: boolean | null;
+  returnRequired?: boolean | null;
+  roundTripId?: unknown;
+  outboundId?: unknown;
+  inboundId?: unknown;
+}
+
 /**
  * A package's flight, made safe to render.
  *
@@ -207,7 +217,7 @@ export async function getPackage(id: string) {
  * incomplete selection is dropped to "not included" rather than failing the
  * whole document - the travel dates come off the itinerary either way.
  */
-function packageFlight(flight: PackageDoc["flight"] | undefined): FlightSelection {
+function packageFlight(flight: FlightLike | null | undefined): FlightSelection {
   const id = (value: unknown) => (value ? String(value) : null);
   const included = Boolean(flight?.included);
   const roundTrip = Boolean(flight?.roundTrip);
@@ -239,6 +249,79 @@ export interface PackageTierPrice {
 }
 
 /**
+ * An add-on as it prints: still shows its own charge, but also whether this
+ * particular print includes it - that's what tells the brochure to fold its
+ * amount into the tier totals below, and to mark it apart from the add-ons
+ * that are merely on offer.
+ */
+export interface PackagePrintAddOn extends PackageAddOn {
+  included: boolean;
+}
+
+/**
+ * Price every offered tier and resolve the add-on list, shared between a
+ * saved package's real brochure and a live preview of one still being
+ * edited. Every add-on the package has is always returned - the brochure
+ * lists them all as available extras - but only the ones named in
+ * `includedAddOns` are marked `included`, and only their amount is folded
+ * into each tier's total (the same amount on every tier, since an add-on has
+ * one price, not one per room size).
+ */
+async function priceTiersAndAddOns(params: {
+  season: string;
+  stays: StayInput[];
+  tierPricing: TierPricing | null | undefined;
+  addOns: Array<{ label?: string | null; amount?: number | null }> | undefined;
+  includedAddOns: string[] | undefined;
+  flightTotal: number;
+  exchangeRate: number;
+  decimals: number;
+  discount: number;
+}): Promise<{ tierPrices: PackageTierPrice[]; addOns: PackagePrintAddOn[] }> {
+  // Only the auto-calculated figure needs this - it comes from real hotel
+  // rates, which are always PKR. Everything the admin typed by hand (tier
+  // manual totals/discounts, add-on amounts, the print discount) is already
+  // in the package's currency and needs no conversion.
+  const toCurrency = (pkr: number) =>
+    roundToDecimals(convertFromPkr(pkr, params.exchangeRate), params.decimals);
+
+  const bundle = await getConfigBundle(params.season);
+  const blocks = resolveBlocks(bundle.blocks, bundle.calendar);
+  const pricing = makePricingContext({
+    blocks,
+    accommodations: bundle.accommodations,
+    locations: bundle.locations,
+    rates: bundle.rates,
+  });
+  const auto = new Map(priceTiers(params.stays, pricing).map((tier) => [tier.occupancy, tier.total]));
+
+  const includedLabels = params.includedAddOns ?? [];
+  const addOnsIncludedTotal = roundToDecimals(
+    (params.addOns ?? [])
+      .filter((addOn) => includedLabels.includes(addOn.label ?? ""))
+      .reduce((sum, addOn) => sum + (addOn.amount ?? 0), 0),
+    params.decimals,
+  );
+
+  const tierPrices = offeredTiers(params.tierPricing as TierPricing).map(({ occupancy, setting }) => {
+    const convertedAuto = toCurrency((auto.get(occupancy) ?? 0) + params.flightTotal);
+    const final = finalTierTotal(convertedAuto, setting, params.decimals);
+    return {
+      label: occupancy,
+      total: Math.max(0, roundToDecimals(final + addOnsIncludedTotal - params.discount, params.decimals)),
+    };
+  });
+
+  const addOns: PackagePrintAddOn[] = (params.addOns ?? []).map((addOn) => ({
+    label: addOn.label ?? "",
+    amount: roundToDecimals(addOn.amount ?? 0, params.decimals),
+    included: includedLabels.includes(addOn.label ?? ""),
+  }));
+
+  return { tierPrices, addOns };
+}
+
+/**
  * Everything the renderer needs for a package brochure, resolved live.
  *
  * The itinerary is denormalised through the same path a quotation uses, so a
@@ -258,8 +341,10 @@ export interface PackagePrintOptions {
    */
   discount?: number;
   /**
-   * Which of the package's add-on charges to print, by label. Undefined means
-   * every add-on the package has - the same as before this existed.
+   * Which of the package's add-on charges this print includes, by label.
+   * Every add-on still prints - as an available extra - but only these get
+   * marked included and priced into the tier totals. Omitted or empty means
+   * none are included.
    */
   includedAddOns?: string[];
   /** The staff member who printed it, shown in the footer. */
@@ -272,7 +357,7 @@ export async function buildPackagePdfBundle(
 ): Promise<{
   doc: Awaited<ReturnType<typeof buildQuotationDocument>>;
   tierPrices: PackageTierPrice[];
-  addOns: PackageAddOn[];
+  addOns: PackagePrintAddOn[];
   name: string;
 }> {
   const pkg = await getPackage(id);
@@ -331,44 +416,82 @@ export async function buildPackagePdfBundle(
     { userId: "", name: options.generatedBy ?? "", role: "admin" },
     "",
   );
-  const exchangeRate = doc.exchangeRate;
-  const decimals = doc.currency.decimals;
-  // Only the auto-calculated figure needs this - it comes from real hotel
-  // rates, which are always PKR. Everything the admin typed by hand (tier
-  // manual totals/discounts, add-on amounts, the print discount above) is
-  // already in the package's currency and needs no conversion.
-  const toCurrency = (pkr: number) => roundToDecimals(convertFromPkr(pkr, exchangeRate), decimals);
-
-  const bundle = await getConfigBundle(pkg.season);
-  const blocks = resolveBlocks(bundle.blocks, bundle.calendar);
-  const pricing = makePricingContext({
-    blocks,
-    accommodations: bundle.accommodations,
-    locations: bundle.locations,
-    rates: bundle.rates,
-  });
-  const auto = new Map(priceTiers(stays, pricing).map((tier) => [tier.occupancy, tier.total]));
   // The flight fare is the same across tiers, so it sits on every one.
   const flightTotal = doc.flight?.total ?? 0;
 
-  const tierPrices = offeredTiers(pkg.tierPricing as TierPricing).map(({ occupancy, setting }) => {
-    const convertedAuto = toCurrency((auto.get(occupancy) ?? 0) + flightTotal);
-    const final = finalTierTotal(convertedAuto, setting, decimals);
-    return {
-      label: occupancy,
-      total: Math.max(0, roundToDecimals(final - discount, decimals)),
-    };
+  const { tierPrices, addOns } = await priceTiersAndAddOns({
+    season: pkg.season,
+    stays,
+    tierPricing: pkg.tierPricing as TierPricing,
+    addOns: pkg.addOns,
+    includedAddOns: options.includedAddOns,
+    flightTotal,
+    exchangeRate: doc.exchangeRate,
+    decimals: doc.currency.decimals,
+    discount,
   });
 
-  const includedAddOns = options.includedAddOns;
-  const addOns: PackageAddOn[] = (pkg.addOns ?? [])
-    .filter((addOn) => !includedAddOns || includedAddOns.includes(addOn.label ?? ""))
-    .map((addOn) => ({
-      label: addOn.label ?? "",
-      amount: roundToDecimals(addOn.amount ?? 0, decimals),
-    }));
-
   return { doc, tierPrices, addOns, name: pkg.name };
+}
+
+/**
+ * Same brochure as `buildPackagePdfBundle`, but for a package still being
+ * built - there is no id to load yet, so it prices straight from the draft
+ * the Save button would send. Mirrors how a quotation's own live preview
+ * prices an unsaved `QuotationInput` rather than a stored document.
+ *
+ * No customer, discount or add-on is selected for a preview - it shows the
+ * brochure exactly as a plain, undiscounted print would.
+ */
+export async function previewPackagePdfBundle(input: PackageInput): Promise<{
+  doc: Awaited<ReturnType<typeof buildQuotationDocument>>;
+  tierPrices: PackageTierPrice[];
+  addOns: PackagePrintAddOn[];
+}> {
+  await assertValidItinerary(input);
+
+  const quotationInput: QuotationInput = {
+    season: input.season,
+    guest: { name: "", pax: 1 },
+    date: new Date(),
+    validUntil: null,
+    packageTitle: input.packageTitle ?? "",
+    packageCategory: input.packageCategory ?? "",
+    withoutMina: input.withoutMina ?? false,
+    qurbaniIncluded: input.qurbaniIncluded ?? true,
+    stays: input.stays,
+    flight: packageFlight(input.flight),
+    minaServiceIds: (input.minaServiceIds ?? []).map(String),
+    arafatServiceIds: (input.arafatServiceIds ?? []).map(String),
+    includeIds: (input.includeIds ?? []).map(String),
+    requirementIds: (input.requirementIds ?? []).map(String),
+    termIds: (input.termIds ?? []).map(String),
+    includesNote: input.includesNote ?? "",
+    remarks: input.remarks ?? "",
+    currencyCode: input.currencyCode || "PKR",
+    discount: 0,
+  };
+
+  const doc = await buildQuotationDocument(
+    quotationInput,
+    { userId: "", name: "", role: "admin" },
+    "",
+  );
+  const flightTotal = doc.flight?.total ?? 0;
+
+  const { tierPrices, addOns } = await priceTiersAndAddOns({
+    season: input.season,
+    stays: input.stays,
+    tierPricing: input.tierPricing as TierPricing,
+    addOns: input.addOns,
+    includedAddOns: [],
+    flightTotal,
+    exchangeRate: doc.exchangeRate,
+    decimals: doc.currency.decimals,
+    discount: 0,
+  });
+
+  return { doc, tierPrices, addOns };
 }
 
 export interface PackageQuoteOptions {

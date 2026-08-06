@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/seed.ts",
     "seed:room-sizes": "tsx src/migrations/seed-room-sizes.ts",
-    "migrate:quad-to-sharing": "tsx src/migrations/quad-to-sharing.ts"
+    "migrate:quad-to-sharing": "tsx src/migrations/quad-to-sharing.ts",
+    "fix:package-titles": "tsx src/migrations/fix-package-titles.ts"
   },
   "dependencies": {
     "@junaidi/shared": "workspace:*",

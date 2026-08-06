@@ -12,6 +12,7 @@ import {
   deactivatePackage,
   getPackage,
   listPackages,
+  previewPackagePdfBundle,
   upsertPackage,
   type PackageInput,
 } from "../services/package";
@@ -158,8 +159,9 @@ describe("resolving a package for its brochure PDF", () => {
     expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_650_000);
     expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_750_000);
 
-    // Add-ons carried through, and the itinerary resolved to real names.
-    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 400_000 }]);
+    // Add-ons carried through, and the itinerary resolved to real names. Not
+    // included by default, so it doesn't move the tier totals above.
+    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 400_000, included: false }]);
     expect(doc.stays.length).toBeGreaterThan(0);
     expect(doc.stays[0]!.accommodationName).toBeTruthy();
   });
@@ -240,7 +242,7 @@ describe("a package's own currency", () => {
     expect(doc.exchangeRate).toBe(200);
     // The manual total prints exactly as typed - no PKR conversion applied.
     expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(1_800);
-    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 200 }]);
+    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 200, included: false }]);
   });
 
   it("still converts the auto-calculated figure from real PKR hotel rates", async () => {
@@ -284,32 +286,82 @@ describe("a package's own currency", () => {
   });
 });
 
-describe("choosing which add-ons print", () => {
+describe("which add-ons print as included", () => {
   const addOns = [
     { label: "Aziziya Triple Bed", amount: 200_000 },
     { label: "Aziziya Double Bed", amount: 400_000 },
   ];
 
-  it("includes every add-on when none are explicitly chosen", async () => {
-    const created = await upsertPackage(null, { ...base, name: "All AddOns", addOns });
+  it("lists every add-on, none included, when none are chosen", async () => {
+    const created = await upsertPackage(null, { ...base, name: "No AddOns Selected", addOns });
     const { addOns: printed } = await buildPackagePdfBundle(String(created!._id));
-    expect(printed.map((a) => a.label)).toEqual(["Aziziya Triple Bed", "Aziziya Double Bed"]);
+    expect(printed).toEqual([
+      { label: "Aziziya Triple Bed", amount: 200_000, included: false },
+      { label: "Aziziya Double Bed", amount: 400_000, included: false },
+    ]);
   });
 
-  it("prints only the add-ons explicitly included", async () => {
+  it("marks only the chosen add-ons as included, still listing the rest", async () => {
     const created = await upsertPackage(null, { ...base, name: "Some AddOns", addOns });
     const { addOns: printed } = await buildPackagePdfBundle(String(created!._id), {
       includedAddOns: ["Aziziya Double Bed"],
     });
-    expect(printed.map((a) => a.label)).toEqual(["Aziziya Double Bed"]);
+    expect(printed).toEqual([
+      { label: "Aziziya Triple Bed", amount: 200_000, included: false },
+      { label: "Aziziya Double Bed", amount: 400_000, included: true },
+    ]);
   });
 
-  it("prints none when every add-on is unchecked", async () => {
-    const created = await upsertPackage(null, { ...base, name: "No AddOns Selected", addOns });
-    const { addOns: printed } = await buildPackagePdfBundle(String(created!._id), {
-      includedAddOns: [],
+  it("folds only the included add-ons' amount into every offered tier", async () => {
+    const created = await upsertPackage(null, {
+      ...base,
+      name: "Priced With AddOns",
+      tierPricing: {
+        enabled: true,
+        Quad: { manualTotal: 3_650_000, discount: 0 },
+        Triple: { manualTotal: 3_750_000, discount: 0 },
+        Double: null,
+      },
+      addOns,
     });
-    expect(printed).toEqual([]);
+
+    const { tierPrices } = await buildPackagePdfBundle(String(created!._id), {
+      includedAddOns: ["Aziziya Triple Bed"],
+    });
+
+    expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_850_000);
+    expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_950_000);
+  });
+});
+
+describe("previewing a package still being built", () => {
+  it("prices straight from the draft, with no id and nothing saved", async () => {
+    const preview = await previewPackagePdfBundle({
+      ...base,
+      name: "Unsaved Draft",
+      tierPricing: {
+        enabled: true,
+        Quad: { manualTotal: 3_650_000, discount: 0 },
+        Triple: null,
+        Double: null,
+      },
+      addOns: [{ label: "Aziziya Triple Bed", amount: 200_000 }],
+    });
+
+    expect(preview.doc.guest.name).toBe("");
+    // No add-on is pre-selected in a preview - it prints as a plain,
+    // undiscounted brochure would.
+    expect(preview.tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_650_000);
+    expect(preview.addOns).toEqual([{ label: "Aziziya Triple Bed", amount: 200_000, included: false }]);
+
+    const found = await PackageModel.findOne({ name: "Unsaved Draft" }).lean();
+    expect(found).toBeNull();
+  });
+
+  it("rejects a draft whose itinerary isn't valid yet, same as saving would", async () => {
+    await expect(
+      previewPackagePdfBundle({ ...base, name: "Bad Draft", stays: [] }),
+    ).rejects.toThrow(PackageError);
   });
 });
 

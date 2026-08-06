@@ -323,7 +323,10 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
           <NumberInput min={0} value={discount} onChange={setDiscount} placeholder="0" />
         </Field>
         {addOns.length > 0 && (
-          <Field label="Optional extra services to include">
+          <Field
+            label="Optional extra services to include"
+            hint="Every extra prints as available either way; checking one adds its amount to all the printed prices."
+          >
             <div className="space-y-1.5">
               {addOns.map((addOn) => (
                 <label key={addOn.label} className="flex items-center gap-2 text-sm text-ink">

@@ -82,17 +82,13 @@ const DEFAULT_PACKAGE_ADDONS = [
 ];
 
 /** A package's stored tier pricing, mapped into the builder's per-tier rows. */
-function tiersFromPackage(pkg: Package): {
-  tierPricingEnabled: boolean;
-  tiers: Record<TierOccupancy, TierRow>;
-} {
+function tiersFromPackage(pkg: Package): { tiers: Record<TierOccupancy, TierRow> } {
   const tp = pkg.tierPricing;
   const row = (t: { manualTotal: number | null; discount: number } | null | undefined): TierRow =>
     t
       ? { offered: true, manualTotal: t.manualTotal, discount: t.discount }
       : { offered: false, manualTotal: null, discount: 0 };
   return {
-    tierPricingEnabled: tp?.enabled ?? false,
     tiers: { Quad: row(tp?.Quad), Triple: row(tp?.Triple), Double: row(tp?.Double) },
   };
 }
@@ -715,6 +711,7 @@ export function Builder({
                   nights={result.perStayNights[stay.key]}
                   lineTotal={result.perStayTotal[stay.key]}
                   invalid={stayInvalid}
+                  asPackage={asPackage}
                 />
               );
             })}
@@ -777,7 +774,7 @@ export function Builder({
         {/* ---------------- pricing ---------------- */}
         <Card>
           <CardHeader title="Pricing" />
-          <div className="grid gap-5 p-5 sm:grid-cols-2">
+          <div className={cn("grid gap-5 p-5", !asPackage && "sm:grid-cols-2")}>
             <div className="space-y-4">
               <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
                 <input
@@ -850,28 +847,32 @@ export function Builder({
               )}
             </div>
 
-            <div className="flex flex-col items-end justify-center rounded-lg bg-brand-50 p-5">
-              <p className="text-xs font-semibold text-muted">TOTAL PER PERSON</p>
-              <p className="text-3xl font-bold text-brand-600">
-                {formatMoney(result.finalTotal, result.currency)}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                {result.totalNights} nights
-                {result.flightTotal > 0 &&
-                  ` · incl. ${formatMoney(result.flightTotal, result.currency)} air fare`}
-              </p>
-              {result.discount > 0 && (
-                <p className="mt-1 text-xs text-amber-700">
-                  after {formatMoney(result.discount, result.currency)} discount
+            {/* A package's price is never one figure - it's the three tier
+                cards below. Only a customer quotation prices to a single total. */}
+            {!asPackage && (
+              <div className="flex flex-col items-end justify-center rounded-lg bg-brand-50 p-5">
+                <p className="text-xs font-semibold text-muted">TOTAL PER PERSON</p>
+                <p className="text-3xl font-bold text-brand-600">
+                  {formatMoney(result.finalTotal, result.currency)}
                 </p>
-              )}
-              {result.roundOff !== 0 && (
                 <p className="mt-1 text-xs text-muted">
-                  rounded {result.roundOff > 0 ? "+" : "−"}
-                  {Math.abs(result.roundOff).toLocaleString("en-US")}
+                  {result.totalNights} nights
+                  {result.flightTotal > 0 &&
+                    ` · incl. ${formatMoney(result.flightTotal, result.currency)} air fare`}
                 </p>
-              )}
-            </div>
+                {result.discount > 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    after {formatMoney(result.discount, result.currency)} discount
+                  </p>
+                )}
+                {result.roundOff !== 0 && (
+                  <p className="mt-1 text-xs text-muted">
+                    rounded {result.roundOff > 0 ? "+" : "−"}
+                    {Math.abs(result.roundOff).toLocaleString("en-US")}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </Card>
 
@@ -883,112 +884,93 @@ export function Builder({
                 title="Package Prices"
                 subtitle="Quad / Triple / Double - the three prices printed on the brochure"
               />
-              <div className="space-y-4 p-5">
-                <label className="flex items-center gap-2 text-sm font-medium text-ink">
-                  <input
-                    type="checkbox"
-                    checked={builder.tierPricingEnabled}
-                    onChange={(e) => builder.set("tierPricingEnabled", e.target.checked)}
-                    className="size-4 accent-brand-500"
-                  />
-                  Print three tier prices
-                </label>
+              <div className="space-y-3 p-5">
+                {TIER_OCCUPANCIES.map((occ) => {
+                  const row = builder.tiers[occ];
+                  const auto = result.tierAuto[occ];
+                  const printed = finalTierTotal(
+                    auto.total,
+                    { manualTotal: row.manualTotal, discount: row.discount },
+                    result.currency.decimals,
+                  );
+                  return (
+                    <div key={occ} className="rounded-lg border border-line p-3">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="flex w-20 items-center gap-2 pb-2 text-sm font-semibold text-ink">
+                          <input
+                            type="checkbox"
+                            checked={row.offered}
+                            onChange={(e) =>
+                              builder.updateTier(occ, { offered: e.target.checked })
+                            }
+                            className="size-4 accent-brand-500"
+                          />
+                          {occ}
+                        </label>
 
-                {!builder.tierPricingEnabled ? (
-                  <p className="text-sm text-muted">
-                    The brochure prints a single price. Turn this on to show Quad, Triple and
-                    Double.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {TIER_OCCUPANCIES.map((occ) => {
-                      const row = builder.tiers[occ];
-                      const auto = result.tierAuto[occ];
-                      const printed = finalTierTotal(
-                        auto.total,
-                        { manualTotal: row.manualTotal, discount: row.discount },
-                        result.currency.decimals,
-                      );
-                      return (
-                        <div key={occ} className="rounded-lg border border-line p-3">
-                          <div className="flex flex-wrap items-end gap-3">
-                            <label className="flex w-20 items-center gap-2 pb-2 text-sm font-semibold text-ink">
-                              <input
-                                type="checkbox"
-                                checked={row.offered}
+                        {row.offered ? (
+                          <>
+                            <label className="min-w-[9rem] flex-1">
+                              <span className="mb-1 block text-xs text-muted">
+                                Price in {result.currency.code} (auto{" "}
+                                {formatMoney(auto.total, result.currency)})
+                              </span>
+                              <Input
+                                type="number"
+                                min={0}
+                                inputMode="numeric"
+                                value={row.manualTotal ?? ""}
+                                placeholder={String(auto.total)}
                                 onChange={(e) =>
-                                  builder.updateTier(occ, { offered: e.target.checked })
+                                  builder.updateTier(occ, {
+                                    manualTotal:
+                                      e.target.value === ""
+                                        ? null
+                                        : Math.max(0, Number(e.target.value)),
+                                  })
                                 }
-                                className="size-4 accent-brand-500"
                               />
-                              {occ}
                             </label>
+                            <label className="w-28">
+                              <span className="mb-1 block text-xs text-muted">
+                                Discount in {result.currency.code}
+                              </span>
+                              <Input
+                                type="number"
+                                min={0}
+                                inputMode="numeric"
+                                value={row.discount || ""}
+                                placeholder="0"
+                                onChange={(e) =>
+                                  builder.updateTier(occ, {
+                                    discount:
+                                      e.target.value === ""
+                                        ? 0
+                                        : Math.max(0, Number(e.target.value)),
+                                  })
+                                }
+                              />
+                            </label>
+                            <div className="pb-1.5 text-right">
+                              <span className="mb-0.5 block text-xs text-muted">Prints</span>
+                              <span className="font-bold text-brand-600">
+                                {formatMoney(printed, result.currency)}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="pb-2 text-sm text-muted">Not shown on the brochure</span>
+                        )}
+                      </div>
 
-                            {row.offered ? (
-                              <>
-                                <label className="min-w-[9rem] flex-1">
-                                  <span className="mb-1 block text-xs text-muted">
-                                    Price in {result.currency.code} (auto{" "}
-                                    {formatMoney(auto.total, result.currency)})
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    inputMode="numeric"
-                                    value={row.manualTotal ?? ""}
-                                    placeholder={String(auto.total)}
-                                    onChange={(e) =>
-                                      builder.updateTier(occ, {
-                                        manualTotal:
-                                          e.target.value === ""
-                                            ? null
-                                            : Math.max(0, Number(e.target.value)),
-                                      })
-                                    }
-                                  />
-                                </label>
-                                <label className="w-28">
-                                  <span className="mb-1 block text-xs text-muted">
-                                    Discount in {result.currency.code}
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    inputMode="numeric"
-                                    value={row.discount || ""}
-                                    placeholder="0"
-                                    onChange={(e) =>
-                                      builder.updateTier(occ, {
-                                        discount:
-                                          e.target.value === ""
-                                            ? 0
-                                            : Math.max(0, Number(e.target.value)),
-                                      })
-                                    }
-                                  />
-                                </label>
-                                <div className="pb-1.5 text-right">
-                                  <span className="mb-0.5 block text-xs text-muted">Prints</span>
-                                  <span className="font-bold text-brand-600">
-                                    {formatMoney(printed, result.currency)}
-                                  </span>
-                                </div>
-                              </>
-                            ) : (
-                              <span className="pb-2 text-sm text-muted">Not shown on the brochure</span>
-                            )}
-                          </div>
-
-                          {row.offered && !auto.complete && row.manualTotal === null && (
-                            <p className="mt-2 text-xs text-amber-700">
-                              Some hotels have no {occ} rate set - type the price in above.
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                      {row.offered && !auto.complete && row.manualTotal === null && (
+                        <p className="mt-2 text-xs text-amber-700">
+                          Some hotels have no {occ} rate set - type the price in above.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </Card>
 
@@ -1085,7 +1067,11 @@ export function Builder({
 
       <div className="hidden lg:block">
         <div className="sticky top-5">
-          <PdfPreview canPreview={errors.length === 0 && builder.stays.length > 0} />
+          <PdfPreview
+            canPreview={errors.length === 0 && builder.stays.length > 0}
+            asPackage={asPackage}
+            packageName={packageName}
+          />
         </div>
       </div>
     </div>

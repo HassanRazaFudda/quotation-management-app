@@ -20,3 +20,7 @@ export {
   seedRoomSizes,
   type SeedRoomSizesResult,
 } from "./migrations/seed-room-sizes";
+export {
+  fixPackageTitles,
+  type FixPackageTitlesResult,
+} from "./migrations/fix-package-titles";

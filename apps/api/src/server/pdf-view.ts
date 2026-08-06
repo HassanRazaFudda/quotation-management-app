@@ -289,8 +289,8 @@ export interface PdfViewOptions {
   asPackage?: boolean;
   /** A package's tier prices, each an already-final figure. */
   tierPrices?: Array<{ label: string; total: number }>;
-  /** A package's per-room-type surcharges. */
-  addOns?: Array<{ label: string; amount: number }>;
+  /** A package's per-room-type surcharges - every one it has, on offer or included. */
+  addOns?: Array<{ label: string; amount: number; included: boolean }>;
   /** Print Junaidi's letterhead and signature. Defaults to on. */
   branding?: boolean;
 }
@@ -330,6 +330,7 @@ export async function toPdfView(
     addOns: options.addOns?.map((addOn) => ({
       label: addOn.label,
       amountFormatted: `+${formatMoney(addOn.amount, quotation.currency)}`,
+      included: addOn.included,
     })),
 
     travel: travelDetails(quotation),

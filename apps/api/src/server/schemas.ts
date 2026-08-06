@@ -164,8 +164,12 @@ export const packagePrintSchema = z.object({
   validUntil: z.string().nullish(),
   /** A negotiated discount off every printed price, in the package's currency. */
   discount: z.number().min(0).default(0),
-  /** Which of the package's add-on charges to print. Omitted means all of them. */
-  includedAddOns: z.array(z.string()).optional(),
+  /**
+   * Which of the package's add-on charges this print includes, by label.
+   * Every add-on still prints as an available extra; these are the ones
+   * priced into the tier totals. Omitted or empty means none are included.
+   */
+  includedAddOns: z.array(z.string()).default([]),
   /** Print Junaidi's letterhead and signature. Off prints a neutral copy. */
   branding: z.boolean().default(true),
 });

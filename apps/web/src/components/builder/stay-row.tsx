@@ -41,12 +41,15 @@ export function StayRow({
   nights,
   lineTotal,
   invalid,
+  asPackage = false,
 }: {
   stay: BuilderStay;
   blockOptions: ResolvedBlock[];
   nights?: number;
   lineTotal?: number;
   invalid?: boolean;
+  /** Building a reusable package rather than a customer quotation. */
+  asPackage?: boolean;
 }) {
   const config = useConfigStore();
   const { updateStay, removeStay, pax } = useBuilderStore();
@@ -60,6 +63,11 @@ export function StayRow({
   const location = config.locations.find((l) => l.id === stay.locationId);
   const isMina = location?.type === "mina";
   const hotel = config.accommodations.find((a) => a.id === stay.accommodationId);
+  // A hotel's room size prices three ways on a package brochure (the tier
+  // cards), not one - so on a package, a byOccupancy stay's own room choice is
+  // never priced or printed and there is nothing useful to pick here. It still
+  // gets a default under the hood (below), just never a control to change it.
+  const tierPriced = asPackage && location?.pricingModel === "byOccupancy";
   // A hotel only offers the room sizes the admin recorded for it, so the list
   // narrows once the accommodation is chosen.
   const rooms = location
@@ -179,7 +187,7 @@ export function StayRow({
           disabled={!stay.blockId}
           onChange={(e) => onLocation(e.target.value)}
         />
-        {rooms.length > 0 && !splitOn && (
+        {rooms.length > 0 && !splitOn && !tierPriced && (
           <Select
             className="mt-2"
             options={rooms.map((r) => ({ value: r.value, label: r.label }))}
@@ -236,7 +244,9 @@ export function StayRow({
       <div className="flex items-center justify-between gap-2 md:col-span-2 md:justify-end">
         <div className="text-right">
           <p className="text-sm font-semibold text-ink">{nights ? `${nights}n` : "-"}</p>
-          {lineTotal ? (
+          {tierPriced ? (
+            <p className="text-xs text-muted">per tier</p>
+          ) : lineTotal ? (
             <p className="text-xs text-muted">{Math.round(lineTotal).toLocaleString("en-US")}</p>
           ) : stay.accommodationId ? (
             <p className="text-xs text-brand-500">no rate</p>
@@ -253,7 +263,7 @@ export function StayRow({
 
       {/* A family can split one stay across room types (Sharing + Triple) or, for
           Mina, across tiers. The quotation shows one average per person. */}
-      {stay.accommodationId && (rooms.length > 0 || isMina) && (
+      {stay.accommodationId && (rooms.length > 0 || isMina) && !tierPriced && (
         <div className="md:col-span-12">
           {!splitOn ? (
             <button
