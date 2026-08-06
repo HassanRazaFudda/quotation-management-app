@@ -4,14 +4,13 @@ import {
   blockContains,
   finalTierTotal,
   formatMoney,
-  formatPrice,
   nextBlockOptions,
-  OCCUPANCIES,
   roundOffSuggestions,
   sharingWordsFor,
+  TIER_OCCUPANCIES,
   type FlightOption,
-  type Occupancy,
   type ResolvedBlock,
+  type TierOccupancy,
 } from "@junaidi/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +39,7 @@ import {
   useBuilderStore,
   type TierRow,
 } from "@/stores/builder";
-import { servicesByCategory, useConfigStore } from "@/stores/config";
+import { servicesByCategory, useConfigStore, wordSizeMap } from "@/stores/config";
 import { FlightSection } from "./flight-section";
 import { PdfPreview } from "./pdf-preview";
 import { StayRow } from "./stay-row";
@@ -85,7 +84,7 @@ const DEFAULT_PACKAGE_ADDONS = [
 /** A package's stored tier pricing, mapped into the builder's per-tier rows. */
 function tiersFromPackage(pkg: Package): {
   tierPricingEnabled: boolean;
-  tiers: Record<Occupancy, TierRow>;
+  tiers: Record<TierOccupancy, TierRow>;
 } {
   const tp = pkg.tierPricing;
   const row = (t: { manualTotal: number | null; discount: number } | null | undefined): TierRow =>
@@ -129,7 +128,7 @@ export function Builder({
   // When a quotation is started from a package that offers tiers, the picked
   // tier drives the hotel occupancy - the quotation itself stays single-price.
   const [tierPackage, setTierPackage] = useState<Package | null>(null);
-  const [activeTier, setActiveTier] = useState<Occupancy | null>(null);
+  const [activeTier, setActiveTier] = useState<TierOccupancy | null>(null);
 
   useEffect(() => {
     config.load();
@@ -160,6 +159,10 @@ export function Builder({
       itineraryComplete: true,
       includesNote: pkg.includesNote,
       remarks: pkg.remarks,
+      // Starting point for either editing the package or a fresh quotation
+      // drawn from it - both keep pricing in the package's own currency
+      // unless changed.
+      currencyCode: pkg.currencyCode || "PKR",
       minaServiceIds: pkg.minaServiceIds,
       arafatServiceIds: pkg.arafatServiceIds,
       includeIds: pkg.includeIds,
@@ -197,13 +200,17 @@ export function Builder({
    * (Makkah / Madinah) move with the tier; Aziziya and Mina keep their own room,
    * matching how the package's tier prices are calculated.
    */
-  function applyTier(occupancy: Occupancy) {
+  function applyTier(occupancy: TierOccupancy) {
     setActiveTier(occupancy);
+    // Tier pricing's "Quad" has always meant the hotel's shared room, now
+    // priced under "Sharing" - Triple and Double match the room occupancy
+    // directly.
+    const roomOccupancy = occupancy === "Quad" ? "Sharing" : occupancy;
     for (const stay of useBuilderStore.getState().stays) {
       const accommodation = config.accommodations.find((a) => a.id === stay.accommodationId);
       const location = config.locations.find((l) => l.id === accommodation?.locationId);
       if (location?.pricingModel === "byOccupancy") {
-        builder.updateStay(stay.key, { roomType: "sharing", occupancy, sharingWord: null });
+        builder.updateStay(stay.key, { roomType: "sharing", occupancy: roomOccupancy, sharingWord: null });
       }
     }
   }
@@ -217,7 +224,7 @@ export function Builder({
     // choice sets the hotel occupancy and the quotation prices normally from it.
     if (pkg.tierPricing?.enabled) {
       setTierPackage(pkg);
-      const first = OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ]);
+      const first = TIER_OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ]);
       if (first) applyTier(first);
     } else {
       setTierPackage(null);
@@ -547,11 +554,11 @@ export function Builder({
                   <span className="text-sm text-muted">· Room tier</span>
                   <Select
                     className="w-36"
-                    options={OCCUPANCIES.filter((occ) => tierPackage.tierPricing?.[occ]).map(
+                    options={TIER_OCCUPANCIES.filter((occ) => tierPackage.tierPricing?.[occ]).map(
                       (occ) => ({ value: occ, label: occ }),
                     )}
                     value={activeTier ?? ""}
-                    onChange={(e) => applyTier(e.target.value as Occupancy)}
+                    onChange={(e) => applyTier(e.target.value as TierOccupancy)}
                   />
                 </>
               )}
@@ -634,7 +641,7 @@ export function Builder({
                 none - it is set when a quotation is started from the package. */}
             {!asPackage && (
               <>
-                <Field label="PAX" hint={paxHint(builder.pax)}>
+                <Field label="PAX" hint={paxHint(builder.pax, wordSizeMap(config))}>
                   <NumberInput
                     min={1}
                     fallback={1}
@@ -782,25 +789,32 @@ export function Builder({
                 Qurbani included
               </label>
 
+              <Field label="Currency">
+                <Select
+                  options={[
+                    { value: "PKR", label: "PKR - Pakistani Rupee (base)" },
+                    ...config.currencies
+                      .filter((c) => c.enabled)
+                      .map((c) => ({
+                        value: c.code,
+                        label: `${c.code}${c.name ? ` - ${c.name}` : ""} (1 = ${c.rate.toLocaleString("en-US")} PKR)`,
+                      })),
+                  ]}
+                  value={builder.currencyCode}
+                  onChange={(e) => builder.set("currencyCode", e.target.value)}
+                />
+              </Field>
+              {asPackage && result.currency.code !== "PKR" && (
+                <p className="-mt-2 text-xs text-muted">
+                  Only the calculated hotel total converts from PKR automatically - tier prices,
+                  add-ons and the print discount are typed in directly in {result.currency.code}.
+                </p>
+              )}
+
               {/* A discount is a per-customer negotiation, so a package - which
                   has no customer - does not carry one. */}
               {!asPackage && (
                 <>
-                  <Field label="Currency">
-                    <Select
-                      options={[
-                        { value: "PKR", label: "PKR - Pakistani Rupee (base)" },
-                        ...config.currencies
-                          .filter((c) => c.enabled)
-                          .map((c) => ({
-                            value: c.code,
-                            label: `${c.code}${c.name ? ` - ${c.name}` : ""} (1 = ${c.rate.toLocaleString("en-US")} PKR)`,
-                          })),
-                      ]}
-                      value={builder.currencyCode}
-                      onChange={(e) => builder.set("currencyCode", e.target.value)}
-                    />
-                  </Field>
                   {result.currency.code !== "PKR" && (
                     <p className="-mt-2 text-xs text-muted">
                       Converted from PKR at 1 {result.currency.code} ={" "}
@@ -887,13 +901,14 @@ export function Builder({
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {OCCUPANCIES.map((occ) => {
+                    {TIER_OCCUPANCIES.map((occ) => {
                       const row = builder.tiers[occ];
                       const auto = result.tierAuto[occ];
-                      const printed = finalTierTotal(auto.total, {
-                        manualTotal: row.manualTotal,
-                        discount: row.discount,
-                      });
+                      const printed = finalTierTotal(
+                        auto.total,
+                        { manualTotal: row.manualTotal, discount: row.discount },
+                        result.currency.decimals,
+                      );
                       return (
                         <div key={occ} className="rounded-lg border border-line p-3">
                           <div className="flex flex-wrap items-end gap-3">
@@ -913,7 +928,8 @@ export function Builder({
                               <>
                                 <label className="min-w-[9rem] flex-1">
                                   <span className="mb-1 block text-xs text-muted">
-                                    Price (auto {formatPrice(auto.total)})
+                                    Price in {result.currency.code} (auto{" "}
+                                    {formatMoney(auto.total, result.currency)})
                                   </span>
                                   <Input
                                     type="number"
@@ -932,7 +948,9 @@ export function Builder({
                                   />
                                 </label>
                                 <label className="w-28">
-                                  <span className="mb-1 block text-xs text-muted">Discount</span>
+                                  <span className="mb-1 block text-xs text-muted">
+                                    Discount in {result.currency.code}
+                                  </span>
                                   <Input
                                     type="number"
                                     min={0}
@@ -952,7 +970,7 @@ export function Builder({
                                 <div className="pb-1.5 text-right">
                                   <span className="mb-0.5 block text-xs text-muted">Prints</span>
                                   <span className="font-bold text-brand-600">
-                                    {formatPrice(printed)}
+                                    {formatMoney(printed, result.currency)}
                                   </span>
                                 </div>
                               </>
@@ -976,8 +994,8 @@ export function Builder({
 
             <Card>
               <CardHeader
-                title="Add-on Charges"
-                subtitle="Per-room-type surcharges, printed in a band under the itinerary"
+                title="Optional Extra Services"
+                subtitle={`Priced in ${builder.currencyCode}, printed in a band under the itinerary`}
               />
               <div className="space-y-3 p-5">
                 {builder.addOns.length === 0 && (
@@ -1102,8 +1120,8 @@ function minaOptions(
  * anyone else is quoted "Sharing", which is the honest word for a room that
  * might hold five or six.
  */
-function paxHint(pax: number): string | undefined {
-  const words = sharingWordsFor(pax);
+function paxHint(pax: number, wordSizes: Record<string, number>): string | undefined {
+  const words = sharingWordsFor(pax, Object.keys(wordSizes), wordSizes);
   if (words.length === 0) return undefined;
   return `${words.map((w) => `“${w}”`).join(" / ")} wording is available for shared rooms`;
 }

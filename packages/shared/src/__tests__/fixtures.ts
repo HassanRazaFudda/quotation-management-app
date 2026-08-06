@@ -73,7 +73,7 @@ export const accommodations: Accommodation[] = [
   {
     // A small hotel with no double rooms at all.
     id: "acc-markazia", locationId: "loc-makkah", name: "3 Star Markazia",
-    allowedOccupancies: ["Quad", "Triple"],
+    allowedOccupancies: ["Sharing", "Triple"],
     allowedMealIds: ["meal-half"], allowedMealNoteIds: [], sortOrder: 2, active: true,
   },
 ];
@@ -115,36 +115,36 @@ function block(
 export const rates: Rate[] = [
   {
     model: "byOccupancy", accommodationId: "acc-sofitel", blockId: "blk-pre-madinah", season: SEASON,
-    rates: { Quad: 110_000, Triple: 130_000, Double: 160_000 },
+    rates: { Sharing: 110_000, Triple: 130_000, Double: 160_000 },
   },
   {
     model: "byOccupancy", accommodationId: "acc-sofitel", blockId: "blk-post-madinah", season: SEASON,
-    rates: { Quad: 62_000, Triple: 74_000, Double: 92_000 },
+    rates: { Sharing: 62_000, Triple: 74_000, Double: 92_000 },
   },
   {
     model: "byOccupancy", accommodationId: "acc-swiss", blockId: "blk-pre-makkah", season: SEASON,
-    rates: { Quad: 150_000, Triple: 175_000, Double: 220_000 }, withoutBed: 50_000,
+    rates: { Sharing: 150_000, Triple: 175_000, Double: 220_000 }, withoutBed: 50_000,
   },
   {
     model: "byOccupancy", accommodationId: "acc-swiss", blockId: "blk-makkah-8", season: SEASON,
-    rates: { Quad: 58_000, Triple: 68_000, Double: 86_000 },
+    rates: { Sharing: 58_000, Triple: 68_000, Double: 86_000 },
   },
   {
     model: "sharingOrSeparate", accommodationId: "acc-aziziya", blockId: "blk-aziziya-1", season: SEASON,
     sharing: 24_000, // one figure: a shared room is not sold by occupancy
-    separate: { Quad: 36_000, Triple: 42_000, Double: 54_000 },
+    separate: { Sharing: 36_000, Triple: 42_000, Double: 54_000 },
   },
   {
     model: "sharingOrSeparate", accommodationId: "acc-aziziya", blockId: "blk-aziziya-2", season: SEASON,
     sharing: 22_000,
-    separate: { Quad: 34_000, Triple: 40_000, Double: 51_000 },
+    separate: { Sharing: 34_000, Triple: 40_000, Double: 51_000 },
   },
   {
     // The 13-night stay that spans the Hajj days. The hotel figure only - the
     // Maktab is charged on the Hajj row that nests inside it.
     model: "sharingOrSeparate", accommodationId: "acc-aziziya", blockId: "blk-aziziya-hajj", season: SEASON,
     sharing: 95_000,
-    separate: { Quad: 140_000, Triple: 165_000, Double: 210_000 },
+    separate: { Sharing: 140_000, Triple: 165_000, Double: 210_000 },
   },
   {
     model: "flat", accommodationId: "acc-mina-std", blockId: "blk-hajj-5n", season: SEASON,

@@ -44,7 +44,7 @@ export interface RoomChoice {
 
 const SHARING: Omit<RoomChoice, "label" | "value"> = {
   roomType: "sharing",
-  occupancy: "Quad",
+  occupancy: "Sharing",
   sharingWord: null,
 };
 
@@ -53,98 +53,71 @@ const SHARING: Omit<RoomChoice, "label" | "value"> = {
  *
  * Twelve guests fill three quad rooms or two six-bed rooms, so both "Quad" and
  * "Hexa" are on offer; seven guests fill nothing evenly and get none.
+ *
+ * @param words The vocabulary to check, and @param sizes how many people each
+ *   one means - normally the admin's `RoomSize` list. Both default to the
+ *   original fixed three, so a caller with no config yet still works.
  */
-export function sharingWordsFor(pax: number): SharingWord[] {
+export function sharingWordsFor(
+  pax: number,
+  words: readonly string[] = SHARING_WORDS,
+  sizes: Record<string, number> = SHARING_WORD_SIZE,
+): string[] {
   if (pax <= 0) return [];
-  return SHARING_WORDS.filter((word) => pax % SHARING_WORD_SIZE[word] === 0);
+  return words.filter((word) => sizes[word] && pax % sizes[word]! === 0);
 }
 
 /** Kept for the PAX hint: is any exact wording available at this group size? */
 export const sharingWordAvailable = (pax: number): boolean => sharingWordsFor(pax).length > 0;
 
 /**
- * The choices offered for a stay.
+ * The choices offered for a group of `pax` people at this hotel.
+ *
+ * "Sharing" stays the one fixed anchor: it is the flexible shared room's own
+ * rate, so a hotel without it has no shared room at all. Every other size -
+ * Triple, Double, or anything an admin has added for this hotel - is just "the
+ * rest of `allowedOccupancies`", priced as its own room. "Quad" is not this
+ * anchor - it is an ordinary wording choice for "Sharing", exactly like Quint
+ * or Hexa, offered only when the admin has picked it AND `pax` fills whole
+ * rooms of that size.
+ *
+ * The same rule applies whether `pax` is a whole stay's party or one room's
+ * own headcount inside a mix - the caller decides which, so a 4-person row in
+ * a split can be labelled "Quad" exactly as a 4-person stay can.
  *
  * @param allowedOccupancies Room sizes (rates) the hotel has. Empty means all.
- * @param allowedSharingWords Sizes the hotel's shared rooms come in. Empty
- *   means all — so a group that fills whole rooms of a size the hotel does not
- *   have is quoted plain "Sharing" rather than that size.
+ * @param allowedSharingWords Words the hotel's shared room may be written as
+ *   (Quad, Quint, Hexa, ...). Empty means all — so a group that fills whole
+ *   rooms of a size the hotel does not have is quoted plain "Sharing" rather
+ *   than that size.
+ * @param wordSizes How many people each sharing word means - the admin's
+ *   `RoomSize` list. Defaults to the original three.
  */
 export function roomChoices(
   model: PricingModel,
   pax: number,
-  allowedOccupancies: Occupancy[] = [],
-  allowedSharingWords: SharingWord[] = [],
-  perRoom = false,
+  allowedOccupancies: string[] = [],
+  allowedSharingWords: string[] = [],
+  wordSizes: Record<string, number> = SHARING_WORD_SIZE,
 ): RoomChoice[] {
   if (model === "flat") return []; // a Mina tent has no room choice
 
   const allowed = allowedOccupancies.length > 0 ? allowedOccupancies : [...OCCUPANCIES];
-
-  // A guest sharing a room without their own bed - a child, or a fifth in a
-  // Quad. Priced at the hotel's own no-bed rate, used inside a room mix.
-  const noBed: RoomChoice = {
-    value: "without-bed",
-    label: "Without bed",
-    roomType: null,
-    occupancy: null,
-    sharingWord: null,
-    withoutBed: true,
-  };
-
-  // Inside a room mix each entry is one explicit room, so the sizes are named
-  // outright - and offered whatever the party count, since each entry carries
-  // its own headcount rather than the whole party's.
-  if (perRoom) {
-    const roomsFor: RoomChoice[] = [];
-
-    if (model === "byOccupancy") {
-      // A hotel: Quad (the shared/Quad rate), Triple, Double.
-      for (const occupancy of OCCUPANCIES) {
-        if (!allowed.includes(occupancy)) continue;
-        roomsFor.push({
-          value: occupancy === "Quad" ? "sharing-quad" : occupancy.toLowerCase(),
-          label: occupancy,
-          roomType: "sharing",
-          occupancy,
-          sharingWord: occupancy === "Quad" ? "Quad" : null,
-        });
-      }
-    } else {
-      // Aziziya: one shared figure, named generically or by its size (Quad /
-      // Quint / Hexa), plus a private Triple or Double.
-      roomsFor.push({ ...SHARING, value: "sharing", label: "Sharing" });
-      const words = allowedSharingWords.length > 0 ? allowedSharingWords : [...SHARING_WORDS];
-      for (const word of words) {
-        roomsFor.push({ ...SHARING, value: `sharing-${word.toLowerCase()}`, label: word, sharingWord: word });
-      }
-      for (const occupancy of ["Triple", "Double"] as const) {
-        if (!allowed.includes(occupancy)) continue;
-        roomsFor.push({
-          value: `separate-${occupancy.toLowerCase()}`,
-          label: `Separate - ${occupancy}`,
-          roomType: "separate",
-          occupancy,
-          sharingWord: null,
-        });
-      }
-    }
-
-    roomsFor.push(noBed);
-    return roomsFor;
-  }
+  // Every priced size besides the base "Sharing" rate.
+  const extraOccupancies = allowed.filter((o) => o !== "Sharing");
 
   const choices: RoomChoice[] = [];
 
-  // The shared room is priced as a Quad, so a hotel without quad rooms has no
-  // shared option at all - and no wording for one either.
-  if (allowed.includes("Quad")) {
+  // The shared room is priced as Sharing, so a hotel without a Sharing rate
+  // has no shared option at all - and no wording for one either.
+  if (allowed.includes("Sharing")) {
     choices.push({ ...SHARING, value: "sharing", label: "Sharing" });
 
-    const words =
-      allowedSharingWords.length > 0
-        ? sharingWordsFor(pax).filter((w) => allowedSharingWords.includes(w))
-        : sharingWordsFor(pax);
+    const words = sharingWordsFor(
+      pax,
+      allowedSharingWords.length > 0 ? allowedSharingWords : [...SHARING_WORDS],
+      wordSizes,
+    );
 
     for (const word of words) {
       choices.push({
@@ -157,9 +130,8 @@ export function roomChoices(
   }
 
   if (model === "byOccupancy") {
-    // Hotels: the shared room IS the Quad rate; Triple and Double are private.
-    for (const occupancy of ["Triple", "Double"] as const) {
-      if (!allowed.includes(occupancy)) continue;
+    // Hotels: the shared room IS the Sharing rate; every other size is private.
+    for (const occupancy of extraOccupancies) {
       choices.push({
         value: occupancy.toLowerCase(),
         label: occupancy,
@@ -168,24 +140,31 @@ export function roomChoices(
         sharingWord: null,
       });
     }
-    choices.push(noBed);
-    return choices;
+  } else {
+    // Aziziya: sharing is one figure; a Separate room is a private room in any
+    // other size the hotel has. A group wanting a room to itself takes Sharing
+    // (quoted with its own size), so a Separate Sharing is not offered.
+    for (const occupancy of extraOccupancies) {
+      choices.push({
+        value: `separate-${occupancy.toLowerCase()}`,
+        label: `Separate - ${occupancy}`,
+        roomType: "separate",
+        occupancy,
+        sharingWord: null,
+      });
+    }
   }
 
-  // Aziziya: sharing is one figure; a Separate room is a private Triple or
-  // Double. A group wanting a room to itself takes Sharing (quoted with its
-  // own size), so a Separate Quad is not offered.
-  for (const occupancy of ["Triple", "Double"] as const) {
-    if (!allowed.includes(occupancy)) continue;
-    choices.push({
-      value: `separate-${occupancy.toLowerCase()}`,
-      label: `Separate - ${occupancy}`,
-      roomType: "separate",
-      occupancy,
-      sharingWord: null,
-    });
-  }
-  choices.push(noBed);
+  // A guest sharing a room without their own bed - a child, or a fifth in a
+  // Quad. Priced at the hotel's own no-bed rate, used inside a room mix.
+  choices.push({
+    value: "without-bed",
+    label: "Without bed",
+    roomType: null,
+    occupancy: null,
+    sharingWord: null,
+    withoutBed: true,
+  });
   return choices;
 }
 
@@ -204,7 +183,7 @@ export function roomChoiceValue(stay: StayRoom): string {
   }
   if (stay.roomType === "sharing") {
     if (stay.sharingWord) return `sharing-${stay.sharingWord.toLowerCase()}`;
-    if (stay.occupancy && stay.occupancy !== "Quad") return stay.occupancy.toLowerCase();
+    if (stay.occupancy && stay.occupancy !== "Sharing") return stay.occupancy.toLowerCase();
     return "sharing";
   }
   return "";
@@ -218,7 +197,7 @@ export function roomLabel(stay: StayRoom): string {
   }
   if (stay.roomType === "sharing") {
     if (stay.sharingWord) return stay.sharingWord;
-    if (stay.occupancy && stay.occupancy !== "Quad") return stay.occupancy;
+    if (stay.occupancy && stay.occupancy !== "Sharing") return stay.occupancy;
     return "Sharing";
   }
   return "";

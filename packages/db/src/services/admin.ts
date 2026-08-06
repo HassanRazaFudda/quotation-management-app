@@ -18,6 +18,7 @@ import {
   MealNoteModel,
   PackageCategoryModel,
   RateModel,
+  RoomSizeModel,
   ServiceItemModel,
 } from "../models/config";
 
@@ -134,11 +135,50 @@ export async function deactivate(kind: keyof typeof MODELS, id: string) {
 
 // --- hotels ----------------------------------------------------------------
 
+/**
+ * A size is either its own priced room or wording for the Sharing rate -
+ * never both, or the quotation dropdown would show two different meanings for
+ * the same word (e.g. "Quint" as wording and "Quint" as a real room). One
+ * uniform rule, no exceptions - "Quad" included: it is an ordinary wording
+ * choice like Quint or Hexa, not the anchor rate ("Sharing" is), so it is
+ * refused the same way if a hotel lists it in both places.
+ */
+function assertNoSizeOverlap(data: Record<string, unknown>): void {
+  const occupancies = Array.isArray(data.allowedOccupancies) ? data.allowedOccupancies : [];
+  const words = Array.isArray(data.allowedSharingWords) ? data.allowedSharingWords : [];
+  const overlap = occupancies.filter((code) => words.includes(code));
+  if (overlap.length > 0) {
+    throw new AdminError(
+      `"${overlap.join(", ")}" cannot be both a priced room size and Sharing wording on the same hotel.`,
+    );
+  }
+}
+
 export async function upsertAccommodation(id: string | null, data: Record<string, unknown>) {
+  assertNoSizeOverlap(data);
   if (id) {
     return AccommodationModel.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean();
   }
   return AccommodationModel.create(data);
+}
+
+/**
+ * Reorder the hotels/tents within one location: `orderedIds` is the full new
+ * order, and each gets `sortOrder` set to its index. Ids from another location
+ * are ignored, so a stale list can never scramble a different group.
+ */
+export async function reorderAccommodations(locationId: string, orderedIds: string[]) {
+  const belongs = await AccommodationModel.find({ _id: { $in: orderedIds }, locationId })
+    .select("_id")
+    .lean();
+  const validIds = new Set(belongs.map((doc) => String(doc._id)));
+
+  const ops = orderedIds
+    .filter((id) => validIds.has(id))
+    .map((id, index) => ({
+      updateOne: { filter: { _id: id }, update: { $set: { sortOrder: index } } },
+    }));
+  if (ops.length > 0) await AccommodationModel.bulkWrite(ops);
 }
 
 /**
@@ -202,4 +242,22 @@ export async function upsertCurrency(id: string | null, data: Record<string, unk
 /** Soft delete: a quotation already froze its own rate, so this is safe. */
 export async function deactivateCurrency(id: string) {
   return CurrencyModel.findByIdAndUpdate(id, { $set: { active: false } }).lean();
+}
+
+// --- room sizes --------------------------------------------------------
+
+export async function upsertRoomSize(id: string | null, data: Record<string, unknown>) {
+  if (id) {
+    return RoomSizeModel.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean();
+  }
+  return RoomSizeModel.create(data);
+}
+
+/**
+ * Soft delete: a hotel that already had this size picked keeps the code on
+ * its own allowed lists (plain strings, no reference), so nothing there breaks -
+ * it simply stops being offered to a hotel configured for the first time.
+ */
+export async function deactivateRoomSize(id: string) {
+  return RoomSizeModel.findByIdAndUpdate(id, { $set: { active: false } }).lean();
 }

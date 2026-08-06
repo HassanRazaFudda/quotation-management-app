@@ -19,6 +19,7 @@ import {
   type Meal,
   type MealNote,
   type Rate,
+  type RoomSize,
   type ServiceItem,
 } from "@junaidi/shared";
 
@@ -33,6 +34,7 @@ import {
   MealNoteModel,
   PackageCategoryModel,
   RateModel,
+  RoomSizeModel,
   ServiceItemModel,
 } from "../models/config";
 
@@ -44,7 +46,7 @@ const activeOnly = { active: true } as const;
 export async function getConfigBundle(season: string): Promise<ConfigBundle> {
   const [
     blocks, locations, accommodations, meals, mealNotes,
-    services, categories, rates, calendar, flights, currencies,
+    services, categories, rates, calendar, flights, currencies, roomSizes,
   ] = await Promise.all([
       DateBlockModel.find({ ...activeOnly, season }).sort({ sortOrder: 1 }).lean(),
       LocationModel.find(activeOnly).sort({ sortOrder: 1 }).lean(),
@@ -57,6 +59,7 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
       CalendarEntryModel.find({ hijriYear: Number(season) }).lean(),
       FlightModel.find({ ...activeOnly, season }).sort({ direction: 1, sortOrder: 1 }).lean(),
       CurrencyModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
+      RoomSizeModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
     ]);
 
   return {
@@ -71,6 +74,7 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
     flights: flights.map(toFlight),
     rates: rates.map(toRate),
     currencies: currencies.map(toCurrency),
+    roomSizes: roomSizes.map(toRoomSize),
     calendar: calendar.map(toCalendarEntry),
   };
 }
@@ -84,6 +88,17 @@ function toCurrency(doc: Record<string, any>): Currency {
     rate: doc.rate ?? 1,
     decimals: doc.decimals ?? 2,
     enabled: doc.enabled ?? true,
+  };
+}
+
+function toRoomSize(doc: Record<string, any>): RoomSize {
+  return {
+    id: id(doc._id),
+    code: doc.code,
+    label: doc.label || doc.code,
+    sharingGroupSize: doc.sharingGroupSize ?? null,
+    sortOrder: doc.sortOrder ?? 0,
+    active: doc.active ?? true,
   };
 }
 
@@ -170,7 +185,7 @@ function toRate(doc: Record<string, any>): Rate {
         ...base,
         model: "sharingOrSeparate",
         sharing: doc.sharing ?? 0,
-        separate: doc.separate ?? { Quad: 0, Triple: 0, Double: 0 },
+        separate: doc.separate ?? { Sharing: 0, Triple: 0, Double: 0 },
         withoutBed: doc.withoutBed ?? 0,
       };
     default:

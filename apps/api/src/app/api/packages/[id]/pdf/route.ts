@@ -24,12 +24,13 @@ export const POST = route(async (request, { params }) => {
 
   // The body may be empty (print with no customer), so parse defensively.
   const body = await readJson(request).catch(() => ({}));
-  const { guest, validUntil, discount, branding } = packagePrintSchema.parse(body ?? {});
+  const { guest, validUntil, discount, includedAddOns, branding } = packagePrintSchema.parse(body ?? {});
 
   const { doc, tierPrices, addOns, name } = await buildPackagePdfBundle(id!, {
     guest,
     validUntil: validUntil ?? null,
     discount,
+    includedAddOns,
     generatedBy: session.name,
   });
 

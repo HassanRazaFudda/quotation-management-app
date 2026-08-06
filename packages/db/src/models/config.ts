@@ -13,7 +13,6 @@ import {
   MINA_TIERS,
   OCCUPANCIES,
   PRICING_MODELS,
-  SHARING_WORDS,
   SERVICE_CATEGORIES,
   BLOCK_PHASES,
 } from "@junaidi/shared";
@@ -60,10 +59,18 @@ const accommodationSchema = new Schema(
     /** The Mina option that books no tent. Still priced: Muallim, transport. */
     withoutMina: { type: Boolean, default: false },
 
-    /** Room sizes (rates) this hotel has. Empty means all of them. */
-    allowedOccupancies: [{ type: String, enum: [...OCCUPANCIES] }],
-    /** Sizes its shared rooms come in: Quad/Quint/Hexa. Empty means all. */
-    allowedSharingWords: [{ type: String, enum: [...SHARING_WORDS] }],
+    /**
+     * Room sizes (rates) this hotel has, each priced independently. Empty
+     * means all of them. Codes come from the admin-managed RoomSize list, so
+     * this is a free string, not an enum - checked at the service layer.
+     */
+    allowedOccupancies: [{ type: String }],
+    /**
+     * Sizes its shared rooms come in - wording only, always the Sharing rate.
+     * Empty means all. A code never sits in both this and allowedOccupancies
+     * for the same hotel, enforced in `upsertAccommodation`.
+     */
+    allowedSharingWords: [{ type: String }],
     /** Package categories this option may be sold under. Empty means any. */
     allowedCategories: [{ type: Schema.Types.ObjectId, ref: "PackageCategory" }],
 
@@ -154,6 +161,33 @@ currencySchema.index({ season: 1, code: 1, active: 1 });
 
 export const CurrencyModel = model("Currency", currencySchema);
 
+// -------------------------------------------------------------- room size
+
+/**
+ * A room size a hotel can offer, admin-managed rather than fixed to
+ * Sharing/Triple/Double. A hotel decides per size whether it is its own priced
+ * room (in that hotel's `allowedOccupancies`) or wording for a shared room
+ * that already prices at Sharing (`allowedSharingWords`) - never both, so this
+ * row itself carries no pricing or mode, only the vocabulary and, for the
+ * wording use, how many people the word means.
+ */
+const roomSizeSchema = new Schema(
+  {
+    season: { type: String, required: true, trim: true },
+    code: { type: String, required: true, trim: true },
+    label: { type: String, default: "", trim: true },
+    /** People this size means when used as sharing wording. Null = not applicable. */
+    sharingGroupSize: { type: Number, default: null },
+    sortOrder: { type: Number, default: 0 },
+    active: { type: Boolean, default: true },
+  },
+  timestamps,
+);
+
+roomSizeSchema.index({ season: 1, code: 1, active: 1 });
+
+export const RoomSizeModel = model("RoomSize", roomSizeSchema);
+
 // ----------------------------------------------------------- service items
 
 const serviceItemSchema = new Schema(
@@ -225,7 +259,7 @@ const rateSchema = new Schema(
     season: { type: String, required: true, trim: true },
     model: { type: String, required: true, enum: [...PRICING_MODELS] },
 
-    /** byOccupancy: { Quad, Triple, Double } */
+    /** byOccupancy: { Sharing, Triple, Double } */
     rates: { type: Schema.Types.Mixed, default: null },
 
     /** flat (Mina tents): one figure for the block */

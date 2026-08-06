@@ -12,3 +12,7 @@ export * from "./services/payment";
 export * from "./services/users";
 export * from "./models/counter";
 export { seed, DEFAULT_SEASON, type SeedResult } from "./seed";
+export {
+  migrateQuadToSharing,
+  type QuadToSharingResult,
+} from "./migrations/quad-to-sharing";

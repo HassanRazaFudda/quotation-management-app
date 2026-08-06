@@ -40,6 +40,21 @@ describe("seeding the client's structure", () => {
     expect(byName.get("Mina")?.pricingModel).toBe("flat");
   });
 
+  it("creates the room-size vocabulary every hotel's allowed lists already use", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const byCode = Object.fromEntries(bundle.roomSizes.map((s) => [s.code, s]));
+    expect(Object.keys(byCode).sort()).toEqual([
+      "Double", "Hexa", "Quad", "Quint", "Sharing", "Triple",
+    ]);
+    // Only the sizes meaningful as Sharing wording carry a group size.
+    expect(byCode.Quad?.sharingGroupSize).toBe(4);
+    expect(byCode.Quint?.sharingGroupSize).toBe(5);
+    expect(byCode.Hexa?.sharingGroupSize).toBe(6);
+    expect(byCode.Triple?.sharingGroupSize).toBe(null);
+    expect(byCode.Double?.sharingGroupSize).toBe(null);
+    expect(byCode.Sharing?.sharingGroupSize).toBe(null);
+  });
+
   it("creates the three Mina tiers with their bed counts", async () => {
     const mina = await AccommodationModel.find({ minaTier: { $ne: null } }).lean();
     const beds = Object.fromEntries(mina.map((m) => [m.minaTier, m.bedsPerTent]));
@@ -61,7 +76,7 @@ describe("seeding the client's structure", () => {
   }, 60_000);
 
   it("does not overwrite a rate the admin has edited", async () => {
-    const sofitel = await AccommodationModel.findOne({ name: "Sofitel Madinah Hotel" });
+    const sofitel = await AccommodationModel.findOne({ name: "Sofitel Shahd Al Madinah" });
     const original = await RateModel.findOne({
       accommodationId: sofitel!._id,
       season: DEFAULT_SEASON,
@@ -69,20 +84,20 @@ describe("seeding the client's structure", () => {
     const query = { _id: original!._id };
 
     await RateModel.updateOne(query, {
-      $set: { rates: { Quad: 99_999, Triple: 99_999, Double: 99_999 } },
+      $set: { rates: { Sharing: 99_999, Triple: 99_999, Double: 99_999 } },
     });
 
     await seed();
 
     const rate = await RateModel.findOne(query).lean();
-    expect((rate!.rates as Record<string, number>).Quad).toBe(99_999);
+    expect((rate!.rates as Record<string, number>).Sharing).toBe(99_999);
 
     // Put it back: later tests price real itineraries against these rates.
     await RateModel.updateOne(query, { $set: { rates: original!.rates } });
   }, 60_000);
 
   it("creates a rate for every block a hotel can be used in", async () => {
-    const sofitel = await AccommodationModel.findOne({ name: "Sofitel Madinah Hotel" });
+    const sofitel = await AccommodationModel.findOne({ name: "Sofitel Shahd Al Madinah" });
     const rates = await RateModel.find({
       accommodationId: sofitel!._id,
       season: DEFAULT_SEASON,
@@ -147,7 +162,7 @@ describe("seeded config drives the domain rules", () => {
 
     const aziziya = accommodation("Aziziya Hotel");
     const mina = accommodation("Mina Deluxe");
-    const madinah = accommodation("Sofitel Madinah Hotel");
+    const madinah = accommodation("Sofitel Shahd Al Madinah");
 
     const stays: StayInput[] = [
       {
@@ -155,7 +170,7 @@ describe("seeded config drives the domain rules", () => {
         locationId: madinah.locationId,
         accommodationId: madinah.id,
         roomType: "sharing",
-        occupancy: "Quad",
+        occupancy: "Sharing",
         mealId: madinah.allowedMealIds[0],
       },
       {
@@ -201,7 +216,7 @@ describe("seeded config drives the domain rules", () => {
     const aziziyaRate = rateFor(aziziya.id, stays[1]!.blockId);
     const minaRate = rateFor(mina.id, stays[2]!.blockId);
 
-    const madinahBlock = madinahRate.model === "byOccupancy" ? madinahRate.rates.Quad : 0;
+    const madinahBlock = madinahRate.model === "byOccupancy" ? (madinahRate.rates.Sharing ?? 0) : 0;
     // Aziziya sharing is a single figure, not broken down by occupancy.
     const aziziyaBlock = aziziyaRate.model === "sharingOrSeparate" ? aziziyaRate.sharing : 0;
     const minaBlock = minaRate.model === "flat" ? minaRate.amount : 0;

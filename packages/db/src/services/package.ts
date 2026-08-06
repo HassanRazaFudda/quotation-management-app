@@ -8,6 +8,7 @@
  */
 
 import {
+  convertFromPkr,
   errorsOnly,
   finalTierTotal,
   hasErrors,
@@ -16,6 +17,7 @@ import {
   offeredTiers,
   priceTiers,
   resolveBlocks,
+  roundToDecimals,
   validateItinerary,
   type FlightSelection,
   type PackageAddOn,
@@ -59,6 +61,8 @@ export interface PackageInput {
   termIds?: string[];
   includesNote?: string;
   remarks?: string;
+  /** The currency this package is authored and printed in. Defaults to PKR. */
+  currencyCode?: string;
   tierPricing?: TierPricingInput;
   addOns?: PackageAddOn[];
 }
@@ -75,14 +79,18 @@ interface TierPricingInput {
   Double?: TierSettingInput | null;
 }
 
-/** Clean one tier's controls for storage, or null when the tier is not offered. */
+/**
+ * Clean one tier's controls for storage, or null when the tier is not offered.
+ * Typed directly in the package's own currency, so this only clamps and rounds
+ * to a safe precision - it cannot know that currency's exact decimals here.
+ */
 function toTierDoc(setting: TierSettingInput | null | undefined) {
   if (!setting) return null;
   const manual = setting.manualTotal;
   return {
     manualTotal:
-      manual === null || manual === undefined ? null : Math.max(0, Math.round(manual)),
-    discount: Math.max(0, Math.round(setting.discount ?? 0)),
+      manual === null || manual === undefined ? null : Math.max(0, roundToDecimals(manual, 2)),
+    discount: Math.max(0, roundToDecimals(setting.discount ?? 0, 2)),
   };
 }
 
@@ -153,11 +161,14 @@ function toDocument(input: PackageInput) {
     termIds: input.termIds ?? [],
     includesNote: input.includesNote ?? "",
     remarks: input.remarks ?? "",
+    currencyCode: input.currencyCode || "PKR",
     tierPricing: toTierPricingDoc(input.tierPricing),
+    // Typed directly in the package's own currency, like the tier controls
+    // above - rounded to a safe precision, not converted.
     addOns: (input.addOns ?? [])
       .map((addOn) => ({
         label: (addOn.label ?? "").trim(),
-        amount: Math.max(0, Math.round(addOn.amount ?? 0)),
+        amount: Math.max(0, roundToDecimals(addOn.amount ?? 0, 2)),
       }))
       .filter((addOn) => addOn.label.length > 0),
   };
@@ -241,10 +252,16 @@ export interface PackagePrintOptions {
   guest?: { name: string; pax: number };
   validUntil?: string | null;
   /**
-   * A negotiated discount taken off every printed price. Internal, like a
-   * quotation's - only the reduced figures reach the page, never the amount.
+   * A negotiated discount taken off every printed price, in the package's own
+   * currency. Internal, like a quotation's - only the reduced figures reach
+   * the page, never the amount.
    */
   discount?: number;
+  /**
+   * Which of the package's add-on charges to print, by label. Undefined means
+   * every add-on the package has - the same as before this existed.
+   */
+  includedAddOns?: string[];
   /** The staff member who printed it, shown in the footer. */
   generatedBy?: string;
 }
@@ -263,7 +280,11 @@ export async function buildPackagePdfBundle(
 
   const guestName = options.guest?.name?.trim() ?? "";
   const guest = { name: guestName, pax: Math.max(1, options.guest?.pax ?? 1) };
-  const discount = Math.max(0, Math.round(options.discount ?? 0));
+  // Not rounded here - it is in the chosen currency, which may have decimals
+  // (cents), and the currency's own precision is not known until the doc
+  // below resolves it. `calculateTotals` rounds it correctly for the
+  // single-price path; the tier path rounds it explicitly, same as that.
+  const discount = Math.max(0, options.discount ?? 0);
 
   const stays: StayInput[] = pkg.stays.map((stay) => ({
     blockId: String(stay.blockId),
@@ -295,18 +316,28 @@ export async function buildPackagePdfBundle(
     termIds: ids(pkg.termIds),
     includesNote: pkg.includesNote ?? "",
     remarks: pkg.remarks ?? "",
-    // A single-price package prints its discounted total; the tier case applies
-    // the same discount to each tier below.
+    // The package carries its own currency - not a print-time choice. The
+    // print discount is in that same currency, like a quotation's.
+    currencyCode: pkg.currencyCode ?? "PKR",
     discount,
   };
 
   // A package has no reference number, but it does carry who printed it, for
   // the footer. The customer and money still stay off the stored template.
+  // This also resolves today's rate for the package's currency - a package
+  // re-prices live, so nothing about this is frozen the way a quotation's is.
   const doc = await buildQuotationDocument(
     input,
     { userId: "", name: options.generatedBy ?? "", role: "admin" },
     "",
   );
+  const exchangeRate = doc.exchangeRate;
+  const decimals = doc.currency.decimals;
+  // Only the auto-calculated figure needs this - it comes from real hotel
+  // rates, which are always PKR. Everything the admin typed by hand (tier
+  // manual totals/discounts, add-on amounts, the print discount above) is
+  // already in the package's currency and needs no conversion.
+  const toCurrency = (pkr: number) => roundToDecimals(convertFromPkr(pkr, exchangeRate), decimals);
 
   const bundle = await getConfigBundle(pkg.season);
   const blocks = resolveBlocks(bundle.blocks, bundle.calendar);
@@ -320,16 +351,22 @@ export async function buildPackagePdfBundle(
   // The flight fare is the same across tiers, so it sits on every one.
   const flightTotal = doc.flight?.total ?? 0;
 
-  const tierPrices = offeredTiers(pkg.tierPricing as TierPricing).map(({ occupancy, setting }) => ({
-    label: occupancy,
-    // The negotiated print discount comes off every tier's final figure.
-    total: Math.max(0, finalTierTotal((auto.get(occupancy) ?? 0) + flightTotal, setting) - discount),
-  }));
+  const tierPrices = offeredTiers(pkg.tierPricing as TierPricing).map(({ occupancy, setting }) => {
+    const convertedAuto = toCurrency((auto.get(occupancy) ?? 0) + flightTotal);
+    const final = finalTierTotal(convertedAuto, setting, decimals);
+    return {
+      label: occupancy,
+      total: Math.max(0, roundToDecimals(final - discount, decimals)),
+    };
+  });
 
-  const addOns: PackageAddOn[] = (pkg.addOns ?? []).map((addOn) => ({
-    label: addOn.label ?? "",
-    amount: addOn.amount ?? 0,
-  }));
+  const includedAddOns = options.includedAddOns;
+  const addOns: PackageAddOn[] = (pkg.addOns ?? [])
+    .filter((addOn) => !includedAddOns || includedAddOns.includes(addOn.label ?? ""))
+    .map((addOn) => ({
+      label: addOn.label ?? "",
+      amount: roundToDecimals(addOn.amount ?? 0, decimals),
+    }));
 
   return { doc, tierPrices, addOns, name: pkg.name };
 }

@@ -8,8 +8,31 @@
 
 // ---------------------------------------------------------------- occupancy
 
-export const OCCUPANCIES = ["Quad", "Triple", "Double"] as const;
-export type Occupancy = (typeof OCCUPANCIES)[number];
+/**
+ * The default rated sizes - "Sharing" (the flexible shared room, priced the
+ * same whatever word it is written as) plus Triple and Double. A sane default
+ * when a hotel has not configured its own list yet; the sizes actually offered
+ * are the admin-managed `RoomSize` list further down, where a hotel can add a
+ * "Quint" or "Single" of its own without touching this constant.
+ */
+export const OCCUPANCIES = ["Sharing", "Triple", "Double"] as const;
+/**
+ * A room size code. Historically exactly "Quad" | "Triple" | "Double" (and
+ * "Sharing" since); now any code from the admin-managed `RoomSize` list, so
+ * this is a plain string - narrowing it would reject a hotel's own sizes.
+ */
+export type Occupancy = string;
+
+/**
+ * The three tiers a package's brochure prints - fixed forever to these three
+ * names, independent of whatever an admin calls the base occupancy above
+ * (`OCCUPANCIES`). `TierPricing` below is three literal named fields, not a
+ * list, and its UI is three cards - this is what proves all three exist at
+ * compile time. The "Quad" tier still reads the shared room's rate; see
+ * `priceTiers` for where that figure actually lives now.
+ */
+export const TIER_OCCUPANCIES = ["Quad", "Triple", "Double"] as const;
+export type TierOccupancy = (typeof TIER_OCCUPANCIES)[number];
 
 /**
  * Words a shared room may be written as, and how many people each names.
@@ -18,12 +41,14 @@ export type Occupancy = (typeof OCCUPANCIES)[number];
  * five or six, and naming a number would over-promise. A group that fills
  * whole rooms of one size knows it will not be sharing with strangers, so for
  * them the number is safe to print - and only the wording changes, never the
- * price.
+ * price. The set of words (and what each one means in people) is the same
+ * admin-managed `RoomSize` list, via its `sharingGroupSize`.
  */
 export const SHARING_WORDS = ["Quad", "Quint", "Hexa"] as const;
-export type SharingWord = (typeof SHARING_WORDS)[number];
+export type SharingWord = string;
 
-export const SHARING_WORD_SIZE: Record<SharingWord, number> = {
+/** Fallback sizing for the original three words, when no admin list is passed. */
+export const SHARING_WORD_SIZE: Record<string, number> = {
   Quad: 4,
   Quint: 5,
   Hexa: 6,
@@ -297,11 +322,10 @@ export const rateKey = (accommodationId: string, blockId: string): string =>
 export function emptyRate(
   model: PricingModel,
   ids: { accommodationId: string; blockId: string; season: string },
+  /** The sizes to start a column for - normally the hotel's own `allowedOccupancies`. */
+  occupancyCodes: string[] = [...OCCUPANCIES],
 ): Rate {
-  const zeroes = Object.fromEntries(OCCUPANCIES.map((o) => [o, 0])) as Record<
-    Occupancy,
-    number
-  >;
+  const zeroes = Object.fromEntries(occupancyCodes.map((o) => [o, 0]));
 
   if (model === "flat") return { ...ids, model, amount: 0 };
   if (model === "sharingOrSeparate") {
@@ -440,7 +464,9 @@ export interface TierPricing {
 /**
  * A per-room-type surcharge printed under a package's itinerary, e.g. "Aziziya
  * Triple Bed - PKR 200,000 /- per pax". Manually entered, like the tier prices:
- * the amount is a real charge the customer sees, not an internal figure.
+ * the amount is a real charge the customer sees, not an internal figure. One
+ * amount, not one per tier - the same surcharge applies whichever room size
+ * the package itself prints.
  */
 export interface PackageAddOn {
   label: string;
@@ -480,6 +506,37 @@ export const BASE_CURRENCY: Currency = {
   enabled: true,
 };
 
+// -------------------------------------------------------------- room size
+
+/**
+ * A room size a hotel can offer, admin-managed rather than fixed to
+ * Sharing/Triple/Double.
+ *
+ * A hotel decides, per size, which of two ways it prices: placed in that
+ * hotel's `allowedOccupancies` it is a real, independently-rated room (its own
+ * column in the Rates grid); placed in `allowedSharingWords` instead it is pure
+ * wording for the shared room, which already prices at "Sharing" - never both
+ * for the same hotel, so the quotation dropdown never shows two different
+ * "Quint"s. "Sharing" itself never sits in `allowedSharingWords`: it is the
+ * fallback label already, not a word for something else. "Quad" is the
+ * original such word, offered like any other (Quint, Hexa, ...) rather than
+ * being the priced room itself.
+ *
+ * `sharingGroupSize` only matters for the wording use: how many people this
+ * word implies, so it can be offered exactly when the party fills it evenly.
+ */
+export interface RoomSize {
+  id: string;
+  /** Short code used as the key in rates and room choices, e.g. "Quint". */
+  code: string;
+  /** Shown to staff; defaults to the code when blank. */
+  label: string;
+  /** People this size means, when used as sharing wording. Unset = not offered as wording. */
+  sharingGroupSize: number | null;
+  sortOrder: number;
+  active: boolean;
+}
+
 // ------------------------------------------------------- config bundle
 
 import type { FlightOption } from "./flights";
@@ -497,5 +554,6 @@ export interface ConfigBundle {
   flights: FlightOption[];
   rates: Rate[];
   currencies: Currency[];
+  roomSizes: RoomSize[];
   calendar: CalendarEntry[];
 }

@@ -10,7 +10,6 @@
 import {
   formatGregorian,
   formatMoney,
-  formatPrice,
   MINA_TIERS,
   minaCategoryLabel,
   roomLabel,
@@ -162,7 +161,7 @@ function minaTiers(stay: QuotationLike["stays"][number]): string[] {
 
 /**
  * How the accommodation column reads when a stay holds a mix of rooms - a
- * family in one Quad and one Triple, or two pilgrims in different Mina tiers.
+ * family in one Sharing and one Triple, or two pilgrims in different Mina tiers.
  * Hotels share one name with the room sizes beside it; Mina lists each tier,
  * since the tiers are different accommodations.
  */
@@ -321,13 +320,16 @@ export async function toPdfView(
     // The final, already-discounted figure, in the quotation's currency.
     // Nothing else about money is passed.
     totalPriceFormatted: formatMoney(quotation.finalTotal, quotation.currency),
+    // Already converted to the quotation's currency by the caller - same
+    // formatting rule as the main total, just per tier / per add-on line.
     tierPrices: options.tierPrices?.map((tier) => ({
       label: tier.label,
-      priceFormatted: formatPrice(tier.total),
+      priceFormatted: formatMoney(tier.total, quotation.currency),
     })),
+    // "+PKR 400,000 /-" - a "+" since this is on top of the base room price.
     addOns: options.addOns?.map((addOn) => ({
       label: addOn.label,
-      amountFormatted: formatPrice(addOn.amount),
+      amountFormatted: `+${formatMoney(addOn.amount, quotation.currency)}`,
     })),
 
     travel: travelDetails(quotation),

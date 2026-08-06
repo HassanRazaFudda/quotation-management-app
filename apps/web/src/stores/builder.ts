@@ -15,16 +15,17 @@ import {
   makePricingContext,
   makeValidationContext,
   nestedHajjBlocks,
-  OCCUPANCIES,
   priceFlights,
   priceStays,
   priceTiers,
+  roundToDecimals,
   suggestHajjBlock,
+  TIER_OCCUPANCIES,
   validateItinerary,
   type FlightSelection,
   type Issue,
-  type Occupancy,
   type StayInput,
+  type TierOccupancy,
 } from "@junaidi/shared";
 import { create } from "zustand";
 
@@ -77,7 +78,7 @@ export interface BuilderState {
 
   // Package-only three-price pricing. Ignored entirely in quotation mode.
   tierPricingEnabled: boolean;
-  tiers: Record<Occupancy, TierRow>;
+  tiers: Record<TierOccupancy, TierRow>;
   addOns: Array<{ label: string; amount: number }>;
 
   set: <K extends keyof BuilderState>(key: K, value: BuilderState[K]) => void;
@@ -86,7 +87,7 @@ export interface BuilderState {
   removeStay: (key: string) => void;
   toggleService: (field: ServiceField, id: string) => void;
   setFlight: (patch: Partial<FlightSelection>) => void;
-  updateTier: (occupancy: Occupancy, patch: Partial<TierRow>) => void;
+  updateTier: (occupancy: TierOccupancy, patch: Partial<TierRow>) => void;
   addAddOn: () => void;
   updateAddOn: (index: number, patch: Partial<{ label: string; amount: number }>) => void;
   removeAddOn: (index: number) => void;
@@ -132,10 +133,10 @@ type BuilderData = Omit<
 >;
 
 /** Every tier offered, no override or discount - the default for a new package. */
-const emptyTiers = (): Record<Occupancy, TierRow> =>
+const emptyTiers = (): Record<TierOccupancy, TierRow> =>
   Object.fromEntries(
-    OCCUPANCIES.map((occ) => [occ, { offered: true, manualTotal: null, discount: 0 }]),
-  ) as Record<Occupancy, TierRow>;
+    TIER_OCCUPANCIES.map((occ) => [occ, { offered: true, manualTotal: null, discount: 0 }]),
+  ) as Record<TierOccupancy, TierRow>;
 
 const EMPTY: BuilderData = {
   quotationId: null,
@@ -262,7 +263,7 @@ export interface LocalResult {
    * has no rate for that tier, so the figure is short and the staff should type
    * the price in. Mirrors the server's `buildPackagePdfBundle` exactly.
    */
-  tierAuto: Record<Occupancy, { total: number; complete: boolean }>;
+  tierAuto: Record<TierOccupancy, { total: number; complete: boolean }>;
 }
 
 /**
@@ -374,10 +375,13 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     roundOff = totals.roundOff;
 
     // Tier suggestions: the hotels priced at each occupancy, plus the flight
-    // (which is the same across tiers). Matches the server on save/print.
+    // (which is the same across tiers), converted from PKR into the package's
+    // own currency - the only figure here that needs converting, since a
+    // manual override or discount is typed in directly in that currency.
+    // Matches the server on save/print.
     for (const tier of priceTiers(complete, pricing)) {
       tierAuto[tier.occupancy] = {
-        total: tier.total + flights.total,
+        total: roundToDecimals(convertFromPkr(tier.total + flights.total, exchangeRate), currency.decimals),
         complete: tier.complete,
       };
     }
@@ -487,6 +491,9 @@ export function toPackagePayload(state: BuilderState, season: string, name: stri
     termIds: state.termIds,
     includesNote: state.includesNote,
     remarks: state.remarks,
+    // The package's own currency - everything below is typed in directly in
+    // it, not PKR-then-converted.
+    currencyCode: state.currencyCode,
     tierPricing: {
       enabled: state.tierPricingEnabled,
       Quad: tierDoc(state.tiers.Quad),
@@ -494,7 +501,7 @@ export function toPackagePayload(state: BuilderState, season: string, name: stri
       Double: tierDoc(state.tiers.Double),
     },
     addOns: state.addOns
-      .map((addOn) => ({ label: addOn.label.trim(), amount: Math.max(0, Math.round(addOn.amount)) }))
+      .map((addOn) => ({ label: addOn.label.trim(), amount: Math.max(0, roundToDecimals(addOn.amount, 2)) }))
       .filter((addOn) => addOn.label.length > 0),
   };
 }

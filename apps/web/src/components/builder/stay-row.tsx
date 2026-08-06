@@ -21,6 +21,7 @@ import {
   mealNotesForAccommodation,
   mealsForAccommodation,
   useConfigStore,
+  wordSizeMap,
 } from "@/stores/config";
 import { useBuilderStore, type BuilderStay } from "@/stores/builder";
 
@@ -67,15 +68,11 @@ export function StayRow({
         pax,
         hotel?.allowedOccupancies ?? [],
         hotel?.allowedSharingWords ?? [],
+        wordSizeMap(config),
       )
     : [];
-  // In a mix each entry is one room, so a hotel offers Quad / Triple / Double
-  // outright (not the whole-party "Sharing" wordings gated by the pax count).
-  const mixChoices = location
-    ? roomChoices(location.pricingModel, pax, hotel?.allowedOccupancies ?? [], [], true)
-    : [];
 
-  // A room mix splits one stay across room types (a family in a Quad and a
+  // A room mix splits one stay across room types (a family in a Sharing and a
   // Triple) or, for Mina, across tiers. The stay prices each entry by its own
   // headcount and the quotation shows one average per person.
   const mix = stay.rooms ?? [];
@@ -254,7 +251,7 @@ export function StayRow({
         </button>
       </div>
 
-      {/* A family can split one stay across room types (Quad + Triple) or, for
+      {/* A family can split one stay across room types (Sharing + Triple) or, for
           Mina, across tiers. The quotation shows one average per person. */}
       {stay.accommodationId && (rooms.length > 0 || isMina) && (
         <div className="md:col-span-12">
@@ -271,7 +268,10 @@ export function StayRow({
               stay={stay}
               pax={pax}
               isMina={isMina}
-              choices={mixChoices}
+              model={location?.pricingModel}
+              allowedOccupancies={hotel?.allowedOccupancies ?? []}
+              allowedSharingWords={hotel?.allowedSharingWords ?? []}
+              wordSizes={wordSizeMap(config)}
               minaOptions={accommodations}
               onChange={setRooms}
             />
@@ -284,8 +284,8 @@ export function StayRow({
 
 /**
  * The first mix entry when a stay is split: the whole party in the stay's
- * current room. A hotel's plain "Sharing" is the Quad rate, so it is seeded as
- * "Quad" to match the mix's Quad option.
+ * current room. A still-unset occupancy defaults to "Sharing", the plain
+ * shared room the mix's own "Sharing" option matches.
  */
 function seedRoomEntry(stay: BuilderStay, model: PricingModel | undefined, pax: number): RoomEntry {
   const entry: RoomEntry = {
@@ -300,28 +300,39 @@ function seedRoomEntry(stay: BuilderStay, model: PricingModel | undefined, pax: 
     model === "byOccupancy" &&
     !entry.withoutBed &&
     entry.roomType === "sharing" &&
-    (entry.occupancy ?? "Quad") === "Quad" &&
+    (entry.occupancy ?? "Sharing") === "Sharing" &&
     !entry.sharingWord
   ) {
-    entry.occupancy = "Quad";
-    entry.sharingWord = "Quad";
+    entry.occupancy = "Sharing";
   }
   return entry;
 }
 
-/** The per-stay room mix: a list of (room choice / tier + headcount) rows. */
+/**
+ * The per-stay room mix: a list of (room choice / tier + headcount) rows.
+ *
+ * Each row asks `roomChoices` for its own choices using its own headcount, not
+ * the stay's total pax - so a 4-person row can be labelled "Quad" exactly as a
+ * plain 4-person stay can, whatever the other rows add up to.
+ */
 function RoomMixEditor({
   stay,
   pax,
   isMina,
-  choices,
+  model,
+  allowedOccupancies,
+  allowedSharingWords,
+  wordSizes,
   minaOptions,
   onChange,
 }: {
   stay: BuilderStay;
   pax: number;
   isMina: boolean;
-  choices: RoomChoice[];
+  model: PricingModel | undefined;
+  allowedOccupancies: string[];
+  allowedSharingWords: string[];
+  wordSizes: Record<string, number>;
   minaOptions: Array<{ id: string; name: string; minaTier?: string | null }>;
   onChange: (rooms: RoomEntry[]) => void;
 }) {
@@ -330,14 +341,18 @@ function RoomMixEditor({
   const update = (i: number, patch: Partial<RoomEntry>) =>
     onChange(mix.map((entry, idx) => (idx === i ? { ...entry, ...patch } : entry)));
 
+  const choicesFor = (headcount: number): RoomChoice[] =>
+    model ? roomChoices(model, headcount, allowedOccupancies, allowedSharingWords, wordSizes) : [];
+
   function add() {
+    const firstChoice = choicesFor(0)[0];
     const seed: RoomEntry = isMina
       ? { accommodationId: minaOptions[0]?.id ?? stay.accommodationId, headcount: 0 }
       : {
           accommodationId: stay.accommodationId,
-          roomType: choices[0]?.roomType ?? null,
-          occupancy: choices[0]?.occupancy ?? null,
-          sharingWord: choices[0]?.sharingWord ?? null,
+          roomType: firstChoice?.roomType ?? null,
+          occupancy: firstChoice?.occupancy ?? null,
+          sharingWord: firstChoice?.sharingWord ?? null,
           headcount: 0,
         };
     onChange([...mix, seed]);
@@ -355,55 +370,58 @@ function RoomMixEditor({
       </div>
 
       <div className="space-y-2">
-        {mix.map((entry, i) => (
-          <div key={i} className="flex items-center gap-2">
-            {isMina ? (
-              <Select
-                className="flex-1"
-                options={minaOptions.map((m) => ({
-                  value: m.id,
-                  label: m.minaTier
-                    ? `${m.name} (${MINA_TIER_BEDS[m.minaTier as keyof typeof MINA_TIER_BEDS]})`
-                    : m.name,
-                }))}
-                value={entry.accommodationId}
-                onChange={(e) => update(i, { accommodationId: e.target.value })}
+        {mix.map((entry, i) => {
+          const choices = choicesFor(entry.headcount);
+          return (
+            <div key={i} className="flex items-center gap-2">
+              {isMina ? (
+                <Select
+                  className="flex-1"
+                  options={minaOptions.map((m) => ({
+                    value: m.id,
+                    label: m.minaTier
+                      ? `${m.name} (${MINA_TIER_BEDS[m.minaTier as keyof typeof MINA_TIER_BEDS]})`
+                      : m.name,
+                  }))}
+                  value={entry.accommodationId}
+                  onChange={(e) => update(i, { accommodationId: e.target.value })}
+                />
+              ) : (
+                <Select
+                  className="flex-1"
+                  options={choices.map((c) => ({ value: c.value, label: c.label }))}
+                  placeholder="Room"
+                  value={roomChoiceValue(entry)}
+                  onChange={(e) => {
+                    const choice = choices.find((c) => c.value === e.target.value);
+                    if (choice) {
+                      update(i, {
+                        roomType: choice.roomType,
+                        occupancy: choice.occupancy,
+                        sharingWord: choice.sharingWord,
+                        withoutBed: choice.withoutBed ?? false,
+                      });
+                    }
+                  }}
+                />
+              )}
+              <NumberInput
+                className="w-20"
+                min={0}
+                value={entry.headcount}
+                onChange={(v) => update(i, { headcount: v })}
               />
-            ) : (
-              <Select
-                className="flex-1"
-                options={choices.map((c) => ({ value: c.value, label: c.label }))}
-                placeholder="Room"
-                value={roomChoiceValue(entry)}
-                onChange={(e) => {
-                  const choice = choices.find((c) => c.value === e.target.value);
-                  if (choice) {
-                    update(i, {
-                      roomType: choice.roomType,
-                      occupancy: choice.occupancy,
-                      sharingWord: choice.sharingWord,
-                      withoutBed: choice.withoutBed ?? false,
-                    });
-                  }
-                }}
-              />
-            )}
-            <NumberInput
-              className="w-20"
-              min={0}
-              value={entry.headcount}
-              onChange={(v) => update(i, { headcount: v })}
-            />
-            <span className="text-xs text-muted">pax</span>
-            <button
-              onClick={() => onChange(mix.filter((_, idx) => idx !== i))}
-              className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
-              title="Remove room"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-        ))}
+              <span className="text-xs text-muted">pax</span>
+              <button
+                onClick={() => onChange(mix.filter((_, idx) => idx !== i))}
+                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                title="Remove room"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-2 flex items-center justify-between">
