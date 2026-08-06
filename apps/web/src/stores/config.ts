@@ -16,6 +16,7 @@ import {
   type PackageCategory,
   type Rate,
   type ResolvedBlock,
+  type RoomSize,
   type ServiceItem,
 } from "@junaidi/shared";
 import { create } from "zustand";
@@ -39,6 +40,7 @@ interface ConfigState {
   flights: FlightOption[];
   rates: Rate[];
   currencies: Currency[];
+  roomSizes: RoomSize[];
   problems: ConfigProblem[];
 
   load: (season?: string, force?: boolean) => Promise<void>;
@@ -60,6 +62,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   flights: [],
   rates: [],
   currencies: [],
+  roomSizes: [],
   problems: [],
 
   load: async (season, force) => {
@@ -83,6 +86,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         flights: data.flights ?? [],
         rates: data.rates,
         currencies: data.currencies ?? [],
+        roomSizes: data.roomSizes ?? [],
         problems: data.problems ?? [],
         loaded: true,
         loading: false,
@@ -123,4 +127,13 @@ export function mealNotesForAccommodation(state: ConfigState, accommodationId: s
 
 export function servicesByCategory(state: ConfigState, category: string): ServiceItem[] {
   return state.services.filter((s) => s.category === category);
+}
+
+/** How many people each sharing word means, for `roomChoices`/`sharingWordsFor`. */
+export function wordSizeMap(state: ConfigState): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const size of state.roomSizes) {
+    if (size.sharingGroupSize) map[size.code] = size.sharingGroupSize;
+  }
+  return map;
 }

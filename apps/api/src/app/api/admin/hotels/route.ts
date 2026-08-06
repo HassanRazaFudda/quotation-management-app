@@ -1,4 +1,4 @@
-import { MINA_TIERS, OCCUPANCIES, SHARING_WORDS } from "@junaidi/shared";
+import { MINA_TIERS } from "@junaidi/shared";
 import { upsertAccommodation } from "@junaidi/db";
 import { z } from "zod";
 
@@ -10,6 +10,8 @@ export const runtime = "nodejs";
 export const OPTIONS = handleOptions;
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i);
+/** A room-size code from the admin-managed RoomSize list - not a fixed enum. */
+const roomSizeCode = z.string().min(1).max(40);
 
 const hotelSchema = z.object({
   id: objectId.nullish(),
@@ -19,10 +21,10 @@ const hotelSchema = z.object({
   bedsPerTent: z.number().int().nullish(),
   /** The Mina option that books no tent, priced for its Muallim services. */
   withoutMina: z.boolean().default(false),
-  /** Room sizes the hotel has; empty means all of them. */
-  allowedOccupancies: z.array(z.enum(OCCUPANCIES)).default([]),
-  /** Sizes its shared rooms come in (Quad/Quint/Hexa); empty means all. */
-  allowedSharingWords: z.array(z.enum(SHARING_WORDS)).default([]),
+  /** Room sizes the hotel has, each priced independently; empty means all. */
+  allowedOccupancies: z.array(roomSizeCode).default([]),
+  /** Sizes its shared rooms come in - wording only, priced as Sharing; empty means all. */
+  allowedSharingWords: z.array(roomSizeCode).default([]),
   /** Package categories this option may be sold under; empty means any. */
   allowedCategories: z.array(objectId).default([]),
   allowedMealIds: z.array(objectId).default([]),

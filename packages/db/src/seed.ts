@@ -22,6 +22,7 @@ import {
   MealNoteModel,
   PackageCategoryModel,
   RateModel,
+  RoomSizeModel,
   ServiceItemModel,
 } from "./models/config";
 import { UserModel } from "./models/user";
@@ -80,6 +81,21 @@ const LOCATIONS = [
 const MEALS = ["Half Board", "Full Board", "3 Time", "Breakfast Only", "Room Only"];
 const MEAL_NOTES = ["Asian Buffet", "Pakistani Meal", "Meal by Muallim"];
 
+/**
+ * The vocabulary every hotel's allowedOccupancies/allowedSharingWords already
+ * uses. Admin can add, rename or remove further sizes from here; these are the
+ * ones the app has always shipped with. `sharingGroupSize` only matters for a
+ * size offered as Sharing wording - how many people it means.
+ */
+export const ROOM_SIZES: Array<{ code: string; label: string; sharingGroupSize: number | null }> = [
+  { code: "Sharing", label: "Sharing", sharingGroupSize: null },
+  { code: "Quad", label: "Quad", sharingGroupSize: 4 },
+  { code: "Triple", label: "Triple", sharingGroupSize: null },
+  { code: "Double", label: "Double", sharingGroupSize: null },
+  { code: "Quint", label: "Quint", sharingGroupSize: 5 },
+  { code: "Hexa", label: "Hexa", sharingGroupSize: 6 },
+];
+
 // Package-level classifications the customer sees on the quotation. Admin can
 // add, rename or remove these; these are just a starting set.
 const PACKAGE_CATEGORIES = [
@@ -90,7 +106,7 @@ const PACKAGE_CATEGORIES = [
 ];
 
 const ACCOMMODATIONS = [
-  { location: "Madinah", name: "Sofitel Madinah Hotel", meals: ["Half Board", "Full Board"], notes: ["Asian Buffet"] },
+  { location: "Madinah", name: "Sofitel Shahd Al Madinah", meals: ["Half Board", "Full Board"], notes: ["Asian Buffet"] },
   { location: "Madinah", name: "Maden Madinah Hotel", meals: ["Half Board", "Full Board"], notes: ["Asian Buffet"] },
   { location: "Makkah", name: "Swiss Al Maqam / Movenpick Hajar Tower", meals: ["Half Board", "Full Board"], notes: ["Asian Buffet"] },
   { location: "Makkah", name: "Swiss Al Maqam", meals: ["Half Board"], notes: ["Asian Buffet"] },
@@ -114,17 +130,17 @@ const ACCOMMODATIONS = [
  * real negotiated block rates before quoting anyone.**
  */
 const RATE_BASIS: Record<string, { model: string; perNight: Record<string, unknown> }> = {
-  "Sofitel Madinah Hotel": { model: "byOccupancy", perNight: { Quad: 22000, Triple: 26000, Double: 32000 } },
-  "Maden Madinah Hotel": { model: "byOccupancy", perNight: { Quad: 15000, Triple: 18000, Double: 23000 } },
-  "Swiss Al Maqam / Movenpick Hajar Tower": { model: "byOccupancy", perNight: { Quad: 30000, Triple: 35000, Double: 44000 } },
-  "Swiss Al Maqam": { model: "byOccupancy", perNight: { Quad: 29000, Triple: 34000, Double: 43000 } },
-  "Movenpick Hajar Tower": { model: "byOccupancy", perNight: { Quad: 31000, Triple: 36000, Double: 45000 } },
+  "Sofitel Shahd Al Madinah": { model: "byOccupancy", perNight: { Sharing: 22000, Triple: 26000, Double: 32000 } },
+  "Maden Madinah Hotel": { model: "byOccupancy", perNight: { Sharing: 15000, Triple: 18000, Double: 23000 } },
+  "Swiss Al Maqam / Movenpick Hajar Tower": { model: "byOccupancy", perNight: { Sharing: 30000, Triple: 35000, Double: 44000 } },
+  "Swiss Al Maqam": { model: "byOccupancy", perNight: { Sharing: 29000, Triple: 34000, Double: 43000 } },
+  "Movenpick Hajar Tower": { model: "byOccupancy", perNight: { Sharing: 31000, Triple: 36000, Double: 45000 } },
   "Aziziya Hotel": {
     model: "sharingOrSeparate",
     perNight: {
       // Sharing is one figure - a shared room may be four, five or six.
       sharing: 8000,
-      separate: { Quad: 12000, Triple: 14000, Double: 18000 },
+      separate: { Sharing: 12000, Triple: 14000, Double: 18000 },
     },
   },
   // Mina tents are already a whole-period figure, so nights do not scale them.
@@ -164,8 +180,8 @@ function seedRateFor(basis: { model: string; perNight: Record<string, unknown> }
   return {
     model: "byOccupancy",
     rates: Object.fromEntries(Object.entries(src).map(([occ, v]) => [occ, v * nights])),
-    // A no-bed guest pays roughly half a Quad bed. PLACEHOLDER - admin sets it.
-    withoutBed: Math.round((src.Quad ?? 0) * nights * 0.5),
+    // A no-bed guest pays roughly half a Sharing bed. PLACEHOLDER - admin sets it.
+    withoutBed: Math.round((src.Sharing ?? 0) * nights * 0.5),
     amount: null, sharing: null, separate: null,
   };
 }
@@ -280,6 +296,17 @@ export async function seed(season = DEFAULT_SEASON): Promise<SeedResult> {
     await PackageCategoryModel.findOneAndUpdate(
       { label },
       { $set: { label, sortOrder: index, active: true } },
+      { upsert: true, returnDocument: "after" },
+    );
+  }
+
+  // Room sizes: the original three, plus the two sharing-only words. Every
+  // hotel's own allowedOccupancies/allowedSharingWords already names these
+  // codes, so the admin's Room Sizes list must offer them from the start.
+  for (const [index, size] of ROOM_SIZES.entries()) {
+    await RoomSizeModel.findOneAndUpdate(
+      { season, code: size.code },
+      { $set: { season, ...size, sortOrder: index, active: true } },
       { upsert: true, returnDocument: "after" },
     );
   }

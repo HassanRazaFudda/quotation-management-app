@@ -100,7 +100,7 @@ export interface PdfTierPrice {
 export interface PdfAddOn {
   /** "Aziziya Triple Bed". */
   label: string;
-  /** "PKR 200,000 /-" — already formatted. */
+  /** "+PKR 200,000 /-" — already formatted. */
   amountFormatted: string;
 }
 

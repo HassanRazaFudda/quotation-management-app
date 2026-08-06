@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { PackageModel } from "../models/package";
 import { DEFAULT_SEASON, seed } from "../seed";
+import { upsertCurrency } from "../services/admin";
 import { getConfigBundle } from "../services/config";
 import {
   PackageError,
@@ -201,6 +202,114 @@ describe("resolving a package for its brochure PDF", () => {
     expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_600_000);
     expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_700_000);
     expect(doc.createdByName).toBe("Bilal Ahmed");
+  });
+});
+
+describe("a package's own currency", () => {
+  beforeAll(async () => {
+    await upsertCurrency(null, {
+      season: DEFAULT_SEASON,
+      code: "USD",
+      name: "US Dollar",
+      symbol: "$",
+      rate: 200,
+      decimals: 2,
+      enabled: true,
+    });
+  });
+
+  it("converts only the auto-calculated tier figure - manual totals and add-ons are typed in already, as-is", async () => {
+    const created = await upsertPackage(null, {
+      ...base,
+      name: "USD Brochure",
+      currencyCode: "USD",
+      tierPricing: {
+        enabled: true,
+        // Typed directly in USD - not a PKR figure to convert.
+        Quad: { manualTotal: 1_800, discount: 0 },
+        Triple: null,
+        Double: null,
+      },
+      // Also typed directly in USD.
+      addOns: [{ label: "Aziziya Double Bed", amount: 200 }],
+    });
+
+    const { doc, tierPrices, addOns } = await buildPackagePdfBundle(String(created!._id));
+
+    expect(doc.currency.code).toBe("USD");
+    expect(doc.exchangeRate).toBe(200);
+    // The manual total prints exactly as typed - no PKR conversion applied.
+    expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(1_800);
+    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 200 }]);
+  });
+
+  it("still converts the auto-calculated figure from real PKR hotel rates", async () => {
+    const pkrOnly = await upsertPackage(null, {
+      ...base,
+      name: "PKR Auto Reference",
+      tierPricing: { enabled: true, Quad: { manualTotal: null, discount: 0 }, Triple: null, Double: null },
+    });
+    const usdAuto = await upsertPackage(null, {
+      ...base,
+      name: "USD Auto",
+      currencyCode: "USD",
+      tierPricing: { enabled: true, Quad: { manualTotal: null, discount: 0 }, Triple: null, Double: null },
+    });
+
+    const pkr = await buildPackagePdfBundle(String(pkrOnly!._id));
+    const usd = await buildPackagePdfBundle(String(usdAuto!._id));
+
+    expect(usd.doc.currency.code).toBe("USD");
+    const pkrTotal = pkr.tierPrices.find((t) => t.label === "Quad")!.total;
+    const usdTotal = usd.tierPrices.find((t) => t.label === "Quad")!.total;
+    expect(usdTotal).toBeCloseTo(pkrTotal / 200, 2);
+  });
+
+  it("takes the print discount off in the package's own currency", async () => {
+    const created = await upsertPackage(null, {
+      ...base,
+      name: "USD Discounted",
+      currencyCode: "USD",
+      tierPricing: { enabled: true, Quad: { manualTotal: 1_800, discount: 0 }, Triple: null, Double: null },
+    });
+
+    const { tierPrices } = await buildPackagePdfBundle(String(created!._id), { discount: 50 });
+    expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(1_750);
+  });
+
+  it("falls back to PKR for an unknown or disabled currency code", async () => {
+    const created = await upsertPackage(null, { ...base, name: "Unknown Currency", currencyCode: "ZZZ" });
+    const result = await buildPackagePdfBundle(String(created!._id));
+    expect(result.doc.currency.code).toBe("PKR");
+  });
+});
+
+describe("choosing which add-ons print", () => {
+  const addOns = [
+    { label: "Aziziya Triple Bed", amount: 200_000 },
+    { label: "Aziziya Double Bed", amount: 400_000 },
+  ];
+
+  it("includes every add-on when none are explicitly chosen", async () => {
+    const created = await upsertPackage(null, { ...base, name: "All AddOns", addOns });
+    const { addOns: printed } = await buildPackagePdfBundle(String(created!._id));
+    expect(printed.map((a) => a.label)).toEqual(["Aziziya Triple Bed", "Aziziya Double Bed"]);
+  });
+
+  it("prints only the add-ons explicitly included", async () => {
+    const created = await upsertPackage(null, { ...base, name: "Some AddOns", addOns });
+    const { addOns: printed } = await buildPackagePdfBundle(String(created!._id), {
+      includedAddOns: ["Aziziya Double Bed"],
+    });
+    expect(printed.map((a) => a.label)).toEqual(["Aziziya Double Bed"]);
+  });
+
+  it("prints none when every add-on is unchecked", async () => {
+    const created = await upsertPackage(null, { ...base, name: "No AddOns Selected", addOns });
+    const { addOns: printed } = await buildPackagePdfBundle(String(created!._id), {
+      includedAddOns: [],
+    });
+    expect(printed).toEqual([]);
   });
 });
 

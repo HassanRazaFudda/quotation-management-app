@@ -20,8 +20,8 @@ type Status = (typeof STATUSES)[number];
 
 /**
  * How the room reads on this row. A stay with a mix of rooms - a family split
- * across a Quad and a Triple - lists each size joined with " + ", the same way
- * the PDF does; a single-room stay just uses its frozen label.
+ * across a Sharing and a Triple - lists each size joined with " + ", the same
+ * way the PDF does; a single-room stay just uses its frozen label.
  */
 /** Two-digit people count, e.g. 3 -> "03". */
 const paxTag = (headcount: number): string =>

@@ -4,7 +4,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { QuotationModel } from "../models/quotation";
 import { DEFAULT_SEASON, seed } from "../seed";
 import { getConfigBundle } from "../services/config";
-import { updateLabelled, upsertCurrency, upsertDateBlock, upsertRate } from "../services/admin";
+import {
+  updateLabelled,
+  upsertAccommodation,
+  upsertCurrency,
+  upsertDateBlock,
+  upsertRate,
+  upsertRoomSize,
+} from "../services/admin";
 import {
   QuotationError,
   buildQuotationDocument,
@@ -371,7 +378,7 @@ describe("saving", () => {
   });
 
   it("prices a Separate room by its own occupancy, not the quotation's", async () => {
-    // Quotation occupancy is Quad; Aziziya is taken as a Separate Double.
+    // Aziziya defaults to Sharing; here it is taken as a Separate Double instead.
     const separate = await createQuotation(
       {
         ...baseInput,
@@ -561,7 +568,7 @@ describe("a stay spanning the Hajj days", () => {
     await upsertRate(aziziya.id, coveringId, DEFAULT_SEASON, {
       model: "sharingOrSeparate",
       sharing: 95_000,
-      separate: { Quad: 140_000, Triple: 165_000, Double: 210_000 },
+      separate: { Sharing: 140_000, Triple: 165_000, Double: 210_000 },
     });
 
     spanningInput = {
@@ -1059,5 +1066,99 @@ describe("assigning staff on confirmation", () => {
     );
     expect(updated.status).toBe("confirmed");
     expect(updated.assignedStaff.name).toBe("");
+  });
+});
+
+describe("a hotel with an admin-added room size", () => {
+  it("prices a genuinely new size once the hotel and its rate are configured", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const sofitel = bundle.accommodations.find((a) => a.name === "Sofitel Shahd Al Madinah")!;
+    const block = bundle.blocks.find((b) => b.allowedLocationIds.includes(sofitel.locationId))!;
+
+    // Register "Quint" as a size, and let this one hotel price it as its own
+    // room (not Sharing wording).
+    await upsertRoomSize(null, {
+      season: DEFAULT_SEASON,
+      code: "Quint",
+      label: "Quint",
+      sortOrder: 10,
+      active: true,
+    });
+    await upsertAccommodation(sofitel.id, {
+      locationId: sofitel.locationId,
+      name: sofitel.name,
+      allowedOccupancies: [...(sofitel.allowedOccupancies ?? []), "Quint"],
+      allowedSharingWords: sofitel.allowedSharingWords,
+      allowedMealIds: sofitel.allowedMealIds,
+      allowedMealNoteIds: sofitel.allowedMealNoteIds,
+      sortOrder: sofitel.sortOrder,
+      active: true,
+    });
+    await upsertRate(sofitel.id, block.id, DEFAULT_SEASON, {
+      model: "byOccupancy",
+      rates: { Sharing: 22_000, Triple: 26_000, Double: 32_000, Quint: 29_000 },
+    });
+
+    // An itinerary must still cover the Hajj days, so the Mina stay from
+    // baseInput rides along - unrelated to what this test is checking.
+    const priced = await priceQuotation({
+      season: DEFAULT_SEASON,
+      guest: { name: "Solo", pax: 1 },
+      date: new Date("2027-01-15"),
+      packageTitle: "Standalone Quint check",
+      stays: [
+        {
+          blockId: block.id,
+          locationId: sofitel.locationId,
+          accommodationId: sofitel.id,
+          roomType: "sharing",
+          occupancy: "Quint",
+          mealId: sofitel.allowedMealIds[0],
+        },
+        baseInput.stays[1]!,
+      ],
+    });
+    expect(priced.stays[0]!.lineTotal).toBe(29_000);
+  });
+
+  it("refuses a hotel offering the same size as both a priced room and Sharing wording", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const sofitel = bundle.accommodations.find((a) => a.name === "Sofitel Shahd Al Madinah")!;
+    await expect(
+      upsertAccommodation(sofitel.id, {
+        locationId: sofitel.locationId,
+        name: sofitel.name,
+        allowedOccupancies: ["Sharing", "Quint"],
+        allowedSharingWords: ["Quint"],
+      }),
+    ).rejects.toThrow(/cannot be both/i);
+  });
+
+  /**
+   * The overlap rule is uniform - "Quad" follows exactly the same rule as any
+   * other size. It is no longer the anchor rate (Sharing is), so it is just an
+   * ordinary wording choice, and listing it in both places is refused the same
+   * way as any other overlap.
+   */
+  it("refuses 'Quad' in both lists too - same rule as every other size", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const sofitel = bundle.accommodations.find((a) => a.name === "Sofitel Shahd Al Madinah")!;
+    await expect(
+      upsertAccommodation(sofitel.id, {
+        locationId: sofitel.locationId,
+        name: sofitel.name,
+        allowedOccupancies: ["Quad", "Triple", "Double"],
+        allowedSharingWords: ["Quad", "Quint", "Hexa"],
+      }),
+    ).rejects.toThrow(/cannot be both/i);
+
+    // Without "Quad" in the wording list, the save succeeds.
+    const saved: any = await upsertAccommodation(sofitel.id, {
+      locationId: sofitel.locationId,
+      name: sofitel.name,
+      allowedOccupancies: ["Quad", "Triple", "Double"],
+      allowedSharingWords: ["Quint", "Hexa"],
+    });
+    expect(saved.allowedSharingWords).not.toContain("Quad");
   });
 });

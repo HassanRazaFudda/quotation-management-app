@@ -13,7 +13,7 @@ import {
   roundOffSuggestions,
   toPdfTotals,
 } from "../pricing";
-import { OCCUPANCIES, emptyRate, type StayInput } from "../types";
+import { OCCUPANCIES, emptyRate, type StayInput, type TierOccupancy } from "../types";
 import { SEASON, accommodations, blocks, calendar, locations, rates } from "./fixtures";
 
 const resolved = resolveBlocks(blocks, calendar);
@@ -25,7 +25,7 @@ const context = makePricingContext({
 });
 
 /** A stay's room travels with the stay, not with the quotation. */
-const sharing = { roomType: "sharing", occupancy: "Quad" } as const;
+const sharing = { roomType: "sharing", occupancy: "Sharing" } as const;
 
 /**
  * The central rule: a Hajj hotel is booked for a whole block at a negotiated
@@ -84,7 +84,7 @@ describe("byOccupancy - Makkah / Madinah", () => {
     accommodationId: "acc-sofitel",
   };
 
-  it("uses the Quad rate for a shared room", () => {
+  it("uses the Sharing rate for a shared room", () => {
     expect(priceStay({ ...base, ...sharing }, context).lineTotal).toBe(110_000);
   });
 
@@ -105,6 +105,36 @@ describe("byOccupancy - Makkah / Madinah", () => {
         priceStay({ ...base, ...sharing, sharingWord }, context).lineTotal,
       ).toBe(110_000);
     }
+  });
+
+  /**
+   * A hotel offering a size beyond the original three is priced the same way -
+   * a plain lookup - as long as the admin has actually set that size's rate.
+   */
+  it("prices a hotel-specific size once its rate is set", () => {
+    const withQuint = makePricingContext({
+      blocks: resolved,
+      accommodations,
+      locations,
+      rates: rates.map((r) =>
+        r.model === "byOccupancy" && r.accommodationId === "acc-sofitel" && r.blockId === "blk-pre-madinah"
+          ? { ...r, rates: { ...r.rates, Quint: 145_000 } }
+          : r,
+      ),
+    });
+    expect(
+      priceStay({ ...base, roomType: "sharing", occupancy: "Quint" }, withQuint).lineTotal,
+    ).toBe(145_000);
+  });
+
+  /**
+   * A size added to a hotel after its rate row was last saved has no key at
+   * all yet - that must fail loudly, not quietly price the stay at nothing.
+   */
+  it("refuses a size the rate has never been given a figure for", () => {
+    expect(() =>
+      priceStay({ ...base, roomType: "sharing", occupancy: "Quint" }, context),
+    ).toThrow(/no rate is set for "quint"/i);
   });
 });
 
@@ -329,15 +359,15 @@ describe("a mix of rooms in one stay", () => {
     expect(priced.rooms[0]!.headcount).toBe(7);
   });
 
-  it("prices a Quad + Triple family at one average per person", () => {
-    // 4 in a Quad room, 3 in a Triple room, one Makkah stay.
+  it("prices a Sharing + Triple family at one average per person", () => {
+    // 4 in a Sharing room, 3 in a Triple room, one Makkah stay.
     const priced = priceStay(
       {
         blockId: "blk-pre-makkah",
         locationId: "loc-makkah",
         accommodationId: "acc-swiss",
         rooms: [
-          { accommodationId: "acc-swiss", occupancy: "Quad", headcount: 4 },
+          { accommodationId: "acc-swiss", occupancy: "Sharing", headcount: 4 },
           { accommodationId: "acc-swiss", occupancy: "Triple", headcount: 3 },
         ],
       },
@@ -373,14 +403,14 @@ describe("a mix of rooms in one stay", () => {
   });
 
   it("prices a fifth passenger without a bed at the hotel's no-bed rate", () => {
-    // Four in a Quad, one sharing the room without a bed.
+    // Four sharing, one sharing the room without a bed.
     const priced = priceStay(
       {
         blockId: "blk-pre-makkah",
         locationId: "loc-makkah",
         accommodationId: "acc-swiss",
         rooms: [
-          { accommodationId: "acc-swiss", occupancy: "Quad", headcount: 4 },
+          { accommodationId: "acc-swiss", occupancy: "Sharing", headcount: 4 },
           { accommodationId: "acc-swiss", withoutBed: true, headcount: 1 },
         ],
       },
@@ -415,7 +445,7 @@ describe("a mix of rooms in one stay", () => {
         locationId: "loc-makkah",
         accommodationId: "acc-swiss",
         rooms: [
-          { accommodationId: "acc-swiss", occupancy: "Quad", headcount: 4 },
+          { accommodationId: "acc-swiss", occupancy: "Sharing", headcount: 4 },
           { accommodationId: "acc-swiss", occupancy: "Double", headcount: 2 },
         ],
       },
@@ -476,7 +506,7 @@ describe("priceTiers - a package's three prices", () => {
   ];
   // Aziziya sharing (22k) + Mina flat (145k) sit in every tier unchanged.
   const constant = 22_000 + 145_000;
-  const byOccupancy = (t: (typeof OCCUPANCIES)[number]) => {
+  const byOccupancy = (t: TierOccupancy) => {
     const value = new Map(priceTiers(stays, context).map((r) => [r.occupancy, r.total])).get(t);
     return value ?? 0;
   };
@@ -530,6 +560,16 @@ describe("finalTierTotal - override and discount per tier", () => {
     expect(finalTierTotal(427_000, { manualTotal: null, discount: 999_999_999 })).toBe(0);
     expect(finalTierTotal(-10, { manualTotal: null, discount: 0 })).toBe(0);
   });
+
+  it("rounds a typed-in override to a foreign currency's decimals, not the nearest whole unit", () => {
+    // A USD package: the manual figure is typed in directly in USD - rounds to
+    // cents, not rupees.
+    expect(finalTierTotal(1_524.99, { manualTotal: 1_374.965, discount: 0 }, 2)).toBe(1_374.97);
+  });
+
+  it("rounds the discount to that same precision before subtracting", () => {
+    expect(finalTierTotal(1_600, { manualTotal: null, discount: 74.995 }, 2)).toBe(1_525);
+  });
 });
 
 /**
@@ -545,14 +585,14 @@ describe("emptyRate", () => {
     expect(emptyRate("byOccupancy", ids)).toEqual({
       ...ids,
       model: "byOccupancy",
-      rates: { Quad: 0, Triple: 0, Double: 0 },
+      rates: { Sharing: 0, Triple: 0, Double: 0 },
       withoutBed: 0,
     });
     expect(emptyRate("sharingOrSeparate", ids)).toEqual({
       ...ids,
       model: "sharingOrSeparate",
       sharing: 0,
-      separate: { Quad: 0, Triple: 0, Double: 0 },
+      separate: { Sharing: 0, Triple: 0, Double: 0 },
       withoutBed: 0,
     });
   });
@@ -560,6 +600,11 @@ describe("emptyRate", () => {
   it("covers every occupancy the app offers", () => {
     const rate = emptyRate("byOccupancy", ids);
     expect(Object.keys("rates" in rate ? rate.rates : {})).toEqual([...OCCUPANCIES]);
+  });
+
+  it("covers a hotel's own sizes, including one beyond the original three", () => {
+    const rate = emptyRate("byOccupancy", ids, ["Quad", "Quint"]);
+    expect("rates" in rate ? rate.rates : {}).toEqual({ Quad: 0, Quint: 0 });
   });
 
   it("prices a stay at nothing rather than throwing", () => {
@@ -579,7 +624,7 @@ describe("emptyRate", () => {
       locationId: "loc-madinah",
       accommodationId: "acc-sofitel",
       roomType: "sharing",
-      occupancy: "Quad",
+      occupancy: "Sharing",
     };
     expect(priceStay(stay, localContext).lineTotal).toBe(0);
   });

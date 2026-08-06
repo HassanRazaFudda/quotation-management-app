@@ -67,7 +67,7 @@ export interface QuotationStay {
   withoutMina?: boolean;
   bedsPerTent: number | null;
   roomType: "sharing" | "separate" | null;
-  occupancy: "Quad" | "Triple" | "Double" | null;
+  occupancy: string | null;
   sharingWord: SharingWord | null;
   roomLabel: string;
   /** A mix of rooms in this stay; empty (the common case) means one room choice. */
@@ -75,7 +75,7 @@ export interface QuotationStay {
     accommodationId: string;
     accommodationName?: string;
     roomType: "sharing" | "separate" | null;
-    occupancy: "Quad" | "Triple" | "Double" | null;
+    occupancy: string | null;
     sharingWord: SharingWord | null;
     withoutBed?: boolean | null;
     /** For a Mina split: the tent's tier, and whether it books no tent. */
@@ -204,7 +204,7 @@ export interface Package {
     locationId: string;
     accommodationId: string;
     roomType: "sharing" | "separate" | null;
-    occupancy: "Quad" | "Triple" | "Double" | null;
+    occupancy: string | null;
     sharingWord: SharingWord | null;
     mealId: string | null;
     mealNoteId: string | null;
@@ -224,6 +224,8 @@ export interface Package {
   termIds: string[];
   includesNote: string;
   remarks: string;
+  /** The currency this package is authored and printed in. Defaults to PKR. */
+  currencyCode?: string;
   /** Package-only three-price pricing; a tier left null is not offered. */
   tierPricing?: {
     enabled: boolean;

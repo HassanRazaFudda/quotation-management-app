@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { FileText, Package as PackageIcon, Pencil, Plus, Printer, Save, Trash2 } from "lucide-react";
 
-import { OCCUPANCIES, type Occupancy } from "@junaidi/shared";
+import { formatMoney, TIER_OCCUPANCIES, type TierOccupancy } from "@junaidi/shared";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
@@ -23,6 +23,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import type { Package, Quotation } from "@/lib/types";
 import { isAdmin, useAuthStore } from "@/stores/auth";
+import { useConfigStore } from "@/stores/config";
 
 /**
  * The Packages module - open to everyone.
@@ -179,38 +180,68 @@ export default function PackagesPage() {
  */
 function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void }) {
   const router = useRouter();
+  const config = useConfigStore();
   const [name, setName] = useState("");
   const [pax, setPax] = useState(1);
   const [validUntil, setValidUntil] = useState("");
   const [discount, setDiscount] = useState(0);
-  const [tier, setTier] = useState<Occupancy | "">("");
+  const [tier, setTier] = useState<TierOccupancy | "">("");
+  const [includedAddOns, setIncludedAddOns] = useState<string[]>([]);
   const [branding, setBranding] = useState(true);
   const [printing, setPrinting] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const offeredTiers = pkg?.tierPricing?.enabled
-    ? OCCUPANCIES.filter((occ) => pkg.tierPricing?.[occ])
-    : [];
+  useEffect(() => {
+    config.load();
+  }, [config]);
 
-  // Reset the fields whenever a different package is opened; default the tier.
+  const offeredTiers = pkg?.tierPricing?.enabled
+    ? TIER_OCCUPANCIES.filter((occ) => pkg.tierPricing?.[occ])
+    : [];
+  const addOns = pkg?.addOns ?? [];
+  // The package's own currency - not a print-time choice.
+  const currencyCode = pkg?.currencyCode || "PKR";
+  const currency =
+    currencyCode === "PKR"
+      ? { code: "PKR", symbol: "PKR", decimals: 0 }
+      : (config.currencies.find((c) => c.code === currencyCode) ?? {
+          code: "PKR",
+          symbol: "PKR",
+          decimals: 0,
+        });
+
+  // Reset the fields whenever a different package is opened; default the tier
+  // and start every add-on checked, so a plain print still includes them all.
   useEffect(() => {
     setName("");
     setPax(1);
     setValidUntil("");
     setDiscount(0);
     setBranding(true);
+    setIncludedAddOns((pkg?.addOns ?? []).map((addOn) => addOn.label));
     const first = pkg?.tierPricing?.enabled
-      ? OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ])
+      ? TIER_OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ])
       : undefined;
     setTier(first ?? "");
   }, [pkg?._id]);
+
+  const toggleAddOn = (label: string) =>
+    setIncludedAddOns((list) =>
+      list.includes(label) ? list.filter((l) => l !== label) : [...list, label],
+    );
 
   async function print() {
     if (!pkg) return;
     setPrinting(true);
     try {
       const blob = await api.pdf(`/api/packages/${pkg._id}/pdf`, {
-        body: { guest: { name: name.trim(), pax }, validUntil: validUntil || null, discount, branding },
+        body: {
+          guest: { name: name.trim(), pax },
+          validUntil: validUntil || null,
+          discount,
+          includedAddOns,
+          branding,
+        },
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -282,15 +313,33 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
                 <Select
                   options={offeredTiers.map((occ) => ({ value: occ, label: occ }))}
                   value={tier}
-                  onChange={(e) => setTier(e.target.value as Occupancy)}
+                  onChange={(e) => setTier(e.target.value as TierOccupancy)}
                 />
               </Field>
             )}
           </>
         )}
-        <Field label="Discount (optional, not shown on the PDF)">
+        <Field label={`Discount in ${currencyCode} (optional, not shown on the PDF)`}>
           <NumberInput min={0} value={discount} onChange={setDiscount} placeholder="0" />
         </Field>
+        {addOns.length > 0 && (
+          <Field label="Optional extra services to include">
+            <div className="space-y-1.5">
+              {addOns.map((addOn) => (
+                <label key={addOn.label} className="flex items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={includedAddOns.includes(addOn.label)}
+                    onChange={() => toggleAddOn(addOn.label)}
+                    className="size-4 accent-brand-500"
+                  />
+                  {addOn.label}
+                  <span className="text-muted">+{formatMoney(addOn.amount, currency)}</span>
+                </label>
+              ))}
+            </div>
+          </Field>
+        )}
         <label className="flex items-center gap-2 text-sm font-medium text-ink">
           <input
             type="checkbox"

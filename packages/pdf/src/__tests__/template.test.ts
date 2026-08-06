@@ -101,8 +101,8 @@ describe("a package brochure", () => {
         { label: "Double", priceFormatted: "PKR 3,900,000 /-" },
       ],
       addOns: [
-        { label: "Aziziya Triple Bed", amountFormatted: "PKR 200,000 /-" },
-        { label: "Aziziya Double Bed", amountFormatted: "PKR 400,000 /-" },
+        { label: "Aziziya Triple Bed", amountFormatted: "+PKR 200,000 /-" },
+        { label: "Aziziya Double Bed", amountFormatted: "+PKR 400,000 /-" },
       ],
     }),
   );
@@ -117,9 +117,9 @@ describe("a package brochure", () => {
 
   it("prints the per-room-type add-on charges", () => {
     expect(brochure).toContain("Aziziya Triple Bed");
-    expect(brochure).toContain("PKR 200,000 /-");
+    expect(brochure).toContain("+PKR 200,000 /-");
     expect(brochure).toContain("Aziziya Double Bed");
-    expect(brochure).toContain("PKR 400,000 /-");
+    expect(brochure).toContain("+PKR 400,000 /-");
   });
 
   it("drops the quotation-only rows when there is no customer or reference", () => {

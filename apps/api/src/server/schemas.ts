@@ -7,8 +7,11 @@
  */
 
 import { QUOTATION_GROUPS, QUOTATION_SORTS } from "@junaidi/db";
-import { AZIZIYA_ROOM_TYPES, OCCUPANCIES, SHARING_WORDS } from "@junaidi/shared";
+import { AZIZIYA_ROOM_TYPES } from "@junaidi/shared";
 import { z } from "zod";
+
+/** A room-size code from the admin-managed RoomSize list - not a fixed enum. */
+const roomSizeCode = z.string().min(1).max(40);
 
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email address."),
@@ -21,8 +24,8 @@ const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Not a valid id.");
 const roomEntrySchema = z.object({
   accommodationId: objectId,
   roomType: z.enum(AZIZIYA_ROOM_TYPES).nullish(),
-  occupancy: z.enum(OCCUPANCIES).nullish(),
-  sharingWord: z.enum(SHARING_WORDS).nullish(),
+  occupancy: roomSizeCode.nullish(),
+  sharingWord: roomSizeCode.nullish(),
   /** These people share a room without their own bed, at the no-bed rate. */
   withoutBed: z.boolean().nullish(),
   headcount: z.number().int().min(0).max(500),
@@ -35,9 +38,9 @@ export const staySchema = z.object({
 
   /** The room is chosen per stay, not once for the whole quotation. */
   roomType: z.enum(AZIZIYA_ROOM_TYPES).nullish(),
-  occupancy: z.enum(OCCUPANCIES).nullish(),
+  occupancy: roomSizeCode.nullish(),
   /** Print "Quad" instead of "Sharing". Wording only - never affects price. */
-  sharingWord: z.enum(SHARING_WORDS).nullish(),
+  sharingWord: roomSizeCode.nullish(),
 
   mealId: objectId.nullish(),
   mealNoteId: objectId.nullish(),
@@ -133,8 +136,13 @@ export const packageSchema = z.object({
   includesNote: z.string().default(""),
   remarks: z.string().default(""),
 
+  /** The currency this package is authored and printed in. Defaults to PKR. */
+  currencyCode: z.string().default("PKR"),
   tierPricing: tierPricingSchema.optional(),
-  /** Per-room-type surcharges printed under the itinerary. */
+  /**
+   * Per-room-type surcharges printed under the itinerary - typed in directly
+   * in the package's own currency, like the tier controls above.
+   */
   addOns: z
     .array(z.object({ label: z.string().default(""), amount: z.number().min(0).default(0) }))
     .default([]),
@@ -142,7 +150,9 @@ export const packageSchema = z.object({
 
 /**
  * Printing a package. The customer is optional - a package prints as a plain
- * brochure with no name, or as a named quote when details are entered.
+ * brochure with no name, or as a named quote when details are entered. The
+ * currency is not chosen here - it is the package's own, set when it was
+ * created or edited.
  */
 export const packagePrintSchema = z.object({
   guest: z
@@ -152,8 +162,10 @@ export const packagePrintSchema = z.object({
     })
     .optional(),
   validUntil: z.string().nullish(),
-  /** A negotiated discount off every printed price. Internal - never printed. */
+  /** A negotiated discount off every printed price, in the package's currency. */
   discount: z.number().min(0).default(0),
+  /** Which of the package's add-on charges to print. Omitted means all of them. */
+  includedAddOns: z.array(z.string()).optional(),
   /** Print Junaidi's letterhead and signature. Off prints a neutral copy. */
   branding: z.boolean().default(true),
 });

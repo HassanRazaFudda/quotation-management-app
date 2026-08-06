@@ -21,9 +21,9 @@ import { nestedHajjBlocks } from "./calendar";
 import {
   OCCUPANCIES,
   rateKey,
+  TIER_OCCUPANCIES,
   type Accommodation,
   type Location,
-  type Occupancy,
   type PricedRoom,
   type PricedStay,
   type QuotationTotals,
@@ -31,6 +31,7 @@ import {
   type ResolvedBlock,
   type RoomEntry,
   type StayInput,
+  type TierOccupancy,
   type TierPricing,
   type TierSetting,
 } from "./types";
@@ -98,9 +99,20 @@ export function blockTotal(
 
   switch (rate.model) {
     case "byOccupancy": {
-      // For a hotel the shared room is simply the Quad rate.
-      const occupancy = stay.occupancy ?? "Quad";
-      return rate.rates[occupancy];
+      // For a hotel the shared room is simply the Sharing rate.
+      const occupancy = stay.occupancy ?? "Sharing";
+      const figure = rate.rates[occupancy];
+      // Undefined (not 0) means this size has never been priced for this
+      // accommodation - a rate row saved before the size existed, or a size
+      // the admin has not gotten to yet. 0 stays the ordinary "not priced"
+      // placeholder, unchanged.
+      if (figure === undefined) {
+        throw new PricingError(
+          `No rate is set for "${occupancy}" on this accommodation in this block. An admin must add one.`,
+          "NO_RATE",
+        );
+      }
+      return figure;
     }
 
     case "sharingOrSeparate": {
@@ -117,7 +129,14 @@ export function blockTotal(
       if (!stay.occupancy) {
         throw new PricingError("A Separate room needs a room size.", "MISSING_ROOM_TYPE");
       }
-      return rate.separate[stay.occupancy];
+      const figure = rate.separate[stay.occupancy];
+      if (figure === undefined) {
+        throw new PricingError(
+          `No rate is set for "${stay.occupancy}" on this accommodation in this block. An admin must add one.`,
+          "NO_RATE",
+        );
+      }
+      return figure;
     }
 
     case "flat":
@@ -238,7 +257,7 @@ export function priceStays(stays: StayInput[], context: PricingContext, pax = 1)
 
 /** One tier's calculated figure, with whether every hotel could be priced. */
 export interface TierAutoPrice {
-  occupancy: Occupancy;
+  occupancy: TierOccupancy;
   /** The itinerary summed with the hotels filled at this occupancy. */
   total: number;
   /**
@@ -262,7 +281,7 @@ export interface TierAutoPrice {
  * is decided above, in `finalTierTotal`.
  */
 export function priceTiers(stays: StayInput[], context: PricingContext): TierAutoPrice[] {
-  return OCCUPANCIES.map((occupancy) => {
+  return TIER_OCCUPANCIES.map((occupancy) => {
     let total = 0;
     let complete = true;
 
@@ -274,8 +293,11 @@ export function priceTiers(stays: StayInput[], context: PricingContext): TierAut
       }
 
       if (rate.model === "byOccupancy") {
-        // A hotel takes the tier's occupancy; the stay's own choice is ignored.
-        const figure = rate.rates[occupancy] ?? 0;
+        // A hotel takes the tier's occupancy; the stay's own choice is
+        // ignored. Tier pricing's "Quad" has always meant the hotel's shared
+        // room, which is now priced under "Sharing".
+        const ratesField = occupancy === "Quad" ? "Sharing" : occupancy;
+        const figure = rate.rates[ratesField] ?? 0;
         if (figure <= 0) complete = false;
         total += figure;
         continue;
@@ -296,9 +318,9 @@ export function priceTiers(stays: StayInput[], context: PricingContext): TierAut
 /** The offered tiers in Quad-Triple-Double order, each with its settings. */
 export function offeredTiers(
   pricing: TierPricing | null | undefined,
-): Array<{ occupancy: Occupancy; setting: TierSetting }> {
+): Array<{ occupancy: TierOccupancy; setting: TierSetting }> {
   if (!pricing?.enabled) return [];
-  return OCCUPANCIES.flatMap((occupancy) => {
+  return TIER_OCCUPANCIES.flatMap((occupancy) => {
     const setting = pricing[occupancy];
     return setting ? [{ occupancy, setting }] : [];
   });
@@ -308,12 +330,18 @@ export function offeredTiers(
  * The single figure a tier prints: a typed-in override wins outright, otherwise
  * the calculated total with that tier's own discount taken off. The discount is
  * internal - only this result ever reaches the page.
+ *
+ * `auto`, `manualTotal` and `discount` must already be in the same currency -
+ * `auto` is converted by the caller before this runs, since a package's manual
+ * figures are typed directly in its own currency, never PKR-then-converted.
+ * `decimals` rounds to that currency's precision (0 for PKR, 2 for most others).
  */
-export function finalTierTotal(auto: number, setting: TierSetting): number {
+export function finalTierTotal(auto: number, setting: TierSetting, decimals = 0): number {
+  const roundMoney = (value: number): number => roundToDecimals(value, decimals);
   if (setting.manualTotal !== null && setting.manualTotal !== undefined) {
-    return Math.max(0, Math.round(setting.manualTotal));
+    return Math.max(0, roundMoney(setting.manualTotal));
   }
-  return Math.max(0, auto - clampDiscount(setting.discount, auto, Math.round));
+  return Math.max(0, auto - clampDiscount(setting.discount, auto, roundMoney));
 }
 
 // ------------------------------------------------------------------ totals
@@ -355,11 +383,7 @@ export function calculateTotals(input: TotalsInput): QuotationTotals {
 
   const rate = Number.isFinite(input.exchangeRate) && (input.exchangeRate ?? 0) > 0 ? input.exchangeRate! : 1;
   const decimals = input.decimals ?? (rate === 1 ? 0 : 2);
-  // Round to the currency's precision - whole rupees, or cents for a foreign one.
-  const roundMoney = (value: number): number => {
-    const factor = 10 ** decimals;
-    return Math.round(value * factor) / factor;
-  };
+  const roundMoney = (value: number): number => roundToDecimals(value, decimals);
 
   // Work in group totals - the whole party's rooms plus the whole party's air
   // fare - then divide once, so a mix never drifts from rounding stay by stay.
@@ -425,6 +449,12 @@ export function formatPrice(amount: number): string {
 export function convertFromPkr(pkr: number, rate: number): number {
   const r = Number.isFinite(rate) && rate > 0 ? rate : 1;
   return pkr / r;
+}
+
+/** Round to a currency's precision - whole rupees, or cents for a foreign one. */
+export function roundToDecimals(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }
 
 /**

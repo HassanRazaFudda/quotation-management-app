@@ -338,6 +338,29 @@ describe("toPdfView", () => {
       const view = await toPdfView(quotationWithDiscount as never);
       expect(view.totalPrice).toBe("PKR 249,000 /-");
     });
+
+    it("formats a package's tier prices and add-ons like the total, in PKR by default", async () => {
+      const view = await toPdfView(quotationWithDiscount as never, {
+        asPackage: true,
+        tierPrices: [{ label: "Quad", total: 1_925.5 }],
+        addOns: [{ label: "Aziziya Double Bed", amount: 200 }],
+      });
+      expect(view.tierPrices).toEqual([{ label: "Quad", priceFormatted: "PKR 1,926 /-" }]);
+      expect(view.addOns).toEqual([{ label: "Aziziya Double Bed", amountFormatted: "+PKR 200 /-" }]);
+    });
+
+    it("formats a package's tier prices and add-ons in USD when the package is priced in USD", async () => {
+      const view = await toPdfView(
+        { ...quotationWithDiscount, currency: { code: "USD", symbol: "$", decimals: 2 } } as never,
+        {
+          asPackage: true,
+          tierPrices: [{ label: "Quad", total: 1925.5 }],
+          addOns: [{ label: "Aziziya Double Bed", amount: 200 }],
+        },
+      );
+      expect(view.tierPrices).toEqual([{ label: "Quad", priceFormatted: "USD 1,925.50" }]);
+      expect(view.addOns).toEqual([{ label: "Aziziya Double Bed", amountFormatted: "+USD 200.00" }]);
+    });
   });
 
   describe("branding", () => {

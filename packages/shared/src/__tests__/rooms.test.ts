@@ -71,13 +71,13 @@ describe("roomChoices", () => {
   it("prices every wording as a shared room", () => {
     for (const choice of roomChoices("byOccupancy", 60).filter((c) => c.sharingWord)) {
       expect(choice.roomType).toBe("sharing");
-      expect(choice.occupancy).toBe("Quad");
+      expect(choice.occupancy).toBe("Sharing");
     }
   });
 
   it("offers Sharing plus a private Triple or Double for Aziziya", () => {
     // A group wanting privacy takes Sharing (quoted at its own size), so there
-    // is no Separate Quad.
+    // is no Separate Sharing.
     expect(roomChoices("sharingOrSeparate", 2).map((c) => c.label)).toEqual([
       "Sharing",
       "Separate - Triple",
@@ -91,59 +91,36 @@ describe("roomChoices", () => {
   });
 
   /**
-   * In a room mix each entry is one explicit room, so a hotel names Quad /
-   * Triple / Double outright - Quad no longer hides behind "Sharing", and it
-   * appears whatever the party size (here seven, not a multiple of four).
+   * A room mix asks `roomChoices` the same question as the whole-party picker,
+   * just with one row's own headcount standing in for `pax` - so a 4-person
+   * row can be labelled "Quad" exactly as a 4-person stay can, and a 7-person
+   * row (no multiple of 4, 5 or 6) gets no wording at all.
    */
-  describe("per-room choices for a mix", () => {
-    it("offers Quad, Triple, Double and Without bed for a hotel", () => {
-      expect(roomChoices("byOccupancy", 7, [], [], true).map((c) => c.label)).toEqual([
-        "Quad",
-        "Triple",
-        "Double",
-        "Without bed",
-      ]);
-    });
-
-    it("prices the Quad option at the Quad occupancy and prints 'Quad'", () => {
-      const quad = roomChoices("byOccupancy", 7, [], [], true).find((c) => c.label === "Quad")!;
-      expect(quad.occupancy).toBe("Quad");
-      expect(quad.roomType).toBe("sharing");
-      expect(roomLabel(quad)).toBe("Quad");
-      // Its value round-trips, so the dropdown keeps it selected.
-      expect(roomChoiceValue(quad)).toBe(quad.value);
-    });
-
-    it("still limits a hotel to the sizes it actually has", () => {
+  describe("used per-row inside a mix", () => {
+    it("offers Quad wording once the row's own headcount fills one", () => {
       expect(
-        roomChoices("byOccupancy", 7, ["Quad", "Triple"], [], true).map((c) => c.label),
-      ).toEqual(["Quad", "Triple", "Without bed"]);
+        roomChoices("byOccupancy", 4, ["Sharing", "Triple"], ["Quad"]).map((c) => c.label),
+      ).toContain("Quad");
+      expect(
+        roomChoices("byOccupancy", 5, ["Sharing", "Triple"], ["Quad"]).map((c) => c.label),
+      ).not.toContain("Quad");
     });
 
-    it("offers Aziziya its shared sizes (Quad/Quint/Hexa) plus Separate rooms", () => {
-      expect(roomChoices("sharingOrSeparate", 7, [], [], true).map((c) => c.label)).toEqual([
+    it("offers Aziziya its shared sizes once the row's headcount qualifies", () => {
+      expect(roomChoices("sharingOrSeparate", 8, [], []).map((c) => c.label)).toEqual([
         "Sharing",
         "Quad",
-        "Quint",
-        "Hexa",
         "Separate - Triple",
         "Separate - Double",
         "Without bed",
       ]);
-    });
-
-    it("prices an Aziziya Quad at the sharing rate but prints 'Quad'", () => {
-      const quad = roomChoices("sharingOrSeparate", 7, [], [], true).find((c) => c.label === "Quad")!;
-      expect(quad.roomType).toBe("sharing"); // one 'sharing' figure, not per-occupancy
-      expect(roomLabel(quad)).toBe("Quad");
-      expect(roomChoiceValue(quad)).toBe(quad.value);
     });
   });
 
   /** A hotel only has the room sizes the admin recorded for it. */
   describe("limited to what the hotel has", () => {
     it("drops the sizes it does not offer", () => {
-      expect(roomChoices("byOccupancy", 4, ["Quad", "Triple"]).map((c) => c.label)).toEqual([
+      expect(roomChoices("byOccupancy", 4, ["Sharing", "Triple"]).map((c) => c.label)).toEqual([
         "Sharing",
         "Quad",
         "Triple",
@@ -151,8 +128,8 @@ describe("roomChoices", () => {
       ]);
     });
 
-    it("drops Sharing entirely when there are no quad rooms", () => {
-      // The shared figure IS the Quad rate, so without quads there is nothing
+    it("drops Sharing entirely when there is no Sharing rate", () => {
+      // The shared figure IS the Sharing rate, so without one there is nothing
       // to share - and no wording for it either.
       expect(roomChoices("byOccupancy", 4, ["Triple", "Double"]).map((c) => c.label)).toEqual([
         "Triple",
@@ -163,7 +140,7 @@ describe("roomChoices", () => {
 
     it("applies to Aziziya too", () => {
       expect(
-        roomChoices("sharingOrSeparate", 2, ["Quad", "Double"]).map((c) => c.label),
+        roomChoices("sharingOrSeparate", 2, ["Sharing", "Double"]).map((c) => c.label),
       ).toEqual(["Sharing", "Separate - Double", "Without bed"]);
     });
 
@@ -178,43 +155,83 @@ describe("roomChoices", () => {
    */
   describe("shared-room wordings limited to what the hotel has", () => {
     it("drops a wording the hotel does not offer", () => {
-      // Twelve fills quads and hexas, but this hotel has only quad shares.
+      // Twelve fills quads and hexas, but this hotel only offers Quad wording.
       expect(
-        roomChoices("byOccupancy", 12, ["Quad", "Triple", "Double"], ["Quad"]).map((c) => c.label),
+        roomChoices("byOccupancy", 12, ["Sharing", "Triple", "Double"], ["Quad"]).map((c) => c.label),
       ).toEqual(["Sharing", "Quad", "Triple", "Double", "Without bed"]);
     });
 
-    it("keeps a wording the hotel does offer", () => {
+    it("treats Quad as an ordinary wording choice, not automatic", () => {
+      // Quad is no longer implied by the Sharing rate - it must be explicitly
+      // allowed, exactly like Quint or Hexa.
       expect(
-        roomChoices("byOccupancy", 12, ["Quad"], ["Hexa"]).map((c) => c.label),
-      ).toEqual(["Sharing", "Hexa", "Without bed"]);
+        roomChoices("byOccupancy", 12, ["Sharing", "Triple", "Double"], ["Hexa"]).map((c) => c.label),
+      ).toEqual(["Sharing", "Hexa", "Triple", "Double", "Without bed"]);
     });
 
     it("falls back to plain Sharing when the size the group fills is unavailable", () => {
-      // Five guests would be a Quint, but this hotel's shares are quad only.
+      // Five guests would be a Quint, but this hotel only offers Quad wording.
       expect(
-        roomChoices("byOccupancy", 5, ["Quad", "Triple", "Double"], ["Quad"]).map((c) => c.label),
+        roomChoices("byOccupancy", 5, ["Sharing", "Triple", "Double"], ["Quad"]).map((c) => c.label),
       ).toEqual(["Sharing", "Triple", "Double", "Without bed"]);
     });
 
     it("treats an empty list as every size", () => {
-      expect(roomChoices("byOccupancy", 12, ["Quad"], [])).toEqual(
-        roomChoices("byOccupancy", 12, ["Quad"]),
+      expect(roomChoices("byOccupancy", 12, ["Sharing"], [])).toEqual(
+        roomChoices("byOccupancy", 12, ["Sharing"]),
       );
     });
+  });
+
+  /**
+   * A hotel can offer a size beyond the original three - an admin-added "Quint"
+   * priced as its own room, not the Sharing/Quad wording of the same name.
+   */
+  describe("a hotel with an admin-added size", () => {
+    it("prices it as its own room, not as Sharing wording", () => {
+      const choices = roomChoices("byOccupancy", 2, ["Sharing", "Quint"]);
+      const quint = choices.find((c) => c.label === "Quint");
+      expect(quint).toMatchObject({ value: "quint", roomType: "sharing", sharingWord: null });
+      // "Sharing" itself is still offered, since it is present.
+      expect(choices.map((c) => c.label)).toContain("Sharing");
+    });
+
+    it("offers a Separate room in the new size for Aziziya", () => {
+      const choices = roomChoices("sharingOrSeparate", 1, ["Sharing", "Quint"]);
+      expect(choices.map((c) => c.label)).toContain("Separate - Quint");
+    });
+
+    it("still words Quint as Sharing when the hotel has not priced it separately", () => {
+      // Only "Sharing" is a priced size here; "Quint" is wording, not its own room.
+      const choices = roomChoices("byOccupancy", 5, ["Sharing"], ["Quad", "Quint", "Hexa"]);
+      const quint = choices.find((c) => c.label === "Quint");
+      expect(quint).toMatchObject({ roomType: "sharing", sharingWord: "Quint" });
+    });
+  });
+});
+
+describe("sharingWordsFor with a custom vocabulary", () => {
+  it("checks against the sizes it is given, not the fixed three", () => {
+    // A "Septa" word meaning 7, unknown to the original fixed vocabulary.
+    expect(sharingWordsFor(7, ["Quad", "Septa"], { Quad: 4, Septa: 7 })).toEqual(["Septa"]);
+    expect(sharingWordsFor(8, ["Quad", "Septa"], { Quad: 4, Septa: 7 })).toEqual(["Quad"]);
+  });
+
+  it("skips a word with no known size rather than throwing", () => {
+    expect(sharingWordsFor(5, ["Mystery"], {})).toEqual([]);
   });
 });
 
 describe("roomLabel", () => {
   it("says Sharing for a shared room", () => {
-    expect(roomLabel({ roomType: "sharing", occupancy: "Quad" })).toBe("Sharing");
+    expect(roomLabel({ roomType: "sharing", occupancy: "Sharing" })).toBe("Sharing");
   });
 
   it("says the exact size when the staff chose that wording", () => {
-    expect(roomLabel({ roomType: "sharing", occupancy: "Quad", sharingWord: "Quint" })).toBe(
+    expect(roomLabel({ roomType: "sharing", occupancy: "Sharing", sharingWord: "Quint" })).toBe(
       "Quint",
     );
-    expect(roomLabel({ roomType: "sharing", occupancy: "Quad", sharingWord: "Hexa" })).toBe(
+    expect(roomLabel({ roomType: "sharing", occupancy: "Sharing", sharingWord: "Hexa" })).toBe(
       "Hexa",
     );
   });

@@ -4,15 +4,13 @@ import {
   MINA_TIERS,
   MINA_TIER_BEDS,
   OCCUPANCIES,
-  SHARING_WORDS,
   SHARING_WORD_SIZE,
   type Accommodation,
   type MinaTier,
-  type Occupancy,
-  type SharingWord,
+  type RoomSize,
 } from "@junaidi/shared";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
@@ -20,6 +18,24 @@ import { Button, Card, Field, Input, Modal, Select, Spinner } from "@/components
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import { useConfigStore } from "@/stores/config";
+
+/**
+ * Used only until the admin's Room Sizes list has rows (a fresh environment,
+ * or the seed has not run yet) - the original five, so the picker behaves
+ * exactly as it always did rather than silently offering less.
+ */
+const FALLBACK_CODES: string[] = [
+  ...OCCUPANCIES,
+  ...Object.keys(SHARING_WORD_SIZE).filter((code) => !(OCCUPANCIES as readonly string[]).includes(code)),
+];
+const FALLBACK_ROOM_SIZES: RoomSize[] = FALLBACK_CODES.map((code, i) => ({
+  id: code,
+  code,
+  label: code,
+  sharingGroupSize: SHARING_WORD_SIZE[code] ?? null,
+  sortOrder: i,
+  active: true,
+}));
 
 export default function HotelsPage() {
   const config = useConfigStore();
@@ -37,6 +53,19 @@ export default function HotelsPage() {
       })),
     [config.locations, config.accommodations],
   );
+
+  async function move(locationId: string, hotels: Accommodation[], index: number, delta: number) {
+    const target = index + delta;
+    if (target < 0 || target >= hotels.length) return;
+    const ids = hotels.map((h) => h.id);
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    try {
+      await api.post("/api/admin/hotels/reorder", { locationId, orderedIds: ids });
+      config.load(undefined, true);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not reorder.");
+    }
+  }
 
   if (!config.loaded) return <Spinner label="Loading…" />;
 
@@ -58,12 +87,16 @@ export default function HotelsPage() {
           <div key={location.id}>
             <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">{location.name}</h2>
             <Card className="divide-y divide-line">
-              {hotels.map((hotel) => (
+              {hotels.map((hotel, index) => (
                 <HotelRow
                   key={hotel.id}
                   hotel={hotel}
                   isMina={location.type === "mina"}
                   onSaved={() => config.load(undefined, true)}
+                  onMoveUp={index > 0 ? () => move(location.id, hotels, index, -1) : undefined}
+                  onMoveDown={
+                    index < hotels.length - 1 ? () => move(location.id, hotels, index, 1) : undefined
+                  }
                 />
               ))}
               {hotels.length === 0 && <p className="px-5 py-3 text-sm text-muted">No hotels here yet.</p>}
@@ -79,20 +112,32 @@ function HotelRow({
   hotel,
   isMina,
   onSaved,
+  onMoveUp,
+  onMoveDown,
 }: {
   hotel: Accommodation;
   isMina: boolean;
   onSaved: () => void;
+  /** Undefined when the hotel is already first/last, so the arrow is hidden. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const config = useConfigStore();
+  // The vocabulary offered in both pickers: the admin's Room Sizes list, or the
+  // original three when nothing has been configured there yet.
+  const roomSizeOptions = config.roomSizes.length > 0 ? config.roomSizes : FALLBACK_ROOM_SIZES;
+
   const [name, setName] = useState(hotel.name);
   const [mealIds, setMealIds] = useState<string[]>(hotel.allowedMealIds);
   const [noteIds, setNoteIds] = useState<string[]>(hotel.allowedMealNoteIds);
-  const [occupancies, setOccupancies] = useState<Occupancy[]>(
+  // A hotel that has never been configured defaults to the original three
+  // priced sizes. A newly admin-added size starts unchecked in both pickers,
+  // so it is never offered anywhere until a hotel explicitly opts it in.
+  const [occupancies, setOccupancies] = useState<string[]>(
     hotel.allowedOccupancies?.length ? hotel.allowedOccupancies : [...OCCUPANCIES],
   );
-  const [sharingWords, setSharingWords] = useState<SharingWord[]>(
-    hotel.allowedSharingWords?.length ? hotel.allowedSharingWords : [...SHARING_WORDS],
+  const [sharingWords, setSharingWords] = useState<string[]>(
+    hotel.allowedSharingWords?.length ? hotel.allowedSharingWords : ["Quad", "Quint", "Hexa"],
   );
   const [categoryIds, setCategoryIds] = useState<string[]>(hotel.allowedCategories ?? []);
   // A Mina option is either a tent of some tier, or one that books no tent.
@@ -117,6 +162,18 @@ function HotelRow({
 
   const toggle = <T extends string>(list: T[], setList: (v: T[]) => void, id: T) =>
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+
+  // A size is either a priced room or Sharing wording, never both - so
+  // picking it in one list drops it from the other immediately, rather than
+  // waiting for the server to refuse it.
+  function toggleOccupancy(code: string) {
+    setOccupancies((list) => (list.includes(code) ? list.filter((c) => c !== code) : [...list, code]));
+    setSharingWords((list) => list.filter((c) => c !== code));
+  }
+  function toggleSharingWord(code: string) {
+    setSharingWords((list) => (list.includes(code) ? list.filter((c) => c !== code) : [...list, code]));
+    setOccupancies((list) => list.filter((c) => c !== code));
+  }
 
   async function save() {
     setSaving(true);
@@ -148,6 +205,24 @@ function HotelRow({
   return (
     <div className="space-y-3 p-5">
       <div className="flex items-center gap-3">
+        <div className="flex flex-col">
+          <button
+            onClick={onMoveUp}
+            disabled={!onMoveUp}
+            className="rounded p-0.5 text-gray-400 transition-colors hover:bg-canvas hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+            title="Move up"
+          >
+            <ArrowUp className="size-3.5" />
+          </button>
+          <button
+            onClick={onMoveDown}
+            disabled={!onMoveDown}
+            className="rounded p-0.5 text-gray-400 transition-colors hover:bg-canvas hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+            title="Move down"
+          >
+            <ArrowDown className="size-3.5" />
+          </button>
+        </div>
         <Input value={name} onChange={(e) => setName(e.target.value)} className="max-w-md" />
         <Button size="sm" variant="secondary" icon={<Save className="size-4" />} loading={saving} onClick={save} className="ml-auto">
           Save
@@ -207,24 +282,28 @@ function HotelRow({
         <>
           <ChipRow
             label="Room sizes"
-            items={OCCUPANCIES.map((o) => ({ id: o, label: o }))}
+            items={roomSizeOptions.map((s) => ({ id: s.code, label: s.label }))}
             selected={occupancies}
-            onToggle={(id) => toggle(occupancies, setOccupancies, id as Occupancy)}
+            onToggle={toggleOccupancy}
             hint={occupancies.length === 0 ? "pick at least one" : undefined}
           />
 
-          {/* The shared room is the Quad rate; these are the sizes it comes in,
-              and they only decide the wording on the quote (Quint / Hexa),
-              never the price. Shown only when a shared room is offered. */}
-          {occupancies.includes("Quad") && (
+          {/* The shared room is the Sharing rate; these are the sizes it can be
+              worded as (Quad / Quint / Hexa), never the price - an ordinary
+              toggle like any other, ticked or not per hotel. Shown only when a
+              shared room is offered, and only for sizes with a defined group
+              size. */}
+          {occupancies.includes("Sharing") && (
             <ChipRow
               label="Shared room sizes"
-              items={SHARING_WORDS.map((w) => ({ id: w, label: `${w} (${SHARING_WORD_SIZE[w]})` }))}
+              items={roomSizeOptions
+                .filter((s) => s.sharingGroupSize)
+                .map((s) => ({ id: s.code, label: `${s.label} (${s.sharingGroupSize})` }))}
               selected={sharingWords}
-              onToggle={(id) => toggle(sharingWords, setSharingWords, id as SharingWord)}
+              onToggle={toggleSharingWord}
               hint={
                 sharingWords.length === 0
-                  ? "none - the room is always written “Sharing”"
+                  ? "none picked - still written “Sharing”, no wording"
                   : "wording only, same price as Sharing"
               }
             />

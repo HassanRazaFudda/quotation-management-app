@@ -51,16 +51,17 @@ export default function RatesPage() {
     for (const hotel of config.accommodations) {
       const location = config.locations.find((l) => l.id === hotel.locationId);
       if (!location) continue;
+      const codes = hotel.allowedOccupancies?.length ? hotel.allowedOccupancies : [...OCCUPANCIES];
 
       for (const block of config.blocks) {
         if (!block.allowedLocationIds.includes(location.id)) continue;
         const key = rateKey(hotel.id, block.id);
         if (byKey[key]) continue;
-        byKey[key] = emptyRate(location.pricingModel, {
-          accommodationId: hotel.id,
-          blockId: block.id,
-          season: config.season,
-        });
+        byKey[key] = emptyRate(
+          location.pricingModel,
+          { accommodationId: hotel.id, blockId: block.id, season: config.season },
+          codes,
+        );
       }
     }
 
@@ -186,7 +187,9 @@ export default function RatesPage() {
                           </div>
 
                           <div className="flex-1">
-                            {rate && <RateEditor rate={rate} onChange={(u) => setRate(key, u)} />}
+                            {rate && (
+                              <RateEditor hotel={hotel} rate={rate} onChange={(u) => setRate(key, u)} />
+                            )}
                           </div>
 
                           <Button
@@ -218,7 +221,25 @@ export default function RatesPage() {
   );
 }
 
-function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Rate) => Rate) => void }) {
+/**
+ * The columns to price for one hotel: its own `allowedOccupancies`, or the
+ * original three when nothing has been set yet. "Separate" (Aziziya's private
+ * room) never includes "Sharing" - that size is the shared rate, not a room of
+ * its own - matching how `roomChoices` builds the same dropdown.
+ */
+function occupancyCodes(hotel: Accommodation): string[] {
+  return hotel.allowedOccupancies?.length ? hotel.allowedOccupancies : [...OCCUPANCIES];
+}
+
+function RateEditor({
+  hotel,
+  rate,
+  onChange,
+}: {
+  hotel: Accommodation;
+  rate: Rate;
+  onChange: (updater: (r: Rate) => Rate) => void;
+}) {
   if (rate.model === "flat") {
     return (
       <div className="flex items-center gap-2">
@@ -231,7 +252,10 @@ function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Ra
     );
   }
 
+  const codes = occupancyCodes(hotel);
+
   if (rate.model === "sharingOrSeparate") {
+    const separateCodes = codes.filter((c) => c !== "Sharing");
     return (
       <div className="space-y-2">
         {/* Sharing is one figure: a shared room may be four, five or six. */}
@@ -248,11 +272,11 @@ function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Ra
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-16 text-xs text-muted">Separate</span>
-          {OCCUPANCIES.map((occ) => (
+          {separateCodes.map((occ) => (
             <NumberBox
               key={occ}
               label={occ}
-              value={rate.separate[occ]}
+              value={rate.separate[occ] ?? 0}
               onChange={(v) =>
                 onChange((r) =>
                   r.model === "sharingOrSeparate"
@@ -278,11 +302,11 @@ function RateEditor({ rate, onChange }: { rate: Rate; onChange: (updater: (r: Ra
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {OCCUPANCIES.map((occ) => (
+      {codes.map((occ) => (
         <NumberBox
           key={occ}
           label={occ}
-          value={rate.rates[occ]}
+          value={rate.rates[occ] ?? 0}
           onChange={(v) =>
             onChange((r) => (r.model === "byOccupancy" ? { ...r, rates: { ...r.rates, [occ]: v } } : r))
           }
