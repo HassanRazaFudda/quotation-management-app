@@ -493,9 +493,10 @@ describe("formatPrice", () => {
 });
 
 /**
- * A package prints three prices for one itinerary. Only the Makkah / Madinah
- * hotels move between Quad, Triple and Double; Aziziya and Mina hold their own
- * figure across all three.
+ * A package prints three prices for one itinerary. Anything priced by room
+ * size - the Makkah / Madinah hotels, and Aziziya's own Sharing/Separate rate
+ * - moves between Quad, Triple and Double. Only Mina, a flat per-tent figure
+ * with no room-size concept, holds the same figure across all three.
  */
 describe("priceTiers - a package's three prices", () => {
   const stays: StayInput[] = [
@@ -504,17 +505,17 @@ describe("priceTiers - a package's three prices", () => {
     { blockId: "blk-aziziya-2", locationId: "loc-aziziya", accommodationId: "acc-aziziya", roomType: "sharing" },
     { blockId: "blk-hajj-5n", locationId: "loc-mina", accommodationId: "acc-mina-std" },
   ];
-  // Aziziya sharing (22k) + Mina flat (145k) sit in every tier unchanged.
-  const constant = 22_000 + 145_000;
+  // Mina flat (145k) sits in every tier unchanged.
+  const constant = 145_000;
   const byOccupancy = (t: TierOccupancy) => {
     const value = new Map(priceTiers(stays, context).map((r) => [r.occupancy, r.total])).get(t);
     return value ?? 0;
   };
 
-  it("moves only the hotels between tiers", () => {
-    expect(byOccupancy("Quad")).toBe(110_000 + 150_000 + constant);
-    expect(byOccupancy("Triple")).toBe(130_000 + 175_000 + constant);
-    expect(byOccupancy("Double")).toBe(160_000 + 220_000 + constant);
+  it("moves the hotels and Aziziya between tiers", () => {
+    expect(byOccupancy("Quad")).toBe(110_000 + 150_000 + 22_000 + constant);
+    expect(byOccupancy("Triple")).toBe(130_000 + 175_000 + 40_000 + constant);
+    expect(byOccupancy("Double")).toBe(160_000 + 220_000 + 51_000 + constant);
   });
 
   it("ignores a hotel stay's own room choice - the tier decides occupancy", () => {
@@ -526,6 +527,17 @@ describe("priceTiers - a package's three prices", () => {
         : s,
     );
     expect(priceTiers(asDouble, context)).toEqual(priceTiers(stays, context));
+  });
+
+  it("ignores Aziziya's own room choice too - it tiers the same as a hotel", () => {
+    // Marking the Aziziya stay Separate/Double instead of Sharing changes
+    // nothing: every tier still prices Aziziya at that tier's own rate.
+    const asSeparateDouble = stays.map((s) =>
+      s.accommodationId === "acc-aziziya"
+        ? { ...s, roomType: "separate" as const, occupancy: "Double" as const }
+        : s,
+    );
+    expect(priceTiers(asSeparateDouble, context)).toEqual(priceTiers(stays, context));
   });
 
   it("returns all three tiers, in order, and flags them complete", () => {

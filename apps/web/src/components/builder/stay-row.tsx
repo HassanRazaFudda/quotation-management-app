@@ -63,11 +63,14 @@ export function StayRow({
   const location = config.locations.find((l) => l.id === stay.locationId);
   const isMina = location?.type === "mina";
   const hotel = config.accommodations.find((a) => a.id === stay.accommodationId);
-  // A hotel's room size prices three ways on a package brochure (the tier
-  // cards), not one - so on a package, a byOccupancy stay's own room choice is
-  // never priced or printed and there is nothing useful to pick here. It still
-  // gets a default under the hood (below), just never a control to change it.
-  const tierPriced = asPackage && location?.pricingModel === "byOccupancy";
+  // A hotel or Aziziya's room size prices three ways on a package brochure
+  // (the tier cards), not one - so on a package, this stay's own room choice
+  // is never priced or printed and there is nothing useful to pick here. It
+  // still gets a default under the hood (below), just never a control to
+  // change it. Mina is unaffected - a flat per-tent figure has no room size.
+  const tierPriced =
+    asPackage &&
+    (location?.pricingModel === "byOccupancy" || location?.pricingModel === "sharingOrSeparate");
   // A hotel only offers the room sizes the admin recorded for it, so the list
   // narrows once the accommodation is chosen.
   const rooms = location
