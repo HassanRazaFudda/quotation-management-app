@@ -34,7 +34,7 @@ export async function seedRoomSizes(season = DEFAULT_SEASON): Promise<SeedRoomSi
 }
 
 // Run directly: pnpm --filter @junaidi/db seed:room-sizes
-if (process.argv[1]?.includes("seed-room-sizes")) {
+if (process.argv[1]?.endsWith("seed-room-sizes.ts")) {
   await connect();
   const result = await seedRoomSizes();
   console.log("Seeded:", result);

@@ -142,7 +142,7 @@ export async function migrateQuadToSharing(): Promise<QuadToSharingResult> {
 }
 
 // Run directly: pnpm --filter @junaidi/db migrate:quad-to-sharing
-if (process.argv[1]?.includes("quad-to-sharing")) {
+if (process.argv[1]?.endsWith("quad-to-sharing.ts")) {
   await connect();
   const result = await migrateQuadToSharing();
   console.log("Migrated:", result);

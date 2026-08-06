@@ -492,7 +492,10 @@ export async function seed(season = DEFAULT_SEASON): Promise<SeedResult> {
 }
 
 // Run directly: pnpm --filter @junaidi/db seed
-if (process.argv[1]?.includes("seed")) {
+// Precise suffix match, not a loose `.includes("seed")` - a script that only
+// *imports* something from this file (e.g. seed-room-sizes.ts, whose own path
+// also contains "seed") must never trip this and run the full seed too.
+if (process.argv[1]?.endsWith("seed.ts")) {
   await connect();
   const result = await seed();
   console.log("Seeded:", result);
