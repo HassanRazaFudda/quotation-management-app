@@ -210,15 +210,15 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
           decimals: 0,
         });
 
-  // Reset the fields whenever a different package is opened; default the tier
-  // and start every add-on checked, so a plain print still includes them all.
+  // Reset the fields whenever a different package is opened; default the
+  // tier. Add-ons start unchecked - staff opts each one in explicitly.
   useEffect(() => {
     setName("");
     setPax(1);
     setValidUntil("");
     setDiscount(0);
     setBranding(true);
-    setIncludedAddOns((pkg?.addOns ?? []).map((addOn) => addOn.label));
+    setIncludedAddOns([]);
     const first = pkg?.tierPricing?.enabled
       ? TIER_OCCUPANCIES.find((occ) => pkg.tierPricing?.[occ])
       : undefined;
