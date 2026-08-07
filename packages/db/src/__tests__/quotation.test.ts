@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { QuotationModel } from "../models/quotation";
 import { DEFAULT_SEASON, seed } from "../seed";
-import { getConfigBundle } from "../services/config";
+import { findConfigProblems, getConfigBundle } from "../services/config";
 import {
   updateLabelled,
   upsertAccommodation,
@@ -1160,5 +1160,64 @@ describe("a hotel with an admin-added room size", () => {
       allowedSharingWords: ["Quint", "Hexa"],
     });
     expect(saved.allowedSharingWords).not.toContain("Quad");
+  });
+});
+
+describe("a hotel narrowed to specific date blocks", () => {
+  it("hides an excluded block from missing-rate warnings, and refuses a rate for it", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const madinah = bundle.locations.find((l) => l.name === "Madinah")!;
+    const usableBlocks = bundle.blocks.filter((b) => b.allowedLocationIds.includes(madinah.id));
+    expect(usableBlocks.length).toBeGreaterThanOrEqual(2);
+    const [includedBlock, excludedBlock] = usableBlocks;
+
+    const created: any = await upsertAccommodation(null, {
+      locationId: madinah.id,
+      name: "Narrowed Test Hotel",
+      allowedBlockIds: [includedBlock!.id],
+      allowedMealIds: [],
+      allowedMealNoteIds: [],
+    });
+
+    const rebuilt = await getConfigBundle(DEFAULT_SEASON);
+    const missingRateMessages = findConfigProblems(rebuilt)
+      .filter((p) => p.kind === "MISSING_RATE")
+      .map((p) => p.message)
+      .filter((m) => m.includes("Narrowed Test Hotel"));
+
+    // Only the one block it's actually offered in is missing a rate - the
+    // excluded block never shows up as a gap to fill.
+    expect(missingRateMessages).toHaveLength(1);
+
+    await expect(
+      upsertRate(String(created._id), excludedBlock!.id, DEFAULT_SEASON, {}),
+    ).rejects.toThrow(/not offered in that date block/i);
+
+    await expect(
+      upsertRate(String(created._id), includedBlock!.id, DEFAULT_SEASON, {
+        model: "byOccupancy",
+        rates: { Sharing: 10_000 },
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("refuses a block that does not allow the hotel's own location", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const madinah = bundle.locations.find((l) => l.name === "Madinah")!;
+    const makkahOnlyBlock = bundle.blocks.find(
+      (b) =>
+        b.allowedLocationIds.includes(bundle.locations.find((l) => l.name === "Makkah")!.id) &&
+        !b.allowedLocationIds.includes(madinah.id),
+    )!;
+
+    await expect(
+      upsertAccommodation(null, {
+        locationId: madinah.id,
+        name: "Mismatched Narrowing",
+        allowedBlockIds: [makkahOnlyBlock.id],
+        allowedMealIds: [],
+        allowedMealNoteIds: [],
+      }),
+    ).rejects.toThrow(/does not allow this hotel's location/i);
   });
 });

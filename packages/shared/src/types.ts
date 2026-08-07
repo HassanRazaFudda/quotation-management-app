@@ -182,6 +182,12 @@ export interface Accommodation {
   allowedCategories?: string[];
   allowedMealIds: string[];
   allowedMealNoteIds: string[];
+  /**
+   * Date blocks this hotel is offered in, narrowing what its location already
+   * allows. Empty or absent means every block the location allows, so older
+   * configurations keep working.
+   */
+  allowedBlockIds?: string[];
   sortOrder: number;
   active: boolean;
 }

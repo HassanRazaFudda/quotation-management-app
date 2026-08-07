@@ -55,7 +55,9 @@ export function StayRow({
   const { updateStay, removeStay, pax } = useBuilderStore();
 
   const locations = stay.blockId ? locationsForBlock(config, stay.blockId) : [];
-  const accommodations = stay.locationId ? accommodationsForLocation(config, stay.locationId) : [];
+  const accommodations = stay.locationId
+    ? accommodationsForLocation(config, stay.locationId, stay.blockId)
+    : [];
   const meals = stay.accommodationId ? mealsForAccommodation(config, stay.accommodationId) : [];
   const notes = stay.accommodationId ? mealNotesForAccommodation(config, stay.accommodationId) : [];
 

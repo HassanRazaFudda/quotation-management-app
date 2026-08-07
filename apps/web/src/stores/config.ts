@@ -107,8 +107,22 @@ export function locationsForBlock(state: ConfigState, blockId: string): Location
   return state.locations.filter((l) => allowed.has(l.id));
 }
 
-export function accommodationsForLocation(state: ConfigState, locationId: string): Accommodation[] {
-  return state.accommodations.filter((a) => a.locationId === locationId);
+/**
+ * A location's hotels, narrowed to the ones actually offered for a given
+ * block when one is known - a hotel with a non-empty `allowedBlockIds` that
+ * excludes it is left out, same as it would be excluded from the admin
+ * screens.
+ */
+export function accommodationsForLocation(
+  state: ConfigState,
+  locationId: string,
+  blockId?: string,
+): Accommodation[] {
+  return state.accommodations.filter((a) => {
+    if (a.locationId !== locationId) return false;
+    if (!blockId || !a.allowedBlockIds?.length) return true;
+    return a.allowedBlockIds.includes(blockId);
+  });
 }
 
 export function mealsForAccommodation(state: ConfigState, accommodationId: string): Meal[] {

@@ -59,6 +59,13 @@ export async function upsertRate(
     );
   }
 
+  const narrowedBlockIds = (accommodation.allowedBlockIds ?? []).map(String);
+  if (narrowedBlockIds.length > 0 && !narrowedBlockIds.includes(String(blockId))) {
+    throw new AdminError(
+      `"${accommodation.name}" is not offered in that date block, so it cannot have a rate for it.`,
+    );
+  }
+
   const model = location.pricingModel as PricingModel;
   if (rate.model && rate.model !== model) {
     throw new AdminError(`This hotel is priced as ${model}, not ${String(rate.model)}.`);
@@ -154,8 +161,32 @@ function assertNoSizeOverlap(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Every date block a hotel is narrowed to must actually allow its location -
+ * otherwise the hotel could be "available" in a block its own location is
+ * refused in, which `upsertRate` and the builder would then have to guess
+ * how to handle.
+ */
+async function assertBlocksAllowed(locationId: unknown, blockIds: unknown): Promise<void> {
+  const ids = Array.isArray(blockIds) ? blockIds : [];
+  if (ids.length === 0) return;
+
+  const blocks = await DateBlockModel.find({ _id: { $in: ids } })
+    .select("allowedLocationIds")
+    .lean();
+  const valid =
+    blocks.length === ids.length &&
+    blocks.every((block) =>
+      (block.allowedLocationIds ?? []).some((allowed) => String(allowed) === String(locationId)),
+    );
+  if (!valid) {
+    throw new AdminError("One of the selected date blocks does not allow this hotel's location.");
+  }
+}
+
 export async function upsertAccommodation(id: string | null, data: Record<string, unknown>) {
   assertNoSizeOverlap(data);
+  await assertBlocksAllowed(data.locationId, data.allowedBlockIds);
   if (id) {
     return AccommodationModel.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean();
   }

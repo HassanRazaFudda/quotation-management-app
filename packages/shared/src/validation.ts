@@ -37,6 +37,7 @@ export interface Issue {
     | "MISSING_ROOM_TYPE"
     | "UNEXPECTED_ROOM_TYPE"
     | "OCCUPANCY_NOT_ALLOWED"
+    | "BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION"
     | "GAP"
     | "OVERLAP"
     | "NO_HAJJ_BLOCK"
@@ -132,6 +133,15 @@ function validateStay(
     at(
       "ACCOMMODATION_MISMATCH",
       `${rowName}: ${accommodation.name} does not belong to ${location.name}.`,
+    );
+  }
+
+  // A hotel is only offered in the date blocks the admin narrowed it to.
+  const allowedBlockIds = accommodation.allowedBlockIds ?? [];
+  if (allowedBlockIds.length > 0 && !allowedBlockIds.includes(block.id)) {
+    at(
+      "BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION",
+      `${rowName}: ${accommodation.name} is not offered for this date block.`,
     );
   }
 

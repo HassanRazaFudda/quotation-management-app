@@ -11,11 +11,18 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Save } from "lucide-react";
 
+import { LocationTabs, useActiveLocation } from "@/components/admin/location-tabs";
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
 import { Button, Card, MoneyInput, Spinner } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useConfigStore } from "@/stores/config";
+
+/** A hotel is offered in a block only if its own narrowing allows it, on top of its location's. */
+function blockAllowedForHotel(hotel: Accommodation, block: ResolvedBlock, locationId: string): boolean {
+  if (!block.allowedLocationIds.includes(locationId)) return false;
+  return !hotel.allowedBlockIds?.length || hotel.allowedBlockIds.includes(block.id);
+}
 
 /**
  * The rate grid.
@@ -54,7 +61,7 @@ export default function RatesPage() {
       const codes = hotel.allowedOccupancies?.length ? hotel.allowedOccupancies : [...OCCUPANCIES];
 
       for (const block of config.blocks) {
-        if (!block.allowedLocationIds.includes(location.id)) continue;
+        if (!blockAllowedForHotel(hotel, block, location.id)) continue;
         const key = rateKey(hotel.id, block.id);
         if (byKey[key]) continue;
         byKey[key] = emptyRate(
@@ -83,12 +90,15 @@ export default function RatesPage() {
           .filter((a) => a.locationId === location.id)
           .map((hotel) => ({
             hotel,
-            // Only the blocks this hotel's location is allowed in.
-            blocks: config.blocks.filter((b) => b.allowedLocationIds.includes(location.id)),
+            // Only the blocks this hotel's location allows, narrowed further
+            // by the hotel's own allowedBlockIds if it has any.
+            blocks: config.blocks.filter((b) => blockAllowedForHotel(hotel, b, location.id)),
           })),
       })),
     [config.locations, config.accommodations, config.blocks],
   );
+  const { activeLocationId, setActiveLocationId } = useActiveLocation(config.locations);
+  const active = grouped.find((g) => g.location.id === activeLocationId);
 
   function setRate(key: string, updater: (rate: Rate) => Rate) {
     setDraft((prev) => (prev[key] ? { ...prev, [key]: updater(prev[key]!) } : prev));
@@ -148,74 +158,74 @@ export default function RatesPage() {
           </p>
         )}
 
-        {grouped.map(({ location, hotels }) => (
-          <div key={location.id}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
-              {location.name}
-            </h2>
+        <LocationTabs
+          locations={config.locations}
+          value={activeLocationId}
+          onChange={setActiveLocationId}
+        />
 
-            <div className="space-y-4">
-              {hotels.map(({ hotel, blocks }) => (
-                <Card key={hotel.id}>
-                  <div className="border-b border-line px-5 py-3">
-                    <p className="font-medium text-ink">{hotel.name}</p>
-                    <p className="text-xs text-muted">
-                      {blocks.length} block{blocks.length === 1 ? "" : "s"} · {location.pricingModel}
-                    </p>
-                  </div>
+        {active && (
+          <div className="space-y-4">
+            {active.hotels.map(({ hotel, blocks }) => (
+              <Card key={hotel.id}>
+                <div className="border-b border-line px-5 py-3">
+                  <p className="font-medium text-ink">{hotel.name}</p>
+                  <p className="text-xs text-muted">
+                    {blocks.length} block{blocks.length === 1 ? "" : "s"} · {active.location.pricingModel}
+                  </p>
+                </div>
 
-                  <div className="divide-y divide-line">
-                    {blocks.map((block) => {
-                      const key = rateKey(hotel.id, block.id);
-                      const rate = draft[key];
-                      return (
-                        <div
-                          key={block.id}
-                          className="flex flex-col gap-3 px-5 py-3 lg:flex-row lg:items-center"
-                        >
-                          <div className="lg:w-56">
-                            <p className="text-sm font-medium text-ink">{block.label}</p>
-                            <p className="text-xs text-muted">
-                              {block.gregorianLabel ?? `${block.nights} nights`}
-                              {block.gregorianLabel && ` · ${block.nights}n`}
-                            </p>
-                            {!stored.has(key) && (
-                              <span className="mt-1 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
-                                Not priced
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex-1">
-                            {rate && (
-                              <RateEditor hotel={hotel} rate={rate} onChange={(u) => setRate(key, u)} />
-                            )}
-                          </div>
-
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            icon={<Save className="size-4" />}
-                            loading={saving === key}
-                            onClick={() => save(hotel, block)}
-                            disabled={!rate}
-                          >
-                            Save
-                          </Button>
+                <div className="divide-y divide-line">
+                  {blocks.map((block) => {
+                    const key = rateKey(hotel.id, block.id);
+                    const rate = draft[key];
+                    return (
+                      <div
+                        key={block.id}
+                        className="flex flex-col gap-3 px-5 py-3 lg:flex-row lg:items-center"
+                      >
+                        <div className="lg:w-56">
+                          <p className="text-sm font-medium text-ink">{block.label}</p>
+                          <p className="text-xs text-muted">
+                            {block.gregorianLabel ?? `${block.nights} nights`}
+                            {block.gregorianLabel && ` · ${block.nights}n`}
+                          </p>
+                          {!stored.has(key) && (
+                            <span className="mt-1 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
+                              Not priced
+                            </span>
+                          )}
                         </div>
-                      );
-                    })}
-                    {blocks.length === 0 && (
-                      <p className="px-5 py-3 text-sm text-muted">
-                        No date block allows {location.name} yet.
-                      </p>
-                    )}
-                  </div>
-                </Card>
-              ))}
-            </div>
+
+                        <div className="flex-1">
+                          {rate && (
+                            <RateEditor hotel={hotel} rate={rate} onChange={(u) => setRate(key, u)} />
+                          )}
+                        </div>
+
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={<Save className="size-4" />}
+                          loading={saving === key}
+                          onClick={() => save(hotel, block)}
+                          disabled={!rate}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  {blocks.length === 0 && (
+                    <p className="px-5 py-3 text-sm text-muted">
+                      No date block allows {active.location.name} yet.
+                    </p>
+                  )}
+                </div>
+              </Card>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </>
   );

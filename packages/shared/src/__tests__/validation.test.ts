@@ -386,3 +386,37 @@ describe("room sizes a hotel actually offers", () => {
     expect(codes([anywhere])).not.toContain("OCCUPANCY_NOT_ALLOWED");
   });
 });
+
+/** Not every hotel is offered in every block its location allows, either. */
+describe("date blocks a hotel actually offers", () => {
+  // Swiss Al Maqam narrowed to just one of its two Makkah blocks.
+  const narrowed = accommodations.map((a) =>
+    a.id === "acc-swiss" ? { ...a, allowedBlockIds: ["blk-pre-makkah"] } : a,
+  );
+  const narrowedContext = makeValidationContext({
+    blocks: resolved, locations, accommodations: narrowed, meals, mealNotes,
+  });
+  const stay = (blockId: string): StayInput => ({
+    blockId,
+    locationId: "loc-makkah",
+    accommodationId: "acc-swiss",
+    roomType: "sharing",
+    occupancy: "Double",
+    mealId: "meal-half",
+  });
+
+  it("accepts a block the hotel is narrowed to", () => {
+    const issues = validateItinerary([stay("blk-pre-makkah")], narrowedContext).map((i) => i.code);
+    expect(issues).not.toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
+  });
+
+  it("refuses a block outside the narrowing", () => {
+    const issues = validateItinerary([stay("blk-makkah-8")], narrowedContext).map((i) => i.code);
+    expect(issues).toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
+  });
+
+  it("leaves a hotel with no list alone, so old data keeps working", () => {
+    const issues = validateItinerary([stay("blk-makkah-8")], context()).map((i) => i.code);
+    expect(issues).not.toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
+  });
+});

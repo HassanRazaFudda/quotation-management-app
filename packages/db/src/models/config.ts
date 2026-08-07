@@ -77,6 +77,14 @@ const accommodationSchema = new Schema(
     allowedMealIds: [{ type: Schema.Types.ObjectId, ref: "Meal" }],
     allowedMealNoteIds: [{ type: Schema.Types.ObjectId, ref: "MealNote" }],
 
+    /**
+     * Date blocks this hotel is actually offered in, narrowing the ones its
+     * location already allows (DateBlock.allowedLocationIds). Empty means
+     * every block the location allows - the same convention as every other
+     * restriction above.
+     */
+    allowedBlockIds: [{ type: Schema.Types.ObjectId, ref: "DateBlock" }],
+
     sortOrder: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
   },

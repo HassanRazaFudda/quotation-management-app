@@ -29,6 +29,8 @@ const hotelSchema = z.object({
   allowedCategories: z.array(objectId).default([]),
   allowedMealIds: z.array(objectId).default([]),
   allowedMealNoteIds: z.array(objectId).default([]),
+  /** Date blocks this hotel is offered in; empty means every block its location allows. */
+  allowedBlockIds: z.array(objectId).default([]),
   sortOrder: z.number().default(0),
   active: z.boolean().default(true),
 });

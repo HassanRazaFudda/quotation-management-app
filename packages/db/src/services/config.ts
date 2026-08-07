@@ -130,6 +130,7 @@ function toAccommodation(doc: Record<string, any>): Accommodation {
     allowedCategories: (doc.allowedCategories ?? []).map(id),
     allowedMealIds: (doc.allowedMealIds ?? []).map(id),
     allowedMealNoteIds: (doc.allowedMealNoteIds ?? []).map(id),
+    allowedBlockIds: (doc.allowedBlockIds ?? []).map(id),
     sortOrder: doc.sortOrder ?? 0,
     active: doc.active ?? true,
   };
@@ -251,9 +252,13 @@ export function findConfigProblems(bundle: ConfigBundle): ConfigProblem[] {
   for (const accommodation of bundle.accommodations) {
     const location = locationById.get(accommodation.locationId);
 
-    // A rate is needed for every block this accommodation can actually be used in.
-    const usableBlocks = bundle.blocks.filter((block) =>
-      block.allowedLocationIds.includes(accommodation.locationId),
+    // A rate is needed for every block this accommodation can actually be used
+    // in - its location's blocks, narrowed by its own allowedBlockIds if set.
+    const narrowedBlockIds = accommodation.allowedBlockIds ?? [];
+    const usableBlocks = bundle.blocks.filter(
+      (block) =>
+        block.allowedLocationIds.includes(accommodation.locationId) &&
+        (narrowedBlockIds.length === 0 || narrowedBlockIds.includes(block.id)),
     );
 
     for (const block of usableBlocks) {

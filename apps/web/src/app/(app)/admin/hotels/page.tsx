@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
 
+import { LocationTabs, useActiveLocation } from "@/components/admin/location-tabs";
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
 import { Button, Card, Field, Input, Modal, Select, Spinner } from "@/components/ui";
@@ -40,6 +41,7 @@ const FALLBACK_ROOM_SIZES: RoomSize[] = FALLBACK_CODES.map((code, i) => ({
 export default function HotelsPage() {
   const config = useConfigStore();
   const [showAdd, setShowAdd] = useState(false);
+  const { activeLocationId, setActiveLocationId } = useActiveLocation(config.locations);
 
   useEffect(() => {
     config.load();
@@ -53,6 +55,7 @@ export default function HotelsPage() {
       })),
     [config.locations, config.accommodations],
   );
+  const active = grouped.find((g) => g.location.id === activeLocationId);
 
   async function move(locationId: string, hotels: Accommodation[], index: number, delta: number) {
     const target = index + delta;
@@ -81,28 +84,43 @@ export default function HotelsPage() {
         }
       />
       <div className="space-y-6 p-5 lg:p-8">
-        {showAdd && <AddHotel onDone={() => { setShowAdd(false); config.load(undefined, true); }} />}
+        <LocationTabs
+          locations={config.locations}
+          value={activeLocationId}
+          onChange={setActiveLocationId}
+        />
 
-        {grouped.map(({ location, hotels }) => (
-          <div key={location.id}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">{location.name}</h2>
-            <Card className="divide-y divide-line">
-              {hotels.map((hotel, index) => (
-                <HotelRow
-                  key={hotel.id}
-                  hotel={hotel}
-                  isMina={location.type === "mina"}
-                  onSaved={() => config.load(undefined, true)}
-                  onMoveUp={index > 0 ? () => move(location.id, hotels, index, -1) : undefined}
-                  onMoveDown={
-                    index < hotels.length - 1 ? () => move(location.id, hotels, index, 1) : undefined
-                  }
-                />
-              ))}
-              {hotels.length === 0 && <p className="px-5 py-3 text-sm text-muted">No hotels here yet.</p>}
-            </Card>
-          </div>
-        ))}
+        {showAdd && (
+          <AddHotel
+            defaultLocationId={activeLocationId}
+            onDone={() => {
+              setShowAdd(false);
+              config.load(undefined, true);
+            }}
+          />
+        )}
+
+        {active && (
+          <Card className="divide-y divide-line">
+            {active.hotels.map((hotel, index) => (
+              <HotelRow
+                key={hotel.id}
+                hotel={hotel}
+                isMina={active.location.type === "mina"}
+                onSaved={() => config.load(undefined, true)}
+                onMoveUp={index > 0 ? () => move(active.location.id, active.hotels, index, -1) : undefined}
+                onMoveDown={
+                  index < active.hotels.length - 1
+                    ? () => move(active.location.id, active.hotels, index, 1)
+                    : undefined
+                }
+              />
+            ))}
+            {active.hotels.length === 0 && (
+              <p className="px-5 py-3 text-sm text-muted">No hotels here yet.</p>
+            )}
+          </Card>
+        )}
       </div>
     </>
   );
@@ -140,6 +158,10 @@ function HotelRow({
     hotel.allowedSharingWords?.length ? hotel.allowedSharingWords : ["Quad", "Quint", "Hexa"],
   );
   const [categoryIds, setCategoryIds] = useState<string[]>(hotel.allowedCategories ?? []);
+  const [blockIds, setBlockIds] = useState<string[]>(hotel.allowedBlockIds ?? []);
+  // Only the blocks this hotel's own location already allows are worth
+  // offering here - narrowing further than that.
+  const locationBlocks = config.blocks.filter((b) => b.allowedLocationIds.includes(hotel.locationId));
   // A Mina option is either a tent of some tier, or one that books no tent.
   const [minaTier, setMinaTier] = useState<MinaTier | "">(hotel.minaTier ?? "");
   const [withoutMina, setWithoutMina] = useState<boolean>(hotel.withoutMina ?? false);
@@ -190,6 +212,7 @@ function HotelRow({
         allowedCategories: categoryIds,
         allowedMealIds: mealIds,
         allowedMealNoteIds: noteIds,
+        allowedBlockIds: blockIds,
         sortOrder: hotel.sortOrder,
         active: true,
       });
@@ -324,6 +347,16 @@ function HotelRow({
 
       <ChipRow label="Meals" items={config.meals} selected={mealIds} onToggle={(id) => toggle(mealIds, setMealIds, id)} />
       <ChipRow label="Meal notes" items={config.mealNotes} selected={noteIds} onToggle={(id) => toggle(noteIds, setNoteIds, id)} />
+
+      {/* Which date blocks this hotel is actually offered in. None ticked =
+          every block its location allows - unchanged from before this existed. */}
+      <ChipRow
+        label="Date blocks"
+        items={locationBlocks.map((b) => ({ id: b.id, label: b.label }))}
+        selected={blockIds}
+        onToggle={(id) => toggle(blockIds, setBlockIds, id)}
+        hint={blockIds.length === 0 ? "none ticked - available in every block this location allows" : undefined}
+      />
     </div>
   );
 }
@@ -364,9 +397,16 @@ function ChipRow({
   );
 }
 
-function AddHotel({ onDone }: { onDone: () => void }) {
+function AddHotel({
+  defaultLocationId,
+  onDone,
+}: {
+  /** Pre-fills from the active tab, but stays editable. */
+  defaultLocationId: string;
+  onDone: () => void;
+}) {
   const config = useConfigStore();
-  const [locationId, setLocationId] = useState("");
+  const [locationId, setLocationId] = useState(defaultLocationId);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
 
