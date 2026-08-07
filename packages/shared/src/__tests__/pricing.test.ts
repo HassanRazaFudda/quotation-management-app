@@ -422,6 +422,23 @@ describe("a mix of rooms in one stay", () => {
     expect(calculateTotals({ stays: [priced], pax: 5 }).finalTotal).toBe(650_000 / 5); // 130,000
   });
 
+  it("prices a whole stay without a bed too, not just one guest inside a mix", () => {
+    // Same hotel/block as above, but the whole stay (no room mix) is marked
+    // without-bed - this must price at the no-bed rate, not fall back to
+    // Sharing just because roomType/occupancy are unset for this choice.
+    const priced = priceStay(
+      {
+        blockId: "blk-pre-makkah",
+        locationId: "loc-makkah",
+        accommodationId: "acc-swiss",
+        withoutBed: true,
+      },
+      context,
+      1,
+    );
+    expect(priced.groupTotal).toBe(50_000);
+  });
+
   it("refuses a without-bed guest when the hotel has no no-bed rate", () => {
     // Sofitel in this block has rates but no withoutBed figure.
     expect(() =>

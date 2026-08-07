@@ -157,6 +157,7 @@ function stayRooms(stay: StayInput, pax: number): RoomEntry[] {
       roomType: stay.roomType ?? null,
       occupancy: stay.occupancy ?? null,
       sharingWord: stay.sharingWord ?? null,
+      withoutBed: stay.withoutBed ?? null,
       headcount: Math.max(1, Math.round(pax)),
     },
   ];
