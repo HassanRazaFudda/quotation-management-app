@@ -230,6 +230,23 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
       list.includes(label) ? list.filter((l) => l !== label) : [...list, label],
     );
 
+  // Aziziya's Triple/Double bed upgrades are two add-on rows under the hood -
+  // each only ever prices into its own tier - but they read as one choice
+  // ("include the Separate Sharing upgrade or not"), so they share one
+  // checkbox that includes or excludes both together.
+  const tierTaggedAddOns = addOns.filter((a) => a.appliesToTier);
+  const plainAddOns = addOns.filter((a) => !a.appliesToTier);
+  const separateSharingIncluded =
+    tierTaggedAddOns.length > 0 && tierTaggedAddOns.every((a) => includedAddOns.includes(a.label));
+  const toggleSeparateSharing = () => {
+    const labels = tierTaggedAddOns.map((a) => a.label);
+    setIncludedAddOns((list) =>
+      separateSharingIncluded
+        ? list.filter((l) => !labels.includes(l))
+        : [...new Set([...list, ...labels])],
+    );
+  };
+
   async function print() {
     if (!pkg) return;
     setPrinting(true);
@@ -325,10 +342,26 @@ function PrintModal({ pkg, onClose }: { pkg: Package | null; onClose: () => void
         {addOns.length > 0 && (
           <Field
             label="Optional extra services to include"
-            hint="Every extra prints as available either way; checking one adds its amount to all the printed prices."
+            hint="Not checked, an extra prints as available on the brochure; checked, its amount is folded straight into the price instead and it stops printing separately."
           >
             <div className="space-y-1.5">
-              {addOns.map((addOn) => (
+              {tierTaggedAddOns.length > 0 && (
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={separateSharingIncluded}
+                    onChange={toggleSeparateSharing}
+                    className="size-4 accent-brand-500"
+                  />
+                  Separate Sharing
+                  <span className="text-muted">
+                    {tierTaggedAddOns
+                      .map((a) => `${a.appliesToTier}: +${formatMoney(a.amount, currency)}`)
+                      .join(" · ")}
+                  </span>
+                </label>
+              )}
+              {plainAddOns.map((addOn) => (
                 <label key={addOn.label} className="flex items-center gap-2 text-sm text-ink">
                   <input
                     type="checkbox"

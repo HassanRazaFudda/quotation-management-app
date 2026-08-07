@@ -95,10 +95,17 @@ const packageSchema = new Schema(
     /**
      * Per-room-type surcharges printed under the itinerary (e.g. an Aziziya
      * triple-bed upgrade) - a package-only extra; a quotation never carries
-     * them. Typed in directly in the package's own currency.
+     * them. Typed in directly in the package's own currency. `appliesToTier`
+     * ties it to just Triple or Double instead of every tier - Aziziya's
+     * Separate room upgrade over the Sharing rate already in every tier.
      */
     addOns: {
-      type: [new Schema({ label: String, amount: Number }, { _id: false })],
+      type: [
+        new Schema(
+          { label: String, amount: Number, appliesToTier: { type: String, enum: ["Triple", "Double", null], default: null } },
+          { _id: false },
+        ),
+      ],
       default: [],
     },
 

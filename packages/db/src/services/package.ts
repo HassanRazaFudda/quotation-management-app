@@ -169,6 +169,7 @@ function toDocument(input: PackageInput) {
       .map((addOn) => ({
         label: (addOn.label ?? "").trim(),
         amount: Math.max(0, roundToDecimals(addOn.amount ?? 0, 2)),
+        appliesToTier: addOn.appliesToTier ?? null,
       }))
       .filter((addOn) => addOn.label.length > 0),
   };
@@ -251,8 +252,8 @@ export interface PackageTierPrice {
 /**
  * An add-on as it prints: still shows its own charge, but also whether this
  * particular print includes it - that's what tells the brochure to fold its
- * amount into the tier totals below, and to mark it apart from the add-ons
- * that are merely on offer.
+ * amount into the tier totals below, instead of printing it as an available
+ * extra.
  */
 export interface PackagePrintAddOn extends PackageAddOn {
   included: boolean;
@@ -261,17 +262,23 @@ export interface PackagePrintAddOn extends PackageAddOn {
 /**
  * Price every offered tier and resolve the add-on list, shared between a
  * saved package's real brochure and a live preview of one still being
- * edited. Every add-on the package has is always returned - the brochure
- * lists them all as available extras - but only the ones named in
- * `includedAddOns` are marked `included`, and only their amount is folded
- * into each tier's total (the same amount on every tier, since an add-on has
- * one price, not one per room size).
+ * edited.
+ *
+ * An add-on not named in `includedAddOns` prints as an available extra and
+ * never touches a tier total. One that is included stops printing as a
+ * separate line - its amount is already inside the tier price it applies to,
+ * so showing it again would look like a double charge - and folds into every
+ * tier it applies to: all three, unless it is tied to just Triple or Double
+ * (Aziziya's Separate room upgrade over the Sharing rate already baked into
+ * every tier), in which case it only ever moves that one tier.
  */
 async function priceTiersAndAddOns(params: {
   season: string;
   stays: StayInput[];
   tierPricing: TierPricing | null | undefined;
-  addOns: Array<{ label?: string | null; amount?: number | null }> | undefined;
+  addOns:
+    | Array<{ label?: string | null; amount?: number | null; appliesToTier?: string | null }>
+    | undefined;
   includedAddOns: string[] | undefined;
   flightTotal: number;
   exchangeRate: number;
@@ -296,25 +303,34 @@ async function priceTiersAndAddOns(params: {
   const auto = new Map(priceTiers(params.stays, pricing).map((tier) => [tier.occupancy, tier.total]));
 
   const includedLabels = params.includedAddOns ?? [];
-  const addOnsIncludedTotal = roundToDecimals(
-    (params.addOns ?? [])
-      .filter((addOn) => includedLabels.includes(addOn.label ?? ""))
-      .reduce((sum, addOn) => sum + (addOn.amount ?? 0), 0),
-    params.decimals,
-  );
+  const includedFor = (occupancy: string) =>
+    roundToDecimals(
+      (params.addOns ?? [])
+        .filter(
+          (addOn) =>
+            includedLabels.includes(addOn.label ?? "") &&
+            (!addOn.appliesToTier || addOn.appliesToTier === occupancy),
+        )
+        .reduce((sum, addOn) => sum + (addOn.amount ?? 0), 0),
+      params.decimals,
+    );
 
   const tierPrices = offeredTiers(params.tierPricing as TierPricing).map(({ occupancy, setting }) => {
     const convertedAuto = toCurrency((auto.get(occupancy) ?? 0) + params.flightTotal);
     const final = finalTierTotal(convertedAuto, setting, params.decimals);
     return {
       label: occupancy,
-      total: Math.max(0, roundToDecimals(final + addOnsIncludedTotal - params.discount, params.decimals)),
+      total: Math.max(
+        0,
+        roundToDecimals(final + includedFor(occupancy) - params.discount, params.decimals),
+      ),
     };
   });
 
   const addOns: PackagePrintAddOn[] = (params.addOns ?? []).map((addOn) => ({
     label: addOn.label ?? "",
     amount: roundToDecimals(addOn.amount ?? 0, params.decimals),
+    appliesToTier: (addOn.appliesToTier as "Triple" | "Double" | null) ?? null,
     included: includedLabels.includes(addOn.label ?? ""),
   }));
 

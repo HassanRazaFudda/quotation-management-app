@@ -141,10 +141,18 @@ export const packageSchema = z.object({
   tierPricing: tierPricingSchema.optional(),
   /**
    * Per-room-type surcharges printed under the itinerary - typed in directly
-   * in the package's own currency, like the tier controls above.
+   * in the package's own currency, like the tier controls above. One tied to
+   * Triple or Double only ever folds into that tier's price; absent means
+   * every tier.
    */
   addOns: z
-    .array(z.object({ label: z.string().default(""), amount: z.number().min(0).default(0) }))
+    .array(
+      z.object({
+        label: z.string().default(""),
+        amount: z.number().min(0).default(0),
+        appliesToTier: z.enum(["Triple", "Double"]).nullish(),
+      }),
+    )
     .default([]),
 });
 

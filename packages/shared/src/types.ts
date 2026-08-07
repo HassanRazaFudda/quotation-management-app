@@ -470,13 +470,19 @@ export interface TierPricing {
 /**
  * A per-room-type surcharge printed under a package's itinerary, e.g. "Aziziya
  * Triple Bed - PKR 200,000 /- per pax". Manually entered, like the tier prices:
- * the amount is a real charge the customer sees, not an internal figure. One
- * amount, not one per tier - the same surcharge applies whichever room size
- * the package itself prints.
+ * the amount is a real charge the customer sees, not an internal figure.
+ *
+ * Included at print time, it stops being an "available extra" and folds into
+ * the price instead - into every tier, unless it is tied to one. `Triple` or
+ * `Double` means it only ever prices into that one tier (Aziziya's Sharing vs.
+ * Separate room, say - Sharing already sets the Quad/Triple/Double baseline,
+ * so nothing needs to fold into Quad); absent means it applies to all three,
+ * the ordinary case for anything unrelated to room size.
  */
 export interface PackageAddOn {
   label: string;
   amount: number;
+  appliesToTier?: "Triple" | "Double" | null;
 }
 
 // -------------------------------------------------------------- currency

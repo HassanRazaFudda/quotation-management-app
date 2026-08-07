@@ -1,6 +1,6 @@
 /** Shapes returned by the API, mirrored for the client. */
 
-import type { ConfigBundle, Currency, SharingWord, StyledLine } from "@junaidi/shared";
+import type { ConfigBundle, Currency, PackageAddOn, SharingWord, StyledLine } from "@junaidi/shared";
 
 export type { Currency, StyledLine };
 
@@ -234,7 +234,7 @@ export interface Package {
     Double: { manualTotal: number | null; discount: number } | null;
   };
   /** Per-room-type surcharges printed under the itinerary. */
-  addOns?: Array<{ label: string; amount: number }>;
+  addOns?: PackageAddOn[];
   createdAt: string;
   updatedAt: string;
 }

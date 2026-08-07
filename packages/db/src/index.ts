@@ -24,3 +24,7 @@ export {
   fixPackageTitles,
   type FixPackageTitlesResult,
 } from "./migrations/fix-package-titles";
+export {
+  tagAziziyaAddOns,
+  type TagAziziyaAddOnsResult,
+} from "./migrations/tag-aziziya-addons";

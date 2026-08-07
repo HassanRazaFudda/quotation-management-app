@@ -170,18 +170,17 @@ function priceSection(view: QuotationPdfView): string {
 /**
  * Per-room-type surcharges, in a band under the itinerary - "Aziziya Triple Bed
  * +PKR 200,000 /-". A package-only extra; empty for a quotation, so nothing
- * prints. Every add-on the package has is listed as an available extra; the
- * ones this print includes are priced into the tier totals below and stand
- * out here as a solid chip rather than a plain outlined one.
+ * prints. Only the ones this print does NOT include show here - one that is
+ * included is already inside the tier price it applies to, so showing it
+ * again here would read as a second charge.
  */
 function addOnsBand(view: QuotationPdfView): string {
   if (view.addOns.length === 0) return "";
   const items = view.addOns
-    .map((addOn) => {
-      const cls = addOn.included ? "addon-item included" : "addon-item optional";
-      const note = addOn.included ? "" : ` <span class="addon-note">(optional)</span>`;
-      return `<span class="${cls}"><strong>${escapeHtml(addOn.label)}</strong> ${escapeHtml(addOn.amountFormatted)}${note}</span>`;
-    })
+    .map(
+      (addOn) =>
+        `<span class="addon-item"><strong>${escapeHtml(addOn.label)}</strong> <strong class="addon-price">${escapeHtml(addOn.amountFormatted)}</strong></span>`,
+    )
     .join("");
   return `<div class="addons-band">${items}</div>`;
 }
@@ -439,15 +438,11 @@ ${FONT_FACE_CSS}
         .tier-label { display: block; color: #111827; font-weight: bold; font-size: 10.5pt; letter-spacing: 1px; text-transform: uppercase; }
         .tier-price { display: block; margin-top: 5px; color: #9f0b1f; font-weight: bold; font-size: 14pt; }
 
-        /* Per-room-type surcharges under the itinerary. Included ones (priced
-           into the totals below) print as a solid red chip; the rest are
-           merely on offer, so they print outlined instead. */
-        .addons-band { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; margin-top: 10px; }
-        .addon-item { font-size: 9.5pt; letter-spacing: 0.2px; padding: 6px 14px; border-radius: 3px; }
+        /* Per-room-type surcharges, a red band under the itinerary. */
+        .addons-band { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; margin-top: 10px; padding: 9px 14px; background-color: #9f0b1f; color: #ffffff; border-radius: 3px; text-align: center; }
+        .addon-item { font-size: 9.5pt; letter-spacing: 0.2px; }
         .addon-item strong { font-weight: bold; }
-        .addon-item.included { background-color: #9f0b1f; color: #ffffff; }
-        .addon-item.optional { background-color: #ffffff; color: #9f0b1f; border: 1px dashed #9f0b1f; }
-        .addon-note { font-weight: normal; opacity: 0.75; }
+        .addon-price { font-size: 12pt; margin-left: 2px; }
 
         /* -------------------------------------------------------- page 2 */
         .footer-cols { display: flex; width: 100%; gap: 12px; margin-bottom: 10px; align-items: stretch; }

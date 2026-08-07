@@ -272,13 +272,14 @@ export interface TierAutoPrice {
 /**
  * Price one itinerary at each occupancy tier.
  *
- * A package is quoted as up to three prices for identical rooms and dates.
- * Anything priced by room size - a Makkah/Madinah hotel's shared vs. private
- * room, or Aziziya's own Sharing vs. Separate rate - moves between Quad,
- * Triple and Double; the stay's own saved room choice is ignored, since a
- * package prices all three sizes regardless of what one one is picked. Only
- * Mina (a flat per-tent figure with no room-size concept) contributes the
- * same amount to every tier.
+ * A package is quoted as up to three prices for identical rooms and dates: the
+ * only thing that moves between Quad, Triple and Double is the per-person rate
+ * of the Makkah / Madinah hotels. Aziziya and Mina do not vary by tier here -
+ * Aziziya always prices at its Sharing rate, whatever the stay's own saved
+ * room choice, and its Separate (private-room) upgrade is never folded in
+ * automatically. That upgrade is priced through the package's own add-ons
+ * instead (`PackageAddOn.appliesToTier`), included only when the print
+ * explicitly asks for it - see `priceTiersAndAddOns` in `@junaidi/db`.
  *
  * This is calculation only; whether a tier is offered, overridden or discounted
  * is decided above, in `finalTierTotal`.
@@ -296,8 +297,9 @@ export function priceTiers(stays: StayInput[], context: PricingContext): TierAut
       }
 
       if (rate.model === "byOccupancy") {
-        // Tier pricing's "Quad" has always meant the hotel's shared room,
-        // which is now priced under "Sharing".
+        // A hotel takes the tier's occupancy; the stay's own choice is
+        // ignored. Tier pricing's "Quad" has always meant the hotel's shared
+        // room, which is now priced under "Sharing".
         const ratesField = occupancy === "Quad" ? "Sharing" : occupancy;
         const figure = rate.rates[ratesField] ?? 0;
         if (figure <= 0) complete = false;
@@ -306,11 +308,12 @@ export function priceTiers(stays: StayInput[], context: PricingContext): TierAut
       }
 
       if (rate.model === "sharingOrSeparate") {
-        // Aziziya's own Sharing rate stands in for "Quad" - a shared room, the
-        // same idea as a hotel's - and its Separate rate for Triple/Double.
-        const figure = occupancy === "Quad" ? rate.sharing : rate.separate[occupancy];
-        if (!figure || figure <= 0) complete = false;
-        total += figure ?? 0;
+        // Aziziya always prices at its Sharing rate for the auto tier total,
+        // on every tier alike - not the stay's own saved room choice, and
+        // never the Separate rate automatically.
+        const figure = rate.sharing ?? 0;
+        if (figure <= 0) complete = false;
+        total += figure;
         continue;
       }
 

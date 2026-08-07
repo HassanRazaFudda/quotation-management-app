@@ -22,8 +22,10 @@ import {
   suggestHajjBlock,
   TIER_OCCUPANCIES,
   validateItinerary,
+  type Currency,
   type FlightSelection,
   type Issue,
+  type PackageAddOn,
   type StayInput,
   type TierOccupancy,
 } from "@junaidi/shared";
@@ -79,7 +81,7 @@ export interface BuilderState {
   // Package-only three-price pricing. Ignored entirely in quotation mode. A
   // package always prints all three tiers - there is no single-price mode.
   tiers: Record<TierOccupancy, TierRow>;
-  addOns: Array<{ label: string; amount: number }>;
+  addOns: PackageAddOn[];
 
   set: <K extends keyof BuilderState>(key: K, value: BuilderState[K]) => void;
   addStay: (stay?: Partial<StayInput>) => void;
@@ -89,7 +91,7 @@ export interface BuilderState {
   setFlight: (patch: Partial<FlightSelection>) => void;
   updateTier: (occupancy: TierOccupancy, patch: Partial<TierRow>) => void;
   addAddOn: () => void;
-  updateAddOn: (index: number, patch: Partial<{ label: string; amount: number }>) => void;
+  updateAddOn: (index: number, patch: Partial<PackageAddOn>) => void;
   removeAddOn: (index: number) => void;
   reset: (initial?: Partial<BuilderState>) => void;
 }
@@ -137,6 +139,64 @@ const emptyTiers = (): Record<TierOccupancy, TierRow> =>
   Object.fromEntries(
     TIER_OCCUPANCIES.map((occ) => [occ, { offered: true, manualTotal: null, discount: 0 }]),
   ) as Record<TierOccupancy, TierRow>;
+
+/** PKR per unit for a currency code; PKR itself is always 1 and never stored as a row. */
+function currencyRate(code: string, currencies: Currency[]): number {
+  if (code === "PKR") return 1;
+  return currencies.find((c) => c.code === code)?.rate ?? 1;
+}
+function currencyDecimals(code: string, currencies: Currency[]): number {
+  if (code === "PKR") return 0;
+  return currencies.find((c) => c.code === code)?.decimals ?? 0;
+}
+
+/**
+ * Re-express every hand-typed money field in a new currency when the admin
+ * switches it, so the real value survives the switch - the same PKR 200,000
+ * relabelled "USD 200,000" without converting would be a hundred times too
+ * much. The auto-calculated tier total needs none of this: nothing about it
+ * is stored, so it re-converts itself live from PKR on every render anyway.
+ *
+ * Round-off is the exception - it nudges a total to a clean number in one
+ * specific currency's units, so a figure meaningful in the old currency is
+ * not meaningful, converted or not, in the new one. It resets instead.
+ */
+export function convertCurrencyFields(
+  state: Pick<BuilderState, "discount" | "manualTotal" | "tiers" | "addOns">,
+  fromCode: string,
+  toCode: string,
+  currencies: Currency[],
+): Pick<BuilderState, "discount" | "manualTotal" | "roundOff" | "tiers" | "addOns"> {
+  if (fromCode === toCode) {
+    return { ...state, roundOff: 0 };
+  }
+  const fromRate = currencyRate(fromCode, currencies);
+  const toRate = currencyRate(toCode, currencies);
+  const decimals = currencyDecimals(toCode, currencies);
+  const convert = (value: number) => roundToDecimals((value * fromRate) / toRate, decimals);
+
+  const tiers = Object.fromEntries(
+    TIER_OCCUPANCIES.map((occ) => {
+      const row = state.tiers[occ];
+      return [
+        occ,
+        {
+          ...row,
+          manualTotal: row.manualTotal === null ? null : convert(row.manualTotal),
+          discount: convert(row.discount),
+        },
+      ];
+    }),
+  ) as Record<TierOccupancy, TierRow>;
+
+  return {
+    discount: convert(state.discount),
+    manualTotal: state.manualTotal === null ? null : convert(state.manualTotal),
+    roundOff: 0,
+    tiers,
+    addOns: state.addOns.map((addOn) => ({ ...addOn, amount: convert(addOn.amount) })),
+  };
+}
 
 const EMPTY: BuilderData = {
   quotationId: null,
@@ -501,7 +561,11 @@ export function toPackagePayload(state: BuilderState, season: string, name: stri
       Double: tierDoc(state.tiers.Double),
     },
     addOns: state.addOns
-      .map((addOn) => ({ label: addOn.label.trim(), amount: Math.max(0, roundToDecimals(addOn.amount, 2)) }))
+      .map((addOn) => ({
+        label: addOn.label.trim(),
+        amount: Math.max(0, roundToDecimals(addOn.amount, 2)),
+        appliesToTier: addOn.appliesToTier ?? null,
+      }))
       .filter((addOn) => addOn.label.length > 0),
   };
 }

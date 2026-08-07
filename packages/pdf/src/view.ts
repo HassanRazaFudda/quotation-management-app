@@ -102,8 +102,6 @@ export interface PdfAddOn {
   label: string;
   /** "+PKR 200,000 /-" — already formatted. */
   amountFormatted: string;
-  /** Priced into the tier totals and marked apart from the merely-on-offer ones. */
-  included: boolean;
 }
 
 export interface QuotationPdfView {
@@ -170,7 +168,7 @@ export interface PdfViewInput {
   /** A package's tier prices, each already final and formatted. Omit for a quotation. */
   tierPrices?: PdfTierPrice[];
   /** A package's add-on surcharges, each already formatted. Omit for a quotation. */
-  addOns?: Array<{ label: string; amountFormatted: string; included?: boolean }>;
+  addOns?: PdfAddOn[];
   travel?: Partial<PdfTravel>;
   stays: PdfStayRow[];
   qurbaniIncluded?: boolean;
@@ -212,11 +210,7 @@ export function buildPdfView(input: PdfViewInput): QuotationPdfView {
       priceFormatted: tier.priceFormatted.trim(),
     })),
     addOns: (input.addOns ?? [])
-      .map((addOn) => ({
-        label: addOn.label.trim(),
-        amountFormatted: addOn.amountFormatted.trim(),
-        included: addOn.included ?? false,
-      }))
+      .map((addOn) => ({ label: addOn.label.trim(), amountFormatted: addOn.amountFormatted.trim() }))
       .filter((addOn) => addOn.label.length > 0),
 
     travel: {

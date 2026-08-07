@@ -101,8 +101,8 @@ describe("a package brochure", () => {
         { label: "Double", priceFormatted: "PKR 3,900,000 /-" },
       ],
       addOns: [
-        { label: "Aziziya Triple Bed", amountFormatted: "+PKR 200,000 /-", included: true },
-        { label: "Aziziya Double Bed", amountFormatted: "+PKR 400,000 /-", included: false },
+        { label: "Aziziya Triple Bed", amountFormatted: "+PKR 200,000 /-" },
+        { label: "Aziziya Double Bed", amountFormatted: "+PKR 400,000 /-" },
       ],
     }),
   );
@@ -120,12 +120,6 @@ describe("a package brochure", () => {
     expect(brochure).toContain("+PKR 200,000 /-");
     expect(brochure).toContain("Aziziya Double Bed");
     expect(brochure).toContain("+PKR 400,000 /-");
-  });
-
-  it("marks an included add-on apart from one merely on offer", () => {
-    expect(brochure).toContain('class="addon-item included"');
-    expect(brochure).toContain('class="addon-item optional"');
-    expect(brochure).toContain("(optional)");
   });
 
   it("drops the quotation-only rows when there is no customer or reference", () => {

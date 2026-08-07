@@ -9,6 +9,7 @@ import {
   sharingWordsFor,
   TIER_OCCUPANCIES,
   type FlightOption,
+  type PackageAddOn,
   type ResolvedBlock,
   type TierOccupancy,
 } from "@junaidi/shared";
@@ -34,6 +35,7 @@ import type { Package, Quotation } from "@/lib/types";
 import {
   autoPackageTitle,
   computeLocal,
+  convertCurrencyFields,
   toApiPayload,
   toPackagePayload,
   useBuilderStore,
@@ -73,12 +75,14 @@ function restoreFlight(saved: Quotation["flight"] | undefined, flights: FlightOp
 
 /**
  * A new package starts with the two Aziziya bed upgrades pre-added, since every
- * package quotes them. They are ordinary add-on rows - the admin can reprice,
- * remove or add to them.
+ * package quotes them. Tied to their own tier - Triple's amount only ever
+ * prices into the Triple total, Double's into Double - since Sharing already
+ * sets the Quad/Triple/Double baseline these are upgrading from. Ordinary rows
+ * otherwise: the admin can reprice, remove or add more.
  */
-const DEFAULT_PACKAGE_ADDONS = [
-  { label: "Aziziya Triple Bed (per pax)", amount: 200000 },
-  { label: "Aziziya Double Bed (per pax)", amount: 400000 },
+const DEFAULT_PACKAGE_ADDONS: PackageAddOn[] = [
+  { label: "Aziziya Triple Bed (per pax)", amount: 200000, appliesToTier: "Triple" },
+  { label: "Aziziya Double Bed (per pax)", amount: 400000, appliesToTier: "Double" },
 ];
 
 /** A package's stored tier pricing, mapped into the builder's per-tier rows. */
@@ -798,13 +802,28 @@ export function Builder({
                       })),
                   ]}
                   value={builder.currencyCode}
-                  onChange={(e) => builder.set("currencyCode", e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    const converted = convertCurrencyFields(
+                      builder,
+                      builder.currencyCode,
+                      next,
+                      config.currencies,
+                    );
+                    builder.set("currencyCode", next);
+                    builder.set("discount", converted.discount);
+                    builder.set("manualTotal", converted.manualTotal);
+                    builder.set("roundOff", converted.roundOff);
+                    builder.set("tiers", converted.tiers);
+                    builder.set("addOns", converted.addOns);
+                  }}
                 />
               </Field>
               {asPackage && result.currency.code !== "PKR" && (
                 <p className="-mt-2 text-xs text-muted">
-                  Only the calculated hotel total converts from PKR automatically - tier prices,
-                  add-ons and the print discount are typed in directly in {result.currency.code}.
+                  Only the calculated hotel total converts from PKR automatically - everything
+                  else (tier prices, add-ons, the print discount) is converted once, the moment
+                  you switch currency here, then typed and kept directly in {result.currency.code}.
                 </p>
               )}
 
@@ -977,7 +996,7 @@ export function Builder({
             <Card>
               <CardHeader
                 title="Optional Extra Services"
-                subtitle={`Priced in ${builder.currencyCode}, printed in a band under the itinerary`}
+                subtitle={`Priced in ${builder.currencyCode}. Not included at print time, it shows as an available extra under the itinerary; included, its amount is folded straight into the tier(s) it applies to instead.`}
               />
               <div className="space-y-3 p-5">
                 {builder.addOns.length === 0 && (
@@ -1003,6 +1022,20 @@ export function Builder({
                       onChange={(e) =>
                         builder.updateAddOn(i, {
                           amount: e.target.value === "" ? 0 : Math.max(0, Number(e.target.value)),
+                        })
+                      }
+                    />
+                    <Select
+                      className="w-36"
+                      options={[
+                        { value: "", label: "All tiers" },
+                        { value: "Triple", label: "Triple only" },
+                        { value: "Double", label: "Double only" },
+                      ]}
+                      value={addOn.appliesToTier ?? ""}
+                      onChange={(e) =>
+                        builder.updateAddOn(i, {
+                          appliesToTier: (e.target.value || null) as "Triple" | "Double" | null,
                         })
                       }
                     />

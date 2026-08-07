@@ -289,7 +289,11 @@ export interface PdfViewOptions {
   asPackage?: boolean;
   /** A package's tier prices, each an already-final figure. */
   tierPrices?: Array<{ label: string; total: number }>;
-  /** A package's per-room-type surcharges - every one it has, on offer or included. */
+  /**
+   * A package's per-room-type surcharges still on offer. One that is included
+   * in this print is already inside the tier price it applies to, so it is
+   * left out here - printing it again would look like a second charge.
+   */
   addOns?: Array<{ label: string; amount: number; included: boolean }>;
   /** Print Junaidi's letterhead and signature. Defaults to on. */
   branding?: boolean;
@@ -327,11 +331,14 @@ export async function toPdfView(
       priceFormatted: formatMoney(tier.total, quotation.currency),
     })),
     // "+PKR 400,000 /-" - a "+" since this is on top of the base room price.
-    addOns: options.addOns?.map((addOn) => ({
-      label: addOn.label,
-      amountFormatted: `+${formatMoney(addOn.amount, quotation.currency)}`,
-      included: addOn.included,
-    })),
+    // Only the ones NOT included print - an included one is already inside
+    // the tier price it applies to.
+    addOns: options.addOns
+      ?.filter((addOn) => !addOn.included)
+      .map((addOn) => ({
+        label: addOn.label,
+        amountFormatted: `+${formatMoney(addOn.amount, quotation.currency)}`,
+      })),
 
     travel: travelDetails(quotation),
 

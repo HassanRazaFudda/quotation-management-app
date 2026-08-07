@@ -161,7 +161,9 @@ describe("resolving a package for its brochure PDF", () => {
 
     // Add-ons carried through, and the itinerary resolved to real names. Not
     // included by default, so it doesn't move the tier totals above.
-    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 400_000, included: false }]);
+    expect(addOns).toEqual([
+      { label: "Aziziya Double Bed", amount: 400_000, appliesToTier: null, included: false },
+    ]);
     expect(doc.stays.length).toBeGreaterThan(0);
     expect(doc.stays[0]!.accommodationName).toBeTruthy();
   });
@@ -242,7 +244,9 @@ describe("a package's own currency", () => {
     expect(doc.exchangeRate).toBe(200);
     // The manual total prints exactly as typed - no PKR conversion applied.
     expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(1_800);
-    expect(addOns).toEqual([{ label: "Aziziya Double Bed", amount: 200, included: false }]);
+    expect(addOns).toEqual([
+      { label: "Aziziya Double Bed", amount: 200, appliesToTier: null, included: false },
+    ]);
   });
 
   it("still converts the auto-calculated figure from real PKR hotel rates", async () => {
@@ -296,8 +300,8 @@ describe("which add-ons print as included", () => {
     const created = await upsertPackage(null, { ...base, name: "No AddOns Selected", addOns });
     const { addOns: printed } = await buildPackagePdfBundle(String(created!._id));
     expect(printed).toEqual([
-      { label: "Aziziya Triple Bed", amount: 200_000, included: false },
-      { label: "Aziziya Double Bed", amount: 400_000, included: false },
+      { label: "Aziziya Triple Bed", amount: 200_000, appliesToTier: null, included: false },
+      { label: "Aziziya Double Bed", amount: 400_000, appliesToTier: null, included: false },
     ]);
   });
 
@@ -307,8 +311,8 @@ describe("which add-ons print as included", () => {
       includedAddOns: ["Aziziya Double Bed"],
     });
     expect(printed).toEqual([
-      { label: "Aziziya Triple Bed", amount: 200_000, included: false },
-      { label: "Aziziya Double Bed", amount: 400_000, included: true },
+      { label: "Aziziya Triple Bed", amount: 200_000, appliesToTier: null, included: false },
+      { label: "Aziziya Double Bed", amount: 400_000, appliesToTier: null, included: true },
     ]);
   });
 
@@ -332,6 +336,37 @@ describe("which add-ons print as included", () => {
     expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_850_000);
     expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_950_000);
   });
+
+  it("folds a tier-tagged add-on into only that one tier, not the others", async () => {
+    const created = await upsertPackage(null, {
+      ...base,
+      name: "Separate Sharing Package",
+      tierPricing: {
+        enabled: true,
+        Quad: { manualTotal: 3_650_000, discount: 0 },
+        Triple: { manualTotal: 3_750_000, discount: 0 },
+        Double: { manualTotal: 3_900_000, discount: 0 },
+      },
+      addOns: [
+        { label: "Aziziya Triple Bed", amount: 200_000, appliesToTier: "Triple" },
+        { label: "Aziziya Double Bed", amount: 400_000, appliesToTier: "Double" },
+      ],
+    });
+
+    const { tierPrices, addOns: printed } = await buildPackagePdfBundle(String(created!._id), {
+      includedAddOns: ["Aziziya Triple Bed", "Aziziya Double Bed"],
+    });
+
+    // Triple only gets its own tagged amount, Double only its own - Quad,
+    // untagged by either, is untouched by both.
+    expect(tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_650_000);
+    expect(tierPrices.find((t) => t.label === "Triple")!.total).toBe(3_950_000);
+    expect(tierPrices.find((t) => t.label === "Double")!.total).toBe(4_300_000);
+    expect(printed).toEqual([
+      { label: "Aziziya Triple Bed", amount: 200_000, appliesToTier: "Triple", included: true },
+      { label: "Aziziya Double Bed", amount: 400_000, appliesToTier: "Double", included: true },
+    ]);
+  });
 });
 
 describe("previewing a package still being built", () => {
@@ -352,7 +387,9 @@ describe("previewing a package still being built", () => {
     // No add-on is pre-selected in a preview - it prints as a plain,
     // undiscounted brochure would.
     expect(preview.tierPrices.find((t) => t.label === "Quad")!.total).toBe(3_650_000);
-    expect(preview.addOns).toEqual([{ label: "Aziziya Triple Bed", amount: 200_000, included: false }]);
+    expect(preview.addOns).toEqual([
+      { label: "Aziziya Triple Bed", amount: 200_000, appliesToTier: null, included: false },
+    ]);
 
     const found = await PackageModel.findOne({ name: "Unsaved Draft" }).lean();
     expect(found).toBeNull();
