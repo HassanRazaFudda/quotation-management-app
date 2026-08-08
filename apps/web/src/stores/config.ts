@@ -13,6 +13,7 @@ import {
   type Meal,
   type MealNote,
   type FlightOption,
+  type MinaTierOption,
   type PackageCategory,
   type Rate,
   type ResolvedBlock,
@@ -41,6 +42,7 @@ interface ConfigState {
   rates: Rate[];
   currencies: Currency[];
   roomSizes: RoomSize[];
+  minaTiers: MinaTierOption[];
   problems: ConfigProblem[];
 
   load: (season?: string, force?: boolean) => Promise<void>;
@@ -63,6 +65,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   rates: [],
   currencies: [],
   roomSizes: [],
+  minaTiers: [],
   problems: [],
 
   load: async (season, force) => {
@@ -87,6 +90,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         rates: data.rates,
         currencies: data.currencies ?? [],
         roomSizes: data.roomSizes ?? [],
+        minaTiers: data.minaTiers ?? [],
         problems: data.problems ?? [],
         loaded: true,
         loading: false,

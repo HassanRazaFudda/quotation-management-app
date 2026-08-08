@@ -292,4 +292,9 @@ describe("minaCategoryLabel", () => {
   it("falls back to the name when there is no tier", () => {
     expect(minaCategoryLabel({ accommodationName: "Special Camp" })).toBe("Special Camp");
   });
+
+  /** A tier is no longer fixed to standard/premium/deluxe - any admin-managed code works. */
+  it("names an admin-added tier the same way as a built-in one", () => {
+    expect(minaCategoryLabel({ minaTier: "economy" })).toBe("Economy");
+  });
 });

@@ -2,11 +2,10 @@
 
 import {
   MINA_TIERS,
-  MINA_TIER_BEDS,
   OCCUPANCIES,
   SHARING_WORD_SIZE,
   type Accommodation,
-  type MinaTier,
+  type MinaTierOption,
   type RoomSize,
 } from "@junaidi/shared";
 import { useEffect, useMemo, useState } from "react";
@@ -15,7 +14,7 @@ import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
 import { LocationTabs, useActiveLocation } from "@/components/admin/location-tabs";
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
-import { Button, Card, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Button, Card, Field, Input, Modal, NumberInput, Select, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import { useConfigStore } from "@/stores/config";
@@ -34,6 +33,15 @@ const FALLBACK_ROOM_SIZES: RoomSize[] = FALLBACK_CODES.map((code, i) => ({
   code,
   label: code,
   sharingGroupSize: SHARING_WORD_SIZE[code] ?? null,
+  sortOrder: i,
+  active: true,
+}));
+
+/** Used only until the admin's Mina Tiers list has rows - the original three. */
+const FALLBACK_MINA_TIERS: MinaTierOption[] = MINA_TIERS.map((code, i) => ({
+  id: code,
+  code,
+  label: code.charAt(0).toUpperCase() + code.slice(1),
   sortOrder: i,
   active: true,
 }));
@@ -144,6 +152,8 @@ function HotelRow({
   // The vocabulary offered in both pickers: the admin's Room Sizes list, or the
   // original three when nothing has been configured there yet.
   const roomSizeOptions = config.roomSizes.length > 0 ? config.roomSizes : FALLBACK_ROOM_SIZES;
+  const minaTierOptions =
+    (config.minaTiers.length > 0 ? config.minaTiers : FALLBACK_MINA_TIERS).filter((t) => t.active);
 
   const [name, setName] = useState(hotel.name);
   const [mealIds, setMealIds] = useState<string[]>(hotel.allowedMealIds);
@@ -163,8 +173,14 @@ function HotelRow({
   // offering here - narrowing further than that.
   const locationBlocks = config.blocks.filter((b) => b.allowedLocationIds.includes(hotel.locationId));
   // A Mina option is either a tent of some tier, or one that books no tent.
-  const [minaTier, setMinaTier] = useState<MinaTier | "">(hotel.minaTier ?? "");
+  const [minaTier, setMinaTier] = useState<string>(hotel.minaTier ?? "");
   const [withoutMina, setWithoutMina] = useState<boolean>(hotel.withoutMina ?? false);
+  // This tent's own real bed count - shown to staff picking a tent, never
+  // printed on the quote itself. 0 means "not set".
+  const [bedsPerTent, setBedsPerTent] = useState<number>(hotel.bedsPerTent ?? 0);
+  // Nothing chosen yet defaults to the first available tier, so what is shown
+  // as selected and what actually saves are always the same thing.
+  const displayedMinaTier = minaTier || minaTierOptions[0]?.code || "";
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -204,8 +220,8 @@ function HotelRow({
         id: hotel.id,
         locationId: hotel.locationId,
         name,
-        minaTier: withoutMina ? null : (minaTier || null),
-        bedsPerTent: hotel.bedsPerTent ?? null,
+        minaTier: withoutMina ? null : (displayedMinaTier || null),
+        bedsPerTent: !withoutMina && bedsPerTent > 0 ? bedsPerTent : null,
         withoutMina,
         allowedOccupancies: occupancies,
         allowedSharingWords: sharingWords,
@@ -274,29 +290,41 @@ function HotelRow({
         </div>
       </Modal>
 
-      {/* A Mina option books a tent (the Maktab category prints on the quote) or
-          books no tent. The tier is only a beds label and is entirely optional -
-          leave it on "Tent" when the bed count is not known. */}
+      {/* A Mina option books a tent (its tier prints on the quote, in place of
+          the Maktab category) or books no tent. The tier comes from the
+          admin-managed Mina Tiers list - add a new one there for a camp that
+          does not genuinely match Standard/Premium/Deluxe, rather than
+          picking the closest of those and printing the wrong thing. */}
       {isMina && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs font-medium text-muted">Mina option:</span>
-          <Select
-            className="w-64"
-            options={[
-              { value: "__tent", label: "Standard" },
-              ...MINA_TIERS.map((tier) => ({
-                value: tier,
-                label: `Tent · ${tier[0]!.toUpperCase()}${tier.slice(1)} · ${MINA_TIER_BEDS[tier]}`,
-              })),
-              { value: "__none", label: "Books no tent (Without Mina)" },
-            ]}
-            value={withoutMina ? "__none" : minaTier || "__tent"}
-            onChange={(e) => {
-              const v = e.target.value;
-              setWithoutMina(v === "__none");
-              setMinaTier(v === "__none" || v === "__tent" ? "" : (v as MinaTier));
-            }}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-xs font-medium text-muted">Mina tier:</span>
+            <Select
+              className="w-56"
+              options={[
+                ...minaTierOptions.map((t) => ({ value: t.code, label: t.label })),
+                { value: "__none", label: "Books no tent (Without Mina)" },
+              ]}
+              value={withoutMina ? "__none" : displayedMinaTier}
+              onChange={(e) => {
+                const v = e.target.value;
+                setWithoutMina(v === "__none");
+                setMinaTier(v === "__none" ? "" : v);
+              }}
+            />
+          </div>
+          {!withoutMina && (
+            <label className="flex items-center gap-1.5 text-xs text-muted">
+              Beds in this tent
+              <NumberInput
+                min={0}
+                value={bedsPerTent}
+                onChange={setBedsPerTent}
+                placeholder="—"
+                className="h-9 w-20"
+              />
+            </label>
+          )}
         </div>
       )}
 

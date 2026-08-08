@@ -16,6 +16,7 @@ import {
   LocationModel,
   MealModel,
   MealNoteModel,
+  MinaTierModel,
   PackageCategoryModel,
   RateModel,
   RoomSizeModel,
@@ -291,4 +292,24 @@ export async function upsertRoomSize(id: string | null, data: Record<string, unk
  */
 export async function deactivateRoomSize(id: string) {
   return RoomSizeModel.findByIdAndUpdate(id, { $set: { active: false } }).lean();
+}
+
+// --- mina tiers ----------------------------------------------------------
+
+export async function upsertMinaTier(id: string | null, data: Record<string, unknown>) {
+  if (id) {
+    return MinaTierModel.findByIdAndUpdate(id, { $set: data }, { returnDocument: "after" }).lean();
+  }
+  return MinaTierModel.create(data);
+}
+
+/**
+ * Soft delete: an accommodation that already had this tier picked keeps the
+ * code on its own `minaTier` field (a plain string, no reference), and a
+ * quotation already printed from it keeps its own frozen copy - so nothing
+ * already saved breaks. It simply stops being offered to a Mina option
+ * configured for the first time.
+ */
+export async function deactivateMinaTier(id: string) {
+  return MinaTierModel.findByIdAndUpdate(id, { $set: { active: false } }).lean();
 }

@@ -28,3 +28,7 @@ export {
   tagAziziyaAddOns,
   type TagAziziyaAddOnsResult,
 } from "./migrations/tag-aziziya-addons";
+export {
+  seedMinaTiers,
+  type SeedMinaTiersResult,
+} from "./migrations/seed-mina-tiers";

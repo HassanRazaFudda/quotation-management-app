@@ -20,6 +20,7 @@ import {
   LocationModel,
   MealModel,
   MealNoteModel,
+  MinaTierModel,
   PackageCategoryModel,
   RateModel,
   RoomSizeModel,
@@ -94,6 +95,16 @@ export const ROOM_SIZES: Array<{ code: string; label: string; sharingGroupSize: 
   { code: "Double", label: "Double", sharingGroupSize: null },
   { code: "Quint", label: "Quint", sharingGroupSize: 5 },
   { code: "Hexa", label: "Hexa", sharingGroupSize: 6 },
+];
+
+/**
+ * The Mina tiers the seeded accommodations below already use. Admin can add,
+ * rename or retire further ones from here; these are just the starting set.
+ */
+export const MINA_TIER_SEED: Array<{ code: string; label: string }> = [
+  { code: "standard", label: "Standard" },
+  { code: "premium", label: "Premium" },
+  { code: "deluxe", label: "Deluxe" },
 ];
 
 // Package-level classifications the customer sees on the quotation. Admin can
@@ -307,6 +318,16 @@ export async function seed(season = DEFAULT_SEASON): Promise<SeedResult> {
     await RoomSizeModel.findOneAndUpdate(
       { season, code: size.code },
       { $set: { season, ...size, sortOrder: index, active: true } },
+      { upsert: true, returnDocument: "after" },
+    );
+  }
+
+  // Mina tiers: Standard/Premium/Deluxe, the ones the seeded Mina
+  // accommodations below already reference by code.
+  for (const [index, tier] of MINA_TIER_SEED.entries()) {
+    await MinaTierModel.findOneAndUpdate(
+      { season, code: tier.code },
+      { $set: { season, ...tier, sortOrder: index, active: true } },
       { upsert: true, returnDocument: "after" },
     );
   }

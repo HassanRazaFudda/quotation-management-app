@@ -18,6 +18,7 @@ import {
   type Location,
   type Meal,
   type MealNote,
+  type MinaTierOption,
   type Rate,
   type RoomSize,
   type ServiceItem,
@@ -32,6 +33,7 @@ import {
   LocationModel,
   MealModel,
   MealNoteModel,
+  MinaTierModel,
   PackageCategoryModel,
   RateModel,
   RoomSizeModel,
@@ -46,7 +48,7 @@ const activeOnly = { active: true } as const;
 export async function getConfigBundle(season: string): Promise<ConfigBundle> {
   const [
     blocks, locations, accommodations, meals, mealNotes,
-    services, categories, rates, calendar, flights, currencies, roomSizes,
+    services, categories, rates, calendar, flights, currencies, roomSizes, minaTiers,
   ] = await Promise.all([
       DateBlockModel.find({ ...activeOnly, season }).sort({ sortOrder: 1 }).lean(),
       LocationModel.find(activeOnly).sort({ sortOrder: 1 }).lean(),
@@ -60,6 +62,7 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
       FlightModel.find({ ...activeOnly, season }).sort({ direction: 1, sortOrder: 1 }).lean(),
       CurrencyModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
       RoomSizeModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
+      MinaTierModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
     ]);
 
   return {
@@ -75,6 +78,7 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
     rates: rates.map(toRate),
     currencies: currencies.map(toCurrency),
     roomSizes: roomSizes.map(toRoomSize),
+    minaTiers: minaTiers.map(toMinaTier),
     calendar: calendar.map(toCalendarEntry),
   };
 }
@@ -97,6 +101,16 @@ function toRoomSize(doc: Record<string, any>): RoomSize {
     code: doc.code,
     label: doc.label || doc.code,
     sharingGroupSize: doc.sharingGroupSize ?? null,
+    sortOrder: doc.sortOrder ?? 0,
+    active: doc.active ?? true,
+  };
+}
+
+function toMinaTier(doc: Record<string, any>): MinaTierOption {
+  return {
+    id: id(doc._id),
+    code: doc.code,
+    label: doc.label || doc.code,
     sortOrder: doc.sortOrder ?? 0,
     active: doc.active ?? true,
   };

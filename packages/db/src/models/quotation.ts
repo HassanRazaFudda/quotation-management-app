@@ -10,7 +10,7 @@
  * no field capable of carrying them.
  */
 
-import { AZIZIYA_ROOM_TYPES, MINA_TIERS } from "@junaidi/shared";
+import { AZIZIYA_ROOM_TYPES } from "@junaidi/shared";
 import mongoose, { Schema, type InferSchemaType, type Model } from "mongoose";
 
 export const QUOTATION_STATUSES = [
@@ -90,7 +90,9 @@ const staySchema = new Schema(
     locationName: { type: String, required: true },
     locationType: { type: String, required: true },
     accommodationName: { type: String, required: true },
-    minaTier: { type: String, enum: [...MINA_TIERS, null], default: null },
+    // A code from the admin-managed MinaTierOption list - free string, not an
+    // enum, matching the room-mix entry's own minaTier below.
+    minaTier: { type: String, default: null },
     /** This Mina option books no tent; the PDF prints its name, not the Maktab. */
     withoutMina: { type: Boolean, default: false },
     bedsPerTent: { type: Number, default: null },

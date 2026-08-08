@@ -9,6 +9,7 @@ import {
   upsertAccommodation,
   upsertCurrency,
   upsertDateBlock,
+  upsertMinaTier,
   upsertRate,
   upsertRoomSize,
 } from "../services/admin";
@@ -1219,5 +1220,49 @@ describe("a hotel narrowed to specific date blocks", () => {
         allowedMealNoteIds: [],
       }),
     ).rejects.toThrow(/does not allow this hotel's location/i);
+  });
+});
+
+describe("a Mina tent with an admin-added tier", () => {
+  it("accepts a tier beyond Standard/Premium/Deluxe, and freezes it onto the quotation", async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const mina = bundle.accommodations.find((a) => a.name === "Mina Standard")!;
+    const block = bundle.blocks.find((b) => b.allowedLocationIds.includes(mina.locationId))!;
+
+    await upsertMinaTier(null, { season: DEFAULT_SEASON, code: "economy", label: "Economy" });
+
+    // The old MINA_TIERS enum on both the accommodation and the quotation
+    // stay would have rejected "economy" outright - this is the regression
+    // the admin-managed Mina Tiers list exists to fix.
+    const created: any = await upsertAccommodation(null, {
+      locationId: mina.locationId,
+      name: "Mina Economy Camp",
+      minaTier: "economy",
+      bedsPerTent: 10,
+      withoutMina: false,
+      allowedMealIds: mina.allowedMealIds,
+      allowedMealNoteIds: [],
+    });
+    expect(created.minaTier).toBe("economy");
+
+    await upsertRate(String(created._id), block.id, DEFAULT_SEASON, {
+      model: "flat",
+      amount: 50_000,
+    });
+
+    const input: QuotationInput = {
+      ...baseInput,
+      stays: [
+        {
+          blockId: block.id,
+          locationId: mina.locationId,
+          accommodationId: String(created._id),
+          mealId: mina.allowedMealIds[0],
+        },
+      ],
+    };
+    const doc = await buildQuotationDocument(input, staff, "HQ-TEST");
+    expect(doc.stays[0]!.minaTier).toBe("economy");
+    expect(doc.stays[0]!.accommodationName).toBe("Mina Economy Camp");
   });
 });

@@ -111,6 +111,23 @@ describe("toPdfView", () => {
     expect(view.stays[1]!.accommodation).toBe("Mina Deluxe");
   });
 
+  /**
+   * A tier is no longer one of exactly three - an admin can add "Economy" (or
+   * any other) to the Mina Tiers list, and it must print here exactly like
+   * Standard/Premium/Deluxe always have.
+   */
+  it("shows an admin-added tier the same way, not just Standard/Premium/Deluxe", async () => {
+    const view = await toPdfView({
+      ...quotationWithDiscount,
+      packageCategory: "Maktab A Category",
+      stays: [
+        quotationWithDiscount.stays[0]!,
+        { ...quotationWithDiscount.stays[1]!, accommodationName: "Mina Economy Camp", minaTier: "economy" },
+      ],
+    } as never);
+    expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Economy)");
+  });
+
   /** No tent means no Maktab to name, whatever the package category says. */
   it("names the without-Mina option rather than the category", async () => {
     const view = await toPdfView({

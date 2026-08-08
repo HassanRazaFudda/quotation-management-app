@@ -16,7 +16,8 @@
     "seed:room-sizes": "tsx src/migrations/seed-room-sizes.ts",
     "migrate:quad-to-sharing": "tsx src/migrations/quad-to-sharing.ts",
     "fix:package-titles": "tsx src/migrations/fix-package-titles.ts",
-    "tag:aziziya-addons": "tsx src/migrations/tag-aziziya-addons.ts"
+    "tag:aziziya-addons": "tsx src/migrations/tag-aziziya-addons.ts",
+    "seed:mina-tiers": "tsx src/migrations/seed-mina-tiers.ts"
   },
   "dependencies": {
     "@junaidi/shared": "workspace:*",

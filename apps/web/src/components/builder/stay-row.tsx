@@ -2,7 +2,6 @@
 
 import {
   allocatedHeadcount,
-  MINA_TIER_BEDS,
   roomChoiceValue,
   roomChoices,
   type PricingModel,
@@ -24,6 +23,17 @@ import {
   wordSizeMap,
 } from "@/stores/config";
 import { useBuilderStore, type BuilderStay } from "@/stores/builder";
+
+/**
+ * How an accommodation reads in a picker - its name, plus its own real bed
+ * count for a Mina tent when one is set ("Mina Tent For 04 people (4 beds)").
+ * Never a guess from its tier: that was the old behaviour, and it printed the
+ * wrong count for any tent that did not genuinely match Standard/Premium/
+ * Deluxe's usual sizes.
+ */
+function accommodationOptionLabel(a: { name: string; bedsPerTent?: number | null }): string {
+  return a.bedsPerTent ? `${a.name} (${a.bedsPerTent} beds)` : a.name;
+}
 
 /**
  * One itinerary row.
@@ -208,9 +218,7 @@ export function StayRow({
         <Select
           options={accommodations.map((a) => ({
             value: a.id,
-            label: a.minaTier
-              ? `${a.name} (${MINA_TIER_BEDS[a.minaTier as keyof typeof MINA_TIER_BEDS]})`
-              : a.name,
+            label: accommodationOptionLabel(a),
           }))}
           placeholder={stay.locationId ? "Hotel / Maktab" : "-"}
           value={stay.accommodationId}
@@ -348,7 +356,7 @@ function RoomMixEditor({
   allowedOccupancies: string[];
   allowedSharingWords: string[];
   wordSizes: Record<string, number>;
-  minaOptions: Array<{ id: string; name: string; minaTier?: string | null }>;
+  minaOptions: Array<{ id: string; name: string; minaTier?: string | null; bedsPerTent?: number | null }>;
   onChange: (rooms: RoomEntry[]) => void;
 }) {
   const mix = stay.rooms ?? [];
@@ -394,9 +402,7 @@ function RoomMixEditor({
                   className="flex-1"
                   options={minaOptions.map((m) => ({
                     value: m.id,
-                    label: m.minaTier
-                      ? `${m.name} (${MINA_TIER_BEDS[m.minaTier as keyof typeof MINA_TIER_BEDS]})`
-                      : m.name,
+                    label: accommodationOptionLabel(m),
                   }))}
                   value={entry.accommodationId}
                   onChange={(e) => update(i, { accommodationId: e.target.value })}

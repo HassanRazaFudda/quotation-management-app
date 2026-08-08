@@ -58,15 +58,18 @@ export const SHARING_WORD_SIZE: Record<string, number> = {
 export const AZIZIYA_ROOM_TYPES = ["separate", "sharing"] as const;
 export type AziziyaRoomType = (typeof AZIZIYA_ROOM_TYPES)[number];
 
-/** Mina tents, by how many Hajis share one camp. */
+/**
+ * The Mina tiers the app has always shipped with - seeded into the
+ * admin-managed `MinaTierOption` list below on first run, and used to guess a
+ * tier for an older accommodation that only ever carried it in its name (e.g.
+ * "Mina Standard B Category"). Not the only valid tiers any more: an admin
+ * can add further ones (see `MinaTierOption`) for a camp that genuinely
+ * doesn't fit Standard/Premium/Deluxe, same as a hotel room size beyond the
+ * original three.
+ */
 export const MINA_TIERS = ["standard", "premium", "deluxe"] as const;
-export type MinaTier = (typeof MINA_TIERS)[number];
-
-export const MINA_TIER_BEDS: Record<MinaTier, string> = {
-  standard: "16 beds",
-  premium: "12 beds",
-  deluxe: "7-8 beds",
-};
+/** A tier code - historically one of `MINA_TIERS`, now any admin-managed one. */
+export type MinaTier = string;
 
 // ----------------------------------------------------------------- calendar
 
@@ -549,6 +552,25 @@ export interface RoomSize {
   active: boolean;
 }
 
+/**
+ * A Mina tier an accommodation can be tagged with - "Standard", "Premium",
+ * "Deluxe" are the ones the app has always shipped with, seeded here so nothing
+ * changes for an existing setup; an admin can add, rename or retire further
+ * ones the same way. This is what actually prints on a quotation ("Maktab A
+ * Category (Deluxe)") - a camp's own accommodation name never does, once a
+ * package category is set - so a camp that doesn't genuinely match one of the
+ * existing tiers needs its own rather than borrowing the closest one.
+ */
+export interface MinaTierOption {
+  id: string;
+  /** Short code stored on the accommodation and frozen onto a quotation stay. */
+  code: string;
+  /** Shown to staff, and (capitalised) to the customer. Defaults to the code when blank. */
+  label: string;
+  sortOrder: number;
+  active: boolean;
+}
+
 // ------------------------------------------------------- config bundle
 
 import type { FlightOption } from "./flights";
@@ -567,5 +589,6 @@ export interface ConfigBundle {
   rates: Rate[];
   currencies: Currency[];
   roomSizes: RoomSize[];
+  minaTiers: MinaTierOption[];
   calendar: CalendarEntry[];
 }

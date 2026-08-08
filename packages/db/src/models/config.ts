@@ -10,7 +10,6 @@ import {
   FLIGHT_DIRECTIONS,
   HIJRI_MONTHS,
   LOCATION_TYPES,
-  MINA_TIERS,
   OCCUPANCIES,
   PRICING_MODELS,
   SERVICE_CATEGORIES,
@@ -54,7 +53,13 @@ const accommodationSchema = new Schema(
     name: { type: String, required: true, trim: true },
 
     // Mina only.
-    minaTier: { type: String, enum: [...MINA_TIERS, null], default: null },
+    /**
+     * A code from the admin-managed MinaTierOption list, e.g. "deluxe" - free
+     * string, not an enum, so a camp that needs its own tier is never rejected
+     * here (same reasoning as `allowedOccupancies` below, for hotel rooms).
+     */
+    minaTier: { type: String, default: null },
+    /** This tent's actual bed count, e.g. 4 - shown to staff, never printed on the quote. */
     bedsPerTent: { type: Number, default: null },
     /** The Mina option that books no tent. Still priced: Muallim, transport. */
     withoutMina: { type: Boolean, default: false },
@@ -195,6 +200,29 @@ const roomSizeSchema = new Schema(
 roomSizeSchema.index({ season: 1, code: 1, active: 1 });
 
 export const RoomSizeModel = model("RoomSize", roomSizeSchema);
+
+// -------------------------------------------------------------- mina tier
+
+/**
+ * A Mina tier an accommodation can be tagged with, admin-managed rather than
+ * fixed to Standard/Premium/Deluxe. This is what prints on a quotation - "Maktab
+ * A Category (Deluxe)" - so a camp that does not genuinely match one of the
+ * built-in three needs its own row here rather than borrowing the closest one.
+ */
+const minaTierSchema = new Schema(
+  {
+    season: { type: String, required: true, trim: true },
+    code: { type: String, required: true, trim: true },
+    label: { type: String, default: "", trim: true },
+    sortOrder: { type: Number, default: 0 },
+    active: { type: Boolean, default: true },
+  },
+  timestamps,
+);
+
+minaTierSchema.index({ season: 1, code: 1, active: 1 });
+
+export const MinaTierModel = model("MinaTier", minaTierSchema);
 
 // ----------------------------------------------------------- service items
 

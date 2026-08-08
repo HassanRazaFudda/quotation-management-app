@@ -1,4 +1,3 @@
-import { MINA_TIERS } from "@junaidi/shared";
 import { upsertAccommodation } from "@junaidi/db";
 import { z } from "zod";
 
@@ -17,7 +16,8 @@ const hotelSchema = z.object({
   id: objectId.nullish(),
   locationId: objectId,
   name: z.string().min(1),
-  minaTier: z.enum(MINA_TIERS).nullish(),
+  /** A code from the admin-managed MinaTierOption list - not a fixed enum. */
+  minaTier: roomSizeCode.nullish(),
   bedsPerTent: z.number().int().nullish(),
   /** The Mina option that books no tent, priced for its Muallim services. */
   withoutMina: z.boolean().default(false),
