@@ -338,8 +338,8 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                 : " · flight not included"}
             </p>
 
-            {/* Discount and round-off are admin-visible only, never on the PDF. */}
-            {isAdmin(user) && (q.discount > 0 || q.roundOff !== 0) && (
+            {/* Discount and round-off are visible to any signed-in staff, never on the PDF. */}
+            {(q.discount > 0 || q.roundOff !== 0) && (
               <div className="mt-3 space-y-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 {q.discount > 0 && (
                   <p>
