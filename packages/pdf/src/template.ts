@@ -169,7 +169,7 @@ function priceSection(view: QuotationPdfView): string {
 
 /**
  * Per-room-type surcharges, in a band under the itinerary - "Aziziya Triple Bed
- * +PKR 200,000 /-". A package-only extra; empty for a quotation, so nothing
+ * PKR 200,000 /-". A package-only extra; empty for a quotation, so nothing
  * prints. Only the ones this print does NOT include show here - one that is
  * included is already inside the tier price it applies to, so showing it
  * again here would read as a second charge.
@@ -439,10 +439,10 @@ ${FONT_FACE_CSS}
         .tier-price { display: block; margin-top: 5px; color: #9f0b1f; font-weight: bold; font-size: 14pt; }
 
         /* Per-room-type surcharges, a red band under the itinerary. */
-        .addons-band { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; margin-top: 10px; padding: 9px 14px; background-color: #9f0b1f; color: #ffffff; border-radius: 3px; text-align: center; }
-        .addon-item { font-size: 9.5pt; letter-spacing: 0.2px; }
+        .addons-band { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 28px; margin-top: 10px; padding: 9px 14px; background-color: #9f0b1f; color: #ffffff; border-radius: 3px; text-align: center; }
+        .addon-item { display: inline-flex; align-items: center; font-size: 9.5pt; letter-spacing: 0.2px; }
         .addon-item strong { font-weight: bold; }
-        .addon-price { font-size: 12pt; margin-left: 2px; }
+        .addon-price { font-size: 12pt; font-weight: 900; margin-left: 6px; }
 
         /* -------------------------------------------------------- page 2 */
         .footer-cols { display: flex; width: 100%; gap: 12px; margin-bottom: 10px; align-items: stretch; }

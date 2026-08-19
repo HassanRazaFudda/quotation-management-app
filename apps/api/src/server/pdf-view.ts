@@ -330,14 +330,14 @@ export async function toPdfView(
       label: tier.label,
       priceFormatted: formatMoney(tier.total, quotation.currency),
     })),
-    // "+PKR 400,000 /-" - a "+" since this is on top of the base room price.
-    // Only the ones NOT included print - an included one is already inside
-    // the tier price it applies to.
+    // "PKR 400,000 /-" - on top of the base room price. Only the ones NOT
+    // included print - an included one is already inside the tier price it
+    // applies to.
     addOns: options.addOns
       ?.filter((addOn) => !addOn.included)
       .map((addOn) => ({
         label: addOn.label,
-        amountFormatted: `+${formatMoney(addOn.amount, quotation.currency)}`,
+        amountFormatted: formatMoney(addOn.amount, quotation.currency),
       })),
 
     travel: travelDetails(quotation),
