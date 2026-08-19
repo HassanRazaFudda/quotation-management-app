@@ -22,19 +22,15 @@ import {
 } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import type { Package, Quotation } from "@/lib/types";
-import { isAdmin, useAuthStore } from "@/stores/auth";
 import { useConfigStore } from "@/stores/config";
 
 /**
  * The Packages module - open to everyone.
  *
- * Staff can print a package (optionally against a customer's details) and start
- * a quotation from it. An admin additionally creates, edits and removes them.
+ * Any signed-in user can print a package (optionally against a customer's
+ * details), start a quotation from it, and create, edit or remove packages.
  */
 export default function PackagesPage() {
-  const user = useAuthStore((s) => s.user);
-  const admin = isAdmin(user);
-
   const [packages, setPackages] = useState<Package[] | null>(null);
   const [toRemove, setToRemove] = useState<Package | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -70,11 +66,9 @@ export default function PackagesPage() {
         title="Packages"
         subtitle="Print a package, or start a quotation from one"
         action={
-          admin ? (
-            <Link href="/admin/packages/new">
-              <Button icon={<Plus className="size-4" />}>New package</Button>
-            </Link>
-          ) : undefined
+          <Link href="/admin/packages/new">
+            <Button icon={<Plus className="size-4" />}>New package</Button>
+          </Link>
         }
       />
 
@@ -85,17 +79,11 @@ export default function PackagesPage() {
           <EmptyState
             icon={<PackageIcon className="size-10" />}
             title="No packages yet"
-            hint={
-              admin
-                ? "Build a package once, and everyone can print it or quote from it."
-                : "An admin has not set up any packages yet."
-            }
+            hint="Build a package once, and everyone can print it or quote from it."
             action={
-              admin ? (
-                <Link href="/admin/packages/new">
-                  <Button icon={<Plus className="size-4" />}>New package</Button>
-                </Link>
-              ) : undefined
+              <Link href="/admin/packages/new">
+                <Button icon={<Plus className="size-4" />}>New package</Button>
+              </Link>
             }
           />
         ) : (
@@ -127,22 +115,18 @@ export default function PackagesPage() {
                     </Button>
                   </Link>
 
-                  {admin && (
-                    <>
-                      <Link href={`/admin/packages/${pkg._id}/edit`}>
-                        <Button variant="ghost" size="sm" icon={<Pencil className="size-4" />}>
-                          Edit
-                        </Button>
-                      </Link>
-                      <button
-                        onClick={() => setToRemove(pkg)}
-                        className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
-                        title="Remove"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </>
-                  )}
+                  <Link href={`/admin/packages/${pkg._id}/edit`}>
+                    <Button variant="ghost" size="sm" icon={<Pencil className="size-4" />}>
+                      Edit
+                    </Button>
+                  </Link>
+                  <button
+                    onClick={() => setToRemove(pkg)}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                    title="Remove"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </li>
               ))}
             </ul>
