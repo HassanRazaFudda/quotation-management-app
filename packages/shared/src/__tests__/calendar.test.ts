@@ -61,7 +61,17 @@ describe("resolving against the imported calendar", () => {
     const resolved = resolveBlocks(blocks, calendar);
     const starts = resolved.map((b) => b.label);
     expect(starts[0]).toBe("20 Zilqad - 25 Zilqad");
-    expect(starts.at(-1)).toBe("17 Zilhaj - 20 Zilhaj");
+    expect(starts.at(-1)).toBe("23 Zilhaj - 03 Muharram");
+  });
+
+  it("resolves a block that runs into the next Hijri year against season+1", () => {
+    // The block's own season is 1447; its end (03 Muharram) only exists as a
+    // calendar row under 1448, so this proves the lookup follows the wrap
+    // instead of failing to find "1447|Muharram|3" and falling back.
+    const resolved = resolveBlock(byId("blk-post-muharram"), index);
+    expect(resolved.exact).toBe(true);
+    expect(resolved.nights).toBe(10);
+    expect(resolved.gregorianLabel).toBe("07 June - 17 June 2026");
   });
 });
 

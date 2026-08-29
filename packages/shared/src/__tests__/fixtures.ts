@@ -95,6 +95,8 @@ export const blocks: DateBlock[] = [
   block("blk-hajj-4n", { month: "Zilhaj", day: 8 }, { month: "Zilhaj", day: 12 }, "hajj", ["loc-mina"]),
   block("blk-post-aziziya", { month: "Zilhaj", day: 12 }, { month: "Zilhaj", day: 17 }, "post", ["loc-aziziya"]),
   block("blk-post-madinah", { month: "Zilhaj", day: 17 }, { month: "Zilhaj", day: 20 }, "post", ["loc-madinah"]),
+  // Runs past the season's own year-end into Muharram of the next Hijri year.
+  block("blk-post-muharram", { month: "Zilhaj", day: 23 }, { month: "Muharram", day: 3 }, "post", ["loc-aziziya"]),
 ];
 
 function block(
@@ -183,4 +185,7 @@ export const calendar: CalendarEntry[] = [
   { hijriYear: 1447, month: "Zilhaj", day: 12, gregorian: "2026-05-27" },
   { hijriYear: 1447, month: "Zilhaj", day: 17, gregorian: "2026-06-01" },
   { hijriYear: 1447, month: "Zilhaj", day: 20, gregorian: "2026-06-04" },
+  { hijriYear: 1447, month: "Zilhaj", day: 23, gregorian: "2026-06-07" },
+  // Next Hijri year - proves a wrap-around block resolves against season+1.
+  { hijriYear: 1448, month: "Muharram", day: 3, gregorian: "2026-06-17" },
 ];

@@ -58,7 +58,12 @@ export async function getConfigBundle(season: string): Promise<ConfigBundle> {
       ServiceItemModel.find(activeOnly).sort({ category: 1, sortOrder: 1 }).lean(),
       PackageCategoryModel.find(activeOnly).sort({ sortOrder: 1 }).lean(),
       RateModel.find({ season }).lean(),
-      CalendarEntryModel.find({ hijriYear: Number(season) }).lean(),
+      // A post-Hajj block can run into the next Hijri year (23 Zilhaj -> 03
+      // Muharram), so its end date's Gregorian lookup needs next year's rows
+      // too - see resolveBlock in @junaidi/shared.
+      CalendarEntryModel.find({
+        hijriYear: { $in: [Number(season), Number(season) + 1] },
+      }).lean(),
       FlightModel.find({ ...activeOnly, season }).sort({ direction: 1, sortOrder: 1 }).lean(),
       CurrencyModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),
       RoomSizeModel.find({ ...activeOnly, season }).sort({ sortOrder: 1, code: 1 }).lean(),

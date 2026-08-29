@@ -27,12 +27,14 @@ export const POST = route(async (request) => {
   await requireAdmin(request);
   const { id, ...data } = blockSchema.parse(await readJson(request));
 
-  // A block that ends where it starts is nought nights, and one that ends
-  // before it starts would be read as running into the next Hijri year - a
-  // Hajj season never does, it finishes in Zilhaj.
-  if (hijriIndex(data.endHijri) <= hijriIndex(data.startHijri)) {
+  // A block that ends where it starts is nought nights. One that ends
+  // "before" it starts (by month order) is read as running into the next
+  // Hijri year instead - e.g. 23 Zilhaj to 03 Muharram, a post-Hajj block
+  // that continues past the season's own year-end. Only true zero-length
+  // blocks are rejected here.
+  if (hijriIndex(data.endHijri) === hijriIndex(data.startHijri)) {
     throw new ApiError(
-      `"${blockLabel(data)}" ends before it starts - check the two dates.`,
+      `"${blockLabel(data)}" starts and ends on the same day - that is zero nights.`,
       400,
     );
   }

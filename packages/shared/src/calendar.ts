@@ -196,8 +196,14 @@ export function estimateNights(start: HijriDate, end: HijriDate): number {
 
 /** Attach labels, Gregorian dates and a night count to a date block. */
 export function resolveBlock(block: DateBlock, index: CalendarIndex): ResolvedBlock {
+  // A block whose end month sorts earlier than its start month (e.g. 23
+  // Zilhaj -> 03 Muharram) runs into the next Hijri year, so its end date
+  // lives under next year's calendar entries, not the block's own season.
+  const wraps = hijriIndex(block.endHijri) < hijriIndex(block.startHijri);
+  const endSeason = wraps ? String(Number(block.season) + 1) : block.season;
+
   const startGregorian = lookupGregorian(index, block.season, block.startHijri);
-  const endGregorian = lookupGregorian(index, block.season, block.endHijri);
+  const endGregorian = lookupGregorian(index, endSeason, block.endHijri);
 
   let nights = estimateNights(block.startHijri, block.endHijri);
   let exact = false;
