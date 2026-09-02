@@ -228,6 +228,13 @@ export interface ServiceItem extends LabelledItem {
   color?: string;
   /** Print this line in bold. Off by default. */
   bold?: boolean;
+  /**
+   * Narrows this line to one Maktab category (e.g. only "A Category"
+   * quotations offer it) - null/absent means every category offers it.
+   * Meaningful for minaServices/arafatServices/includes; requirements and
+   * terms are always shown to every category regardless of this field.
+   */
+  packageCategoryId?: string | null;
 }
 
 /**

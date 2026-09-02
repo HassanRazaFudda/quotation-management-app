@@ -1,19 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
 import { toast } from "@/components/toast";
-import { Button, Card, Input, Spinner } from "@/components/ui";
+import { Button, Card, Input, Select, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import { servicesByCategory, useConfigStore } from "@/stores/config";
 
-const CATEGORIES: Array<{ key: string; title: string; hint: string }> = [
-  { key: "minaServices", title: "Extra Services in Mina", hint: "Shown in the Mina services box" },
-  { key: "arafatServices", title: "Extra Services in Arafat", hint: "Shown in the Arafat services box" },
-  { key: "includes", title: "Price Includes", hint: "Left footer box" },
+const CATEGORIES: Array<{ key: string; title: string; hint: string; scoped?: boolean }> = [
+  {
+    key: "minaServices",
+    title: "Extra Services in Mina",
+    hint: "Shown in the Mina services box",
+    scoped: true,
+  },
+  {
+    key: "arafatServices",
+    title: "Extra Services in Arafat",
+    hint: "Shown in the Arafat services box",
+    scoped: true,
+  },
+  { key: "includes", title: "Price Includes", hint: "Left footer box", scoped: true },
   { key: "requirements", title: "Visa Requirements", hint: "Middle footer box" },
   { key: "terms", title: "Terms & Taxes", hint: "Right footer box" },
 ];
@@ -26,15 +36,50 @@ export default function ServicesPage() {
     config.load();
   }, [config]);
 
-  async function add(category: string, label: string) {
+  async function add(category: string, label: string, packageCategoryId?: string) {
     if (!label.trim()) return;
     setBusy(true);
     try {
-      await api.post("/api/admin/services", { category, label: label.trim(), defaultSelected: true });
+      await api.post("/api/admin/services", {
+        category,
+        label: label.trim(),
+        defaultSelected: true,
+        packageCategoryId: packageCategoryId || undefined,
+      });
       await config.load(undefined, true);
       toast.success("Added");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Could not add.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** A copy of an existing line - same category, styling and Maktab scope. */
+  async function duplicate(item: {
+    category: string;
+    label: string;
+    defaultSelected?: boolean;
+    color?: string;
+    bold?: boolean;
+    packageCategoryId?: string | null;
+    sortOrder?: number;
+  }) {
+    setBusy(true);
+    try {
+      await api.post("/api/admin/services", {
+        category: item.category,
+        label: `${item.label} (copy)`,
+        defaultSelected: item.defaultSelected ?? true,
+        color: item.color || undefined,
+        bold: item.bold || undefined,
+        packageCategoryId: item.packageCategoryId || undefined,
+        sortOrder: item.sortOrder ?? 0,
+      });
+      await config.load(undefined, true);
+      toast.success("Duplicated");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not duplicate.");
     } finally {
       setBusy(false);
     }
@@ -53,8 +98,11 @@ export default function ServicesPage() {
     }
   }
 
-  /** Set a line's colour or weight. Saved immediately, then config reloads. */
-  async function styleService(id: string, patch: { color?: string; bold?: boolean }) {
+  /** Patch one line's colour, weight, or Maktab category. Saved immediately. */
+  async function patchService(
+    id: string,
+    patch: { color?: string; bold?: boolean; packageCategoryId?: string | null },
+  ) {
     try {
       await api.patch(`/api/admin/services/${id}`, patch);
       await config.load(undefined, true);
@@ -101,19 +149,26 @@ export default function ServicesPage() {
           hint="Package-level labels staff pick from (shown on the quotation)"
           items={config.packageCategories}
           busy={busy}
-          onAdd={addCategory}
+          onAdd={(label) => addCategory(label)}
           onRemove={removeCategory}
         />
         {CATEGORIES.map((cat) => (
           <ServiceGroup
             key={cat.key}
             title={cat.title}
-            hint={cat.hint}
+            hint={
+              cat.scoped
+                ? `${cat.hint} - optionally scoped to one Maktab category`
+                : cat.hint
+            }
             items={servicesByCategory(config, cat.key)}
             busy={busy}
-            onAdd={(label) => add(cat.key, label)}
+            onAdd={(label, packageCategoryId) => add(cat.key, label, packageCategoryId)}
             onRemove={remove}
-            onStyle={styleService}
+            onStyle={patchService}
+            onDuplicate={(item) => duplicate({ ...item, category: cat.key })}
+            scoped={cat.scoped}
+            packageCategories={config.packageCategories}
           />
         ))}
       </div>
@@ -126,6 +181,9 @@ interface StyledItem {
   label: string;
   color?: string;
   bold?: boolean;
+  defaultSelected?: boolean;
+  packageCategoryId?: string | null;
+  sortOrder?: number;
 }
 
 function ServiceGroup({
@@ -136,21 +194,32 @@ function ServiceGroup({
   onAdd,
   onRemove,
   onStyle,
+  onDuplicate,
+  scoped,
+  packageCategories,
 }: {
   title: string;
   hint: string;
   items: StyledItem[];
   busy: boolean;
-  onAdd: (label: string) => void;
+  onAdd: (label: string, packageCategoryId?: string) => void;
   onRemove: (id: string) => void;
   /** Present only for the styled lists; Maktab categories have no styling. */
-  onStyle?: (id: string, patch: { color?: string; bold?: boolean }) => void;
+  onStyle?: (
+    id: string,
+    patch: { color?: string; bold?: boolean; packageCategoryId?: string | null },
+  ) => void;
+  onDuplicate?: (item: StyledItem) => void;
+  /** True for the three lists a Maktab category can narrow (Mina/Arafat/Includes). */
+  scoped?: boolean;
+  packageCategories?: Array<{ id: string; label: string }>;
 }) {
   const [value, setValue] = useState("");
+  const [newCategory, setNewCategory] = useState("");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onAdd(value);
+    onAdd(value, newCategory || undefined);
     setValue("");
   }
 
@@ -164,13 +233,33 @@ function ServiceGroup({
         {items.map((item) => {
           const color = /^#[0-9a-fA-F]{3,8}$/.test(item.color ?? "") ? item.color : "#111827";
           return (
-            <li key={item.id} className="flex items-center justify-between gap-2 px-5 py-2.5">
+            <li key={item.id} className="flex flex-wrap items-center gap-2 px-5 py-2.5">
               <span
                 className="min-w-0 flex-1 truncate text-sm"
                 style={{ color, fontWeight: item.bold ? 700 : 400 }}
               >
                 {item.label}
               </span>
+
+              {scoped && onStyle && (
+                <select
+                  value={item.packageCategoryId ?? ""}
+                  onChange={(e) =>
+                    onStyle(item.id, { packageCategoryId: e.target.value || null })
+                  }
+                  disabled={busy}
+                  title="Maktab category this line is scoped to"
+                  className="shrink-0 rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink"
+                >
+                  <option value="">All categories</option>
+                  {packageCategories?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               {onStyle && (
                 <>
                   {/* Colour picker; a swatch that opens the native colour dialog. */}
@@ -209,10 +298,22 @@ function ServiceGroup({
                   </button>
                 </>
               )}
+
+              {onDuplicate && (
+                <button
+                  onClick={() => onDuplicate(item)}
+                  disabled={busy}
+                  className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-brand-50 hover:text-brand-600"
+                  title="Duplicate"
+                >
+                  <Copy className="size-4" />
+                </button>
+              )}
               <button
                 onClick={() => onRemove(item.id)}
                 disabled={busy}
                 className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-brand-50 hover:text-brand-600"
+                title="Remove"
               >
                 <Trash2 className="size-4" />
               </button>
@@ -221,8 +322,24 @@ function ServiceGroup({
         })}
         {items.length === 0 && <li className="px-5 py-3 text-sm text-muted">Nothing yet.</li>}
       </ul>
-      <form onSubmit={submit} className="flex gap-2 border-t border-line p-3">
-        <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Add an item…" />
+      <form onSubmit={submit} className="flex flex-wrap gap-2 border-t border-line p-3">
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Add an item…"
+          className="min-w-[160px] flex-1"
+        />
+        {scoped && (
+          <Select
+            options={[
+              { value: "", label: "All categories" },
+              ...(packageCategories?.map((c) => ({ value: c.id, label: c.label })) ?? []),
+            ]}
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            className="w-40"
+          />
+        )}
         <Button type="submit" size="sm" icon={<Plus className="size-4" />} loading={busy} disabled={!value.trim()}>
           Add
         </Button>

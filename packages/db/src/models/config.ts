@@ -234,6 +234,8 @@ const serviceItemSchema = new Schema(
     /** How this line prints on the quotation. Empty colour = black. */
     color: { type: String, default: "" },
     bold: { type: Boolean, default: false },
+    /** Null means every Maktab category offers this line. */
+    packageCategoryId: { type: Schema.Types.ObjectId, ref: "PackageCategory", default: null },
     sortOrder: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
   },

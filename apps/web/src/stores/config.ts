@@ -143,8 +143,26 @@ export function mealNotesForAccommodation(state: ConfigState, accommodationId: s
   return state.mealNotes.filter((n) => allowed.has(n.id));
 }
 
-export function servicesByCategory(state: ConfigState, category: string): ServiceItem[] {
-  return state.services.filter((s) => s.category === category);
+/**
+ * Items in this service list, optionally narrowed to one Maktab category.
+ *
+ * Pass `packageCategoryId` to also drop lines the admin scoped to a
+ * *different* category - a line with no `packageCategoryId` set is offered
+ * to every category, so it always passes. Omit `packageCategoryId` (as the
+ * admin Services page does) to see every line regardless of category.
+ */
+export function servicesByCategory(
+  state: ConfigState,
+  category: string,
+  packageCategoryId?: string,
+): ServiceItem[] {
+  return state.services.filter(
+    (s) =>
+      s.category === category &&
+      (packageCategoryId === undefined ||
+        !s.packageCategoryId ||
+        s.packageCategoryId === packageCategoryId),
+  );
 }
 
 /** How many people each sharing word means, for `roomChoices`/`sharingWordsFor`. */

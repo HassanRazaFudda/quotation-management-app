@@ -172,6 +172,7 @@ function toServiceItem(doc: Record<string, any>): ServiceItem {
     defaultSelected: doc.defaultSelected ?? true,
     color: doc.color ?? "",
     bold: doc.bold ?? false,
+    packageCategoryId: doc.packageCategoryId ? id(doc.packageCategoryId) : null,
     sortOrder: doc.sortOrder ?? 0,
     active: doc.active ?? true,
   };

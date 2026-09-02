@@ -14,6 +14,12 @@ const patchSchema = z.object({
   /** "" (black) or a hex colour; how the line prints on the quotation. */
   color: z.string().max(9).optional(),
   bold: z.boolean().optional(),
+  /** Narrows this line to one Maktab category; null clears it back to every category. */
+  packageCategoryId: z
+    .string()
+    .regex(/^[a-f\d]{24}$/i)
+    .nullable()
+    .optional(),
   sortOrder: z.number().optional(),
   active: z.boolean().optional(),
 });

@@ -238,7 +238,8 @@ export function Builder({
     if (initialised.current || !config.loaded) return;
     initialised.current = true;
 
-    const allOf = (cat: string) => servicesByCategory(config, cat).map((s) => s.id);
+    const allOf = (cat: string, packageCategoryId?: string) =>
+      servicesByCategory(config, cat, packageCategoryId).map((s) => s.id);
 
     // Editing and duplicating fill the form the same way; only the target
     // differs. An edit keeps the id (save updates it) and the original date; a
@@ -304,16 +305,17 @@ export function Builder({
       builder.set("itineraryComplete", true);
     } else {
       builder.reset();
+      // Start on the first category and the first Mina tier.
+      const firstCategory = config.packageCategories[0];
+      if (firstCategory) builder.set("packageCategory", firstCategory.label);
       // Price Includes / Visa Requirements / Terms & Taxes start fully ticked;
-      // the extra Mina and Arafat services start unticked.
-      builder.set("includeIds", allOf("includes"));
+      // the extra Mina and Arafat services start unticked. Includes is scoped
+      // to the starting category - requirements/terms are never scoped.
+      builder.set("includeIds", allOf("includes", firstCategory?.id));
       builder.set("requirementIds", allOf("requirements"));
       builder.set("termIds", allOf("terms"));
       builder.set("minaServiceIds", []);
       builder.set("arafatServiceIds", []);
-      // Start on the first category and the first Mina tier.
-      const firstCategory = config.packageCategories[0];
-      if (firstCategory) builder.set("packageCategory", firstCategory.label);
       const firstMina = minaOptions(config, firstCategory?.label)[0];
       if (firstMina) {
         builder.set("minaAccommodationId", firstMina.id);
@@ -589,7 +591,23 @@ export function Builder({
                   label: shortCategory(c.label),
                 }))}
                 value={builder.packageCategory}
-                onChange={(v) => builder.set("packageCategory", v)}
+                onChange={(v) => {
+                  builder.set("packageCategory", v);
+                  // Drop any already-ticked service that belonged only to the
+                  // category being left, so switching category never leaves an
+                  // invisible, no-longer-offered line selected on the quotation.
+                  const categoryId = config.packageCategories.find((c) => c.label === v)?.id;
+                  const prune = (field: "minaServiceIds" | "arafatServiceIds" | "includeIds") => {
+                    const kept = builder[field].filter((id) => {
+                      const item = config.services.find((s) => s.id === id);
+                      return !item?.packageCategoryId || item.packageCategoryId === categoryId;
+                    });
+                    if (kept.length !== builder[field].length) builder.set(field, kept);
+                  };
+                  prune("minaServiceIds");
+                  prune("arafatServiceIds");
+                  prune("includeIds");
+                }}
               />
             </div>
 
@@ -1254,7 +1272,10 @@ function ServiceChips({
 }) {
   const config = useConfigStore();
   const builder = useBuilderStore();
-  const items = servicesByCategory(config, category);
+  const packageCategoryId = config.packageCategories.find(
+    (c) => c.label === builder.packageCategory,
+  )?.id;
+  const items = servicesByCategory(config, category, packageCategoryId);
   const selected = builder[field];
 
   if (items.length === 0) return null;

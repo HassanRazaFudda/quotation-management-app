@@ -224,11 +224,14 @@ function accommodationLabel(
   return room ? `${stay.accommodationName} (${room})` : stay.accommodationName;
 }
 
-// The customer's document names the route only; the airline is an internal
-// detail the agency does not print.
+// "Karachi - Jeddah (PIA)" - the airline only prints when the leg has one.
 const sector = (
-  leg: { origin?: string; destination?: string } | null | undefined,
-): string => (leg ? `${leg.origin} - ${leg.destination}` : "");
+  leg: { origin?: string; destination?: string; airline?: string } | null | undefined,
+): string => {
+  if (!leg) return "";
+  const route = `${leg.origin} - ${leg.destination}`;
+  return leg.airline ? `${route} (${leg.airline})` : route;
+};
 
 /**
  * The journey as it heads the document: the day they leave and the day they

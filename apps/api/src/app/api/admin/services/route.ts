@@ -9,10 +9,16 @@ export const runtime = "nodejs";
 
 export const OPTIONS = handleOptions;
 
+const objectId = z.string().regex(/^[a-f\d]{24}$/i);
+
 const createSchema = z.object({
   category: z.enum(SERVICE_CATEGORIES),
   label: z.string().min(1),
   defaultSelected: z.boolean().default(true),
+  color: z.string().max(9).optional(),
+  bold: z.boolean().optional(),
+  /** Narrows this line to one Maktab category; absent means every category. */
+  packageCategoryId: objectId.nullish(),
   sortOrder: z.number().default(0),
 });
 
