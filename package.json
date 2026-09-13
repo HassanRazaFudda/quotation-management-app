@@ -9,6 +9,8 @@
   "scripts": {
     "dev:api": "pnpm --filter @junaidi/api dev",
     "dev:web": "pnpm --filter @junaidi/web dev",
+    "build:web": "pnpm --filter @junaidi/web build",
+    "build:api": "pnpm --filter @junaidi/api build",
     "seed": "pnpm --filter @junaidi/db seed",
     "build": "pnpm -r build",
     "test": "pnpm -r test",

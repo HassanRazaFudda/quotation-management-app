@@ -420,3 +420,67 @@ describe("date blocks a hotel actually offers", () => {
     expect(issues).not.toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
   });
 });
+
+/**
+ * The admin's inventory can move on after a quotation is saved - a hotel
+ * narrowed away from a block, a meal retired, an occupancy dropped. That
+ * must not retroactively break a row nobody is touching; see
+ * `isUnchangedSelection`.
+ */
+describe("a row identical to its own baseline is left alone by inventory checks", () => {
+  const narrowed = accommodations.map((a) =>
+    a.id === "acc-swiss" ? { ...a, allowedBlockIds: ["blk-pre-makkah"] } : a,
+  );
+  const narrowedContext = makeValidationContext({
+    blocks: resolved, locations, accommodations: narrowed, meals, mealNotes,
+  });
+  const stay = (occupancy: "Double" | "Triple" = "Double"): StayInput => ({
+    blockId: "blk-makkah-8", // not in acc-swiss's narrowed list
+    locationId: "loc-makkah",
+    accommodationId: "acc-swiss",
+    roomType: "sharing",
+    occupancy,
+    mealId: "meal-half",
+  });
+
+  it("does not flag a row that exactly matches its baseline", () => {
+    const saved = stay();
+    const issues = validateItinerary([saved], narrowedContext, [saved]).map((i) => i.code);
+    expect(issues).not.toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
+  });
+
+  it("still flags the identical row with no baseline given (a new quotation, or /calculate)", () => {
+    const issues = validateItinerary([stay()], narrowedContext).map((i) => i.code);
+    expect(issues).toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
+  });
+
+  it("flags the row once it differs from its baseline", () => {
+    const baseline = stay("Double");
+    const changed = stay("Triple"); // same hotel/block, but the user picked something else
+    const issues = validateItinerary([changed], narrowedContext, [baseline]).map((i) => i.code);
+    expect(issues).toContain("BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION");
+  });
+
+  it("still runs the row's own shape checks even when unchanged", () => {
+    // No roomType at all - that is the row's own incompleteness, not an
+    // inventory question, so it is never exempt.
+    const saved: StayInput = {
+      blockId: "blk-makkah-8", locationId: "loc-makkah", accommodationId: "acc-swiss",
+    };
+    const issues = validateItinerary([saved], narrowedContext, [saved]).map((i) => i.code);
+    expect(issues).toContain("MISSING_ROOM_TYPE");
+  });
+
+  it("leaves an unchanged row alone even when its accommodation has been deleted outright", () => {
+    const saved = stay();
+    const goneContext = makeValidationContext({
+      blocks: resolved,
+      locations,
+      accommodations: accommodations.filter((a) => a.id !== "acc-swiss"),
+      meals,
+      mealNotes,
+    });
+    const issues = validateItinerary([saved], goneContext, [saved]).map((i) => i.code);
+    expect(issues).not.toContain("UNKNOWN_REFERENCE");
+  });
+});

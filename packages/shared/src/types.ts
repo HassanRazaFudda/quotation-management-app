@@ -395,6 +395,19 @@ export interface StayInput {
 }
 
 /**
+ * A stay as already saved: enough to tell whether an incoming row is still
+ * exactly that choice (`isUnchangedSelection`), plus the numbers that were
+ * frozen for it at the time. Shared by the server (deciding what to keep on
+ * an edit) and the builder (previewing the same outcome before saving).
+ */
+export interface BaselineStay extends StayInput {
+  nights: number;
+  rateSnapshot: number;
+  lineTotal: number;
+  groupTotal: number;
+}
+
+/**
  * One room allocation within a stay: a group of people all in the same room
  * choice (and possibly its own accommodation, since a Mina tier is a separate
  * accommodation), priced at that per-person rate.

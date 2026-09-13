@@ -12,6 +12,7 @@ import {
   convertFromPkr,
   PACKAGE_TEMPLATE_SUFFIX,
   calculateTotals,
+  isUnchangedSelection,
   makePricingContext,
   makeValidationContext,
   nestedHajjBlocks,
@@ -22,10 +23,12 @@ import {
   suggestHajjBlock,
   TIER_OCCUPANCIES,
   validateItinerary,
+  type BaselineStay,
   type Currency,
   type FlightSelection,
   type Issue,
   type PackageAddOn,
+  type PricedStay,
   type StayInput,
   type TierOccupancy,
 } from "@junaidi/shared";
@@ -41,6 +44,21 @@ type ConfigSnapshot = ReturnType<typeof useConfigStore.getState>;
 
 export interface BuilderState {
   quotationId: string | null; // set when editing an existing quotation
+  /**
+   * The stays exactly as they were loaded, when editing an existing
+   * quotation - null otherwise (new quotation, duplicate, or package). A row
+   * still identical to its entry here is left alone by the admin's current
+   * inventory checks and keeps its old rate, the same way the server treats
+   * it on save (unless `refreshRatesOnSave` is set); see
+   * `isUnchangedSelection` in @junaidi/shared.
+   */
+  originalStays: BaselineStay[] | null;
+  /**
+   * Set by "Refresh config" while editing: the preview (and the next save)
+   * price every stay at today's rates instead of keeping each unchanged
+   * stay's own frozen rate.
+   */
+  refreshRatesOnSave: boolean;
 
   packageCategory: string;
   /** Which Mina tent tier, or "" for a package without Mina. */
@@ -200,6 +218,8 @@ export function convertCurrencyFields(
 
 const EMPTY: BuilderData = {
   quotationId: null,
+  originalStays: null,
+  refreshRatesOnSave: false,
   packageCategory: "",
   minaAccommodationId: "",
   withoutMina: false,
@@ -344,7 +364,10 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
     withoutMina: state.withoutMina,
   });
 
-  const issues = complete.length > 0 ? validateItinerary(complete, validation) : [];
+  const issues =
+    complete.length > 0
+      ? validateItinerary(complete, validation, state.originalStays ?? undefined)
+      : [];
   const suggested = suggestHajjBlock(complete, validation);
 
   const perStayNights: Record<string, number> = {};
@@ -390,25 +413,50 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
         .filter((block): block is (typeof config.blocks)[number] => Boolean(block)),
     );
 
+    // A row still exactly as it was loaded keeps its own frozen rate here
+    // too, so the preview never shows a number the save would then discard;
+    // see `isUnchangedSelection`. A genuine room mix is always priced fresh -
+    // its own per-room figures cannot be reconstructed from the saved stay.
+    const frozenRate = (stay: StayInput, index: number, priced: PricedStay) => {
+      const baseline = state.originalStays?.[index];
+      if (
+        state.refreshRatesOnSave ||
+        !baseline ||
+        (baseline.rooms?.length ?? 0) > 1 ||
+        !isUnchangedSelection(stay, baseline)
+      ) {
+        return priced;
+      }
+      return {
+        ...priced,
+        nights: baseline.nights,
+        rateSnapshot: baseline.rateSnapshot,
+        lineTotal: baseline.lineTotal,
+        groupTotal: baseline.groupTotal,
+      };
+    };
+
     // Price each row on its own so one bad row cannot blank the whole total.
-    for (const stay of state.stays) {
-      if (!stay.blockId || !stay.accommodationId) continue;
+    state.stays.forEach((stay, index) => {
+      if (!stay.blockId || !stay.accommodationId) return;
       try {
         const [priced] = priceStays([stay], pricing, state.pax);
         if (priced) {
-          perStayNights[stay.key] = nested.has(stay.blockId) ? 0 : priced.nights;
-          perStayTotal[stay.key] = priced.lineTotal;
+          const frozen = frozenRate(stay, index, priced);
+          perStayNights[stay.key] = nested.has(stay.blockId) ? 0 : frozen.nights;
+          perStayTotal[stay.key] = frozen.lineTotal;
         }
       } catch {
         // Missing rate / room choice: leave this row unpriced.
       }
-    }
+    });
 
     const pricedComplete = applyNestedNights(
       complete
-        .map((stay) => {
+        .map((stay, index) => {
           try {
-            return priceStays([stay], pricing, state.pax)[0];
+            const priced = priceStays([stay], pricing, state.pax)[0];
+            return priced ? frozenRate(stay, index, priced) : null;
           } catch {
             return null;
           }

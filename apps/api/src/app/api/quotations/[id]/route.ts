@@ -23,13 +23,19 @@ export const GET = route(async (request, { params }) => {
 export const PATCH = route(async (request, { params }) => {
   const session = await sessionFrom(request);
   const { id } = await params;
-  const input = quotationSchema.parse(await readJson(request));
+  const body = await readJson(request);
+  const input = quotationSchema.parse(body);
+  // A separate, explicit flag - not part of the quotation shape itself - so
+  // an ordinary save never accidentally refreshes rates just by round-tripping
+  // whatever the form last sent.
+  const refreshRates = Boolean((body as Record<string, unknown>).refreshRates);
 
-  const updated = await updateQuotation(id!, input, {
-    userId: session.userId,
-    name: session.name,
-    role: session.role,
-  });
+  const updated = await updateQuotation(
+    id!,
+    input,
+    { userId: session.userId, name: session.name, role: session.role },
+    { refreshRates },
+  );
   if (!updated) throw notFound("Quotation");
 
   return json(request, updated.toJSON());

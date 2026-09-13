@@ -40,9 +40,13 @@ export function PdfPreview({
     : JSON.stringify(
         (() => {
           const payload = toApiPayload(builder, season);
-          return payload.guest.name
+          const named = payload.guest.name
             ? payload
             : { ...payload, guest: { ...payload.guest, name: "Guest Name" } };
+          // Lets the server judge an untouched row against what's already
+          // saved, same as it would on an actual save, instead of re-checking
+          // it against today's inventory - see `getQuotationBaseline`.
+          return builder.quotationId ? { ...named, editingId: builder.quotationId } : named;
         })(),
       );
   const endpoint = asPackage ? "/api/packages/preview-pdf" : "/api/quotations/preview-pdf";

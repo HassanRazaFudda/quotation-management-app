@@ -302,6 +302,36 @@ export function Builder({
           })),
         });
       }
+      // Only a real edit gets a baseline to be judged against - a duplicate
+      // is a brand-new quotation (quotationId stays null above) and every row
+      // in it must clear today's inventory, same as starting from scratch.
+      if (editing) {
+        builder.set(
+          "originalStays",
+          source.stays.map((stay) => ({
+            blockId: stay.blockId,
+            locationId: stay.locationId,
+            accommodationId: stay.accommodationId,
+            roomType: stay.roomType,
+            occupancy: stay.occupancy,
+            sharingWord: stay.sharingWord,
+            mealId: stay.mealId,
+            mealNoteId: stay.mealNoteId,
+            rooms: stay.rooms?.map((room) => ({
+              accommodationId: room.accommodationId,
+              roomType: room.roomType,
+              occupancy: room.occupancy,
+              sharingWord: room.sharingWord,
+              withoutBed: room.withoutBed,
+              headcount: room.headcount,
+            })),
+            nights: stay.nights,
+            rateSnapshot: stay.rateSnapshot,
+            lineTotal: stay.lineTotal,
+            groupTotal: stay.groupTotal,
+          })),
+        );
+      }
       builder.set("itineraryComplete", true);
     } else {
       builder.reset();
@@ -502,9 +532,13 @@ export function Builder({
 
       const payload = toApiPayload(builder, config.season);
       const saved = builder.quotationId
-        ? await api.patch<Quotation>(`/api/quotations/${builder.quotationId}`, payload)
+        ? await api.patch<Quotation>(`/api/quotations/${builder.quotationId}`, {
+            ...payload,
+            refreshRates: builder.refreshRatesOnSave,
+          })
         : await api.post<Quotation>("/api/quotations", payload);
       toast.success(`Saved ${saved.quotationId}`);
+      builder.set("refreshRatesOnSave", false);
       router.push(`/quotations/${saved._id}`);
     } catch (err) {
       if (err instanceof ApiError && err.fieldErrors.length > 0) toast.error(err.fieldErrors[0]!);
@@ -523,7 +557,17 @@ export function Builder({
    */
   async function refreshConfig() {
     await config.load(undefined, true);
-    toast.success("Latest rates and options loaded");
+
+    // Editing an existing, not-yet-confirmed quotation: have the next save
+    // re-price every stay at these new rates. A confirmed booking has
+    // already been sold at its price, so this is not offered on one - and a
+    // brand-new quotation always prices fresh anyway, refresh or not.
+    if (builder.quotationId && !asPackage && editing?.status !== "confirmed") {
+      builder.set("refreshRatesOnSave", true);
+      toast.success("Latest rates loaded - this quotation will re-price to match when you save.");
+    } else {
+      toast.success("Latest rates and options loaded");
+    }
   }
 
   if (config.loading && !config.loaded) {
@@ -568,15 +612,22 @@ export function Builder({
           ) : (
             <span />
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<RefreshCw className={cn("size-4", config.loading && "animate-spin")} />}
-            loading={config.loading}
-            onClick={refreshConfig}
-          >
-            Refresh config
-          </Button>
+          <div className="flex items-center gap-2">
+            {builder.refreshRatesOnSave && (
+              <span className="text-xs font-medium text-brand-600">
+                Will re-price to today's rates on save
+              </span>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw className={cn("size-4", config.loading && "animate-spin")} />}
+              loading={config.loading}
+              onClick={refreshConfig}
+            >
+              Refresh config
+            </Button>
+          </div>
         </div>
 
         {/* ---------------- package ---------------- */}

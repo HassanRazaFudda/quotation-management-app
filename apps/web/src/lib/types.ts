@@ -92,6 +92,8 @@ export interface QuotationStay {
   nights: number;
   rateSnapshot: number;
   lineTotal: number;
+  /** The whole party's room cost for this stay - `lineTotal` is per person. */
+  groupTotal: number;
   /** This stay spans the Hajj days, listed again as their own row. */
   coversHajj?: boolean;
 }

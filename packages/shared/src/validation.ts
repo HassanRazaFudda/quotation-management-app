@@ -80,9 +80,18 @@ export function makeValidationContext(input: {
   };
 }
 
+/**
+ * `stays` is what should be saved now; `baselineStays`, when given, is what is
+ * already on file (same index = same row). A row identical to its baseline is
+ * judged against the configuration as it stood when it was chosen, not
+ * against today's - see `isUnchangedSelection`. Omit `baselineStays` (a new
+ * quotation, or the `/calculate` preview) and every row is judged fresh,
+ * exactly as before.
+ */
 export function validateItinerary(
   stays: StayInput[],
   context: ValidationContext,
+  baselineStays?: StayInput[],
 ): Issue[] {
   const issues: Issue[] = [];
 
@@ -91,7 +100,7 @@ export function validateItinerary(
   }
 
   stays.forEach((stay, index) => {
-    issues.push(...validateStay(stay, index, context));
+    issues.push(...validateStay(stay, index, context, baselineStays?.[index]));
   });
 
   issues.push(...validateDateCoverage(stays, context));
@@ -102,52 +111,112 @@ export function validateItinerary(
 
 // --------------------------------------------------------------- one stay
 
+/**
+ * Is this row exactly the selection already on file? Compared field by
+ * field rather than by reference, since the caller rebuilds `StayInput`
+ * objects from scratch on every request.
+ *
+ * A row that fails this (new, or edited) is checked against today's
+ * inventory in full; a row that passes it is left alone by the
+ * inventory-only checks below, no matter what the admin has since changed.
+ */
+/** Key-order-independent stringify, so two equal room mixes always compare equal. */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val) => {
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      return Object.keys(val)
+        .sort()
+        .reduce((acc: Record<string, unknown>, k) => {
+          acc[k] = (val as Record<string, unknown>)[k];
+          return acc;
+        }, {});
+    }
+    return val;
+  });
+}
+
+/**
+ * Exported so pricing (`@junaidi/db`) can use the exact same "unchanged"
+ * definition when deciding whether to keep a stay's frozen rate on an edit,
+ * rather than re-deriving a second notion of "unchanged" that could drift
+ * from this one.
+ */
+export function isUnchangedSelection(stay: StayInput, baseline: StayInput | undefined): boolean {
+  if (!baseline) return false;
+  return (
+    stay.blockId === baseline.blockId &&
+    stay.locationId === baseline.locationId &&
+    stay.accommodationId === baseline.accommodationId &&
+    (stay.roomType ?? null) === (baseline.roomType ?? null) &&
+    (stay.occupancy ?? null) === (baseline.occupancy ?? null) &&
+    (stay.sharingWord ?? null) === (baseline.sharingWord ?? null) &&
+    (stay.withoutBed ?? null) === (baseline.withoutBed ?? null) &&
+    (stay.mealId ?? null) === (baseline.mealId ?? null) &&
+    (stay.mealNoteId ?? null) === (baseline.mealNoteId ?? null) &&
+    stableStringify(stay.rooms ?? []) === stableStringify(baseline.rooms ?? [])
+  );
+}
+
 function validateStay(
   stay: StayInput,
   index: number,
   context: ValidationContext,
+  baseline?: StayInput,
 ): Issue[] {
   const issues: Issue[] = [];
   const at = (code: Issue["code"], message: string, severity: IssueSeverity = "error") =>
     issues.push({ severity, code, message, stayIndex: index });
+
+  // An admin's current inventory - which hotels, blocks, room sizes and meals
+  // are still on offer - can move on after a quotation is saved. That must
+  // not retroactively break a row nobody is touching right now; it only
+  // applies to a row that is new or has just been changed to this.
+  const unchanged = isUnchangedSelection(stay, baseline);
 
   const block = context.blocks.get(stay.blockId);
   const accommodation = context.accommodations.get(stay.accommodationId);
   const location = context.locations.get(stay.locationId);
 
   if (!block || !accommodation || !location) {
+    // Same reasoning extends to a hard-deleted reference: a row that was
+    // valid when saved and is not being touched is left as it is - there is
+    // nothing left to check it against anyway.
+    if (unchanged) return issues;
     at("UNKNOWN_REFERENCE", `Row ${index + 1}: a selected item no longer exists.`);
     return issues;
   }
 
   const rowName = `Row ${index + 1} (${block.label})`;
 
-  if (!block.allowedLocationIds.includes(location.id)) {
-    at(
-      "LOCATION_NOT_ALLOWED",
-      `${rowName}: ${location.name} is not allowed for this date block.`,
-    );
-  }
+  if (!unchanged) {
+    if (!block.allowedLocationIds.includes(location.id)) {
+      at(
+        "LOCATION_NOT_ALLOWED",
+        `${rowName}: ${location.name} is not allowed for this date block.`,
+      );
+    }
 
-  if (accommodation.locationId !== location.id) {
-    at(
-      "ACCOMMODATION_MISMATCH",
-      `${rowName}: ${accommodation.name} does not belong to ${location.name}.`,
-    );
-  }
+    if (accommodation.locationId !== location.id) {
+      at(
+        "ACCOMMODATION_MISMATCH",
+        `${rowName}: ${accommodation.name} does not belong to ${location.name}.`,
+      );
+    }
 
-  // A hotel is only offered in the date blocks the admin narrowed it to.
-  const allowedBlockIds = accommodation.allowedBlockIds ?? [];
-  if (allowedBlockIds.length > 0 && !allowedBlockIds.includes(block.id)) {
-    at(
-      "BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION",
-      `${rowName}: ${accommodation.name} is not offered for this date block.`,
-    );
+    // A hotel is only offered in the date blocks the admin narrowed it to.
+    const allowedBlockIds = accommodation.allowedBlockIds ?? [];
+    if (allowedBlockIds.length > 0 && !allowedBlockIds.includes(block.id)) {
+      at(
+        "BLOCK_NOT_ALLOWED_FOR_ACCOMMODATION",
+        `${rowName}: ${accommodation.name} is not offered for this date block.`,
+      );
+    }
   }
 
   // Every stay except a Mina tent needs a room choice. A Separate room also
   // needs its size; Sharing deliberately has none - a shared room may be four,
-  // five or six people.
+  // five or six people. This is about the row's own completeness, not the
+  // admin's inventory, so it always runs.
   if (location.pricingModel === "flat") {
     if (stay.roomType) {
       at("UNEXPECTED_ROOM_TYPE", `${rowName}: a tent has no room type.`, "warning");
@@ -158,29 +227,31 @@ function validateStay(
     at("MISSING_ROOM_TYPE", `${rowName}: a Separate room needs Triple or Double.`);
   }
 
-  // A hotel only has the room sizes the admin recorded for it.
-  const allowedOccupancies = accommodation.allowedOccupancies ?? [];
-  if (stay.occupancy && allowedOccupancies.length > 0 && !allowedOccupancies.includes(stay.occupancy)) {
-    at(
-      "OCCUPANCY_NOT_ALLOWED",
-      `${rowName}: ${accommodation.name} has no ${stay.occupancy} rooms.`,
-    );
-  }
+  if (!unchanged) {
+    // A hotel only has the room sizes the admin recorded for it.
+    const allowedOccupancies = accommodation.allowedOccupancies ?? [];
+    if (stay.occupancy && allowedOccupancies.length > 0 && !allowedOccupancies.includes(stay.occupancy)) {
+      at(
+        "OCCUPANCY_NOT_ALLOWED",
+        `${rowName}: ${accommodation.name} has no ${stay.occupancy} rooms.`,
+      );
+    }
 
-  if (stay.mealId && !accommodation.allowedMealIds.includes(stay.mealId)) {
-    const meal = context.meals.get(stay.mealId);
-    at(
-      "MEAL_NOT_ALLOWED",
-      `${rowName}: "${meal?.label ?? stay.mealId}" is not available at ${accommodation.name}.`,
-    );
-  }
+    if (stay.mealId && !accommodation.allowedMealIds.includes(stay.mealId)) {
+      const meal = context.meals.get(stay.mealId);
+      at(
+        "MEAL_NOT_ALLOWED",
+        `${rowName}: "${meal?.label ?? stay.mealId}" is not available at ${accommodation.name}.`,
+      );
+    }
 
-  if (stay.mealNoteId && !accommodation.allowedMealNoteIds.includes(stay.mealNoteId)) {
-    const note = context.mealNotes.get(stay.mealNoteId);
-    at(
-      "MEAL_NOTE_NOT_ALLOWED",
-      `${rowName}: "${note?.label ?? stay.mealNoteId}" is not available at ${accommodation.name}.`,
-    );
+    if (stay.mealNoteId && !accommodation.allowedMealNoteIds.includes(stay.mealNoteId)) {
+      const note = context.mealNotes.get(stay.mealNoteId);
+      at(
+        "MEAL_NOTE_NOT_ALLOWED",
+        `${rowName}: "${note?.label ?? stay.mealNoteId}" is not available at ${accommodation.name}.`,
+      );
+    }
   }
 
   return issues;

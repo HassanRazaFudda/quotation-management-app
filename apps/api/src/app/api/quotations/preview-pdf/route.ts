@@ -1,4 +1,4 @@
-import { buildQuotationDocument } from "@junaidi/db";
+import { buildQuotationDocument, getQuotationBaseline } from "@junaidi/db";
 import { renderQuotation } from "@junaidi/pdf";
 
 import { sessionFrom } from "@/server/auth";
@@ -15,15 +15,23 @@ export const OPTIONS = handleOptions;
  * Render a draft to a PDF without saving it, for the live preview beside the
  * builder. Priced and denormalised exactly as a saved quotation would be, so
  * the preview is faithful - and the discount is stripped by `toPdfView`.
+ *
+ * `editingId`, when present, is the quotation being edited: its saved rows
+ * become the baseline, so a row nobody has touched is judged as it stood when
+ * chosen, not against today's inventory - the same leniency an actual save
+ * gets. Without it (a brand-new quotation) every row is checked fresh.
  */
 export const POST = route(async (request) => {
   const session = await sessionFrom(request);
-  const input = quotationSchema.parse(await readJson(request));
+  const body = (await readJson(request)) as Record<string, unknown>;
+  const input = quotationSchema.parse(body);
+  const baselineStays = await getQuotationBaseline(body.editingId as string | undefined);
 
   const doc = await buildQuotationDocument(
     input,
     { userId: session.userId, name: session.name, role: session.role },
     "PREVIEW",
+    baselineStays,
   );
 
   const view = await toPdfView(doc as never);

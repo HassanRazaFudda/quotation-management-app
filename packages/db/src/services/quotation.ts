@@ -18,6 +18,7 @@ import {
   formatPrice,
   hasErrors,
   hijriIndex,
+  isUnchangedSelection,
   makePricingContext,
   nestedHajjBlocks,
   makeValidationContext,
@@ -27,6 +28,7 @@ import {
   resolveBlocks,
   roomLabel,
   validateItinerary,
+  type BaselineStay,
   type FlightSelection,
   type PricedFlights,
   type PricedStay,
@@ -119,8 +121,22 @@ export interface PricedQuotation {
 /**
  * Validate and price an itinerary against the stored configuration.
  * Used both by `POST /calculate` (live preview) and on save.
+ *
+ * `baselineStays`, when given, is what this quotation already has saved (same
+ * index = same row). A row identical to its baseline is validated as it stood
+ * when it was chosen, not against today's inventory (see `validateItinerary`),
+ * and keeps the rate it was already quoted at rather than picking up a rate
+ * change made since - the same "never silently rewrite a saved quotation"
+ * rule this module's header describes, just applied to editing instead of
+ * just to renaming. A row that is new, or that the caller has changed, is
+ * priced fresh either way. Only `updateQuotation` has a baseline to pass;
+ * creating a quotation, the `/calculate` preview, and an explicit "refresh to
+ * today's rates" save all price every row fresh.
  */
-export async function priceQuotation(input: QuotationInput): Promise<PricedQuotation> {
+export async function priceQuotation(
+  input: QuotationInput,
+  baselineStays?: BaselineStay[],
+): Promise<PricedQuotation> {
   const bundle = await getConfigBundle(input.season);
   const blocks = resolveBlocks(bundle.blocks, bundle.calendar);
 
@@ -133,7 +149,7 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
     withoutMina: input.withoutMina ?? false,
   });
 
-  const issues = validateItinerary(input.stays, validation);
+  const issues = validateItinerary(input.stays, validation, baselineStays);
   if (hasErrors(issues)) {
     throw new QuotationError(
       "This itinerary cannot be saved yet.",
@@ -149,7 +165,31 @@ export async function priceQuotation(input: QuotationInput): Promise<PricedQuota
   });
 
   const pax = Math.max(1, input.guest.pax);
-  const priced = priceStays(input.stays, pricing, pax);
+  const freshlyPriced = priceStays(input.stays, pricing, pax);
+
+  // Freeze the rate back to what it already was for a row that has not
+  // changed. Skipped for a genuine room mix (rare): the mix's own per-room
+  // figures cannot be reconstructed from the saved snapshot, only the
+  // stay-level total, so a mixed row is always priced fresh to keep the two
+  // consistent with each other.
+  const priced = freshlyPriced.map((stay, index) => {
+    const baseline = baselineStays?.[index];
+    if (
+      baseline &&
+      (baseline.rooms?.length ?? 0) <= 1 &&
+      isUnchangedSelection(input.stays[index]!, baseline)
+    ) {
+      return {
+        ...stay,
+        nights: baseline.nights,
+        rateSnapshot: baseline.rateSnapshot,
+        lineTotal: baseline.lineTotal,
+        groupTotal: baseline.groupTotal,
+      };
+    }
+    return stay;
+  });
+
   const flights = priceFlights(input.flight, bundle.flights);
 
   if (flights.issues.length > 0) {
@@ -197,9 +237,10 @@ export async function buildQuotationDocument(
   input: QuotationInput,
   author: QuotationAuthor,
   quotationId: string,
+  baselineStays?: BaselineStay[],
 ) {
   const bundle = await getConfigBundle(input.season);
-  const priced = await priceQuotation(input);
+  const priced = await priceQuotation(input, baselineStays);
 
   const locationById = new Map(bundle.locations.map((l) => [l.id, l]));
   const accommodationById = new Map(bundle.accommodations.map((a) => [a.id, a]));
@@ -369,10 +410,89 @@ export async function createQuotation(
   return QuotationModel.create(doc);
 }
 
+/**
+ * Rebuild a saved stay as the `BaselineStay` shape validation and pricing
+ * compare against, so an edit can tell "still exactly what was chosen, at the
+ * rate it was chosen at" from "new or changed". Only the fields
+ * `isUnchangedSelection` looks at, plus the frozen numbers, matter here.
+ */
+function toBaselineStayInput(stay: {
+  blockId: unknown;
+  locationId: unknown;
+  accommodationId: unknown;
+  roomType?: string | null;
+  occupancy?: string | null;
+  sharingWord?: string | null;
+  mealId?: unknown;
+  mealNoteId?: unknown;
+  rooms?: Array<{
+    accommodationId: unknown;
+    roomType?: string | null;
+    occupancy?: string | null;
+    sharingWord?: string | null;
+    withoutBed?: boolean;
+    headcount: number;
+  }>;
+  nights: number;
+  rateSnapshot: number;
+  lineTotal: number;
+  groupTotal: number;
+}): BaselineStay {
+  return {
+    blockId: String(stay.blockId),
+    locationId: String(stay.locationId),
+    accommodationId: String(stay.accommodationId),
+    roomType: (stay.roomType ?? null) as StayInput["roomType"],
+    occupancy: (stay.occupancy ?? null) as StayInput["occupancy"],
+    sharingWord: (stay.sharingWord ?? null) as StayInput["sharingWord"],
+    mealId: stay.mealId ? String(stay.mealId) : null,
+    mealNoteId: stay.mealNoteId ? String(stay.mealNoteId) : null,
+    rooms: (stay.rooms ?? []).map((room) => ({
+      accommodationId: String(room.accommodationId),
+      roomType: (room.roomType ?? null) as StayInput["roomType"],
+      occupancy: (room.occupancy ?? null) as StayInput["occupancy"],
+      sharingWord: (room.sharingWord ?? null) as StayInput["sharingWord"],
+      withoutBed: room.withoutBed ?? false,
+      headcount: room.headcount,
+    })),
+    nights: stay.nights,
+    rateSnapshot: stay.rateSnapshot,
+    lineTotal: stay.lineTotal,
+    groupTotal: stay.groupTotal,
+  };
+}
+
+/**
+ * The baseline an in-progress edit should be judged against: what this
+ * quotation already has saved, row for row. `undefined` for a brand-new
+ * quotation (no id yet) or an id that no longer resolves - every row is then
+ * checked fresh, same as `updateQuotation` falls back to.
+ *
+ * Used by the live PDF preview so an untouched row is never flagged just
+ * because the admin has since narrowed today's inventory - exactly the
+ * leniency an actual save already gets.
+ */
+export async function getQuotationBaseline(
+  id: string | null | undefined,
+): Promise<BaselineStay[] | undefined> {
+  if (!id || !Types.ObjectId.isValid(id)) return undefined;
+  const existing = await QuotationModel.findById(id).lean();
+  return existing ? existing.stays.map((stay) => toBaselineStayInput(stay)) : undefined;
+}
+
 export async function updateQuotation(
   id: string,
   input: QuotationInput,
   author: QuotationAuthor,
+  options?: {
+    /**
+     * Staff asked to sync this quotation to today's rates and inventory
+     * instead of the usual edit behaviour - price and validate every row
+     * fresh, exactly as a new quotation would be, dropping the baseline that
+     * would otherwise keep untouched rows at their old rate.
+     */
+    refreshRates?: boolean;
+  },
 ) {
   const existing = await QuotationModel.findById(id);
   if (!existing) throw new QuotationError("Quotation not found.");
@@ -381,7 +501,24 @@ export async function updateQuotation(
     throw new QuotationError("You can only edit your own quotations.");
   }
 
-  const doc = await buildQuotationDocument(input, author, existing.quotationId);
+  // A confirmed booking has already been sold at this price - possibly with
+  // payments already taken against it - so it is never re-priced, refresh or
+  // not. It stays fully editable; refreshing to today's rates is simply not
+  // offered on it.
+  if (options?.refreshRates && existing.status === "confirmed") {
+    throw new QuotationError(
+      "A confirmed booking's rate cannot be refreshed - it has already been sold at this price.",
+    );
+  }
+
+  // What's already saved, row for row - a row the incoming input still
+  // matches exactly is left alone by today's inventory checks and keeps its
+  // old rate; see `isUnchangedSelection` in @junaidi/shared. Skipped entirely
+  // on an explicit refresh.
+  const baselineStays = options?.refreshRates
+    ? undefined
+    : existing.stays.map((stay) => toBaselineStayInput(stay));
+  const doc = await buildQuotationDocument(input, author, existing.quotationId, baselineStays);
 
   // The author and the number stay with the original.
   return QuotationModel.findByIdAndUpdate(
@@ -394,6 +531,38 @@ export async function updateQuotation(
       },
     },
     { returnDocument: "after" },
+  );
+}
+
+/**
+ * Confirmation's one extra rule: every stay must be bookable *today*, not just
+ * when it was first chosen. Unlike a save, this never gets a baseline to
+ * exempt an untouched row - the whole point is to catch inventory the admin
+ * has since narrowed or removed.
+ */
+async function assertCurrentlyBookable(
+  season: string,
+  stays: StayInput[],
+  withoutMina: boolean,
+): Promise<void> {
+  const bundle = await getConfigBundle(season);
+  const blocks = resolveBlocks(bundle.blocks, bundle.calendar);
+
+  const validation = makeValidationContext({
+    blocks,
+    locations: bundle.locations,
+    accommodations: bundle.accommodations,
+    meals: bundle.meals,
+    mealNotes: bundle.mealNotes,
+    withoutMina,
+  });
+
+  const issues = errorsOnly(validateItinerary(stays, validation));
+  if (issues.length === 0) return;
+
+  throw new QuotationError(
+    "This booking can no longer be confirmed as it stands - please change the highlighted selection first.",
+    issues.map((issue) => issue.message),
   );
 }
 
@@ -439,6 +608,16 @@ export async function changeQuotationStatus(
         `HB number "${hb}" is already used on ${clash.quotationId}.`,
       );
     }
+
+    // Confirming asserts this booking is sellable *today* - unlike an
+    // ordinary save, every stay is checked fresh against current inventory,
+    // even ones untouched since the quotation was first written. Editing and
+    // saving stay unblocked either way; only confirmation is gated here.
+    await assertCurrentlyBookable(
+      existing.season,
+      existing.stays.map((stay) => toBaselineStayInput(stay)),
+      existing.withoutMina,
+    );
 
     existing.hbNumber = hb;
 

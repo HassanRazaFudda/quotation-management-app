@@ -1,5 +1,5 @@
 import type { StayInput } from "@junaidi/shared";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { QuotationModel } from "../models/quotation";
 import { DEFAULT_SEASON, seed } from "../seed";
@@ -20,6 +20,7 @@ import {
   createQuotation,
   deleteQuotation,
   duplicateQuotation,
+  getQuotationBaseline,
   listQuotations,
   priceQuotation,
   quotationAuthors,
@@ -801,6 +802,204 @@ describe("confirming a booking", () => {
     await expect(
       changeQuotationStatus(String(mine._id), { status: "confirmed", hbNumber: "HB-X" }, other),
     ).rejects.toThrow(/only change your own/i);
+  });
+});
+
+/**
+ * The bug this guards against: an admin narrowing (or removing) a hotel's
+ * availability for a date block must not retroactively break a quotation
+ * that already used it. Editing and saving stay open either way; only
+ * confirming re-checks today's inventory fresh.
+ */
+describe("a hotel's availability changing after a quotation is saved", () => {
+  afterEach(async () => {
+    // Every test below narrows "Aziziya Hotel" away from the block baseInput
+    // uses - undo it so the rest of the file's tests (which all rely on
+    // baseInput pricing cleanly) are unaffected.
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const aziziya = bundle.accommodations.find((a) => a.name === "Aziziya Hotel")!;
+    await upsertAccommodation(aziziya.id, { locationId: aziziya.locationId, allowedBlockIds: [] });
+  });
+
+  async function narrowAziziyaAwayFromItsUsedBlock() {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const aziziya = bundle.accommodations.find((a) => a.name === "Aziziya Hotel")!;
+    const usedBlockId = baseInput.stays[0]!.blockId;
+    const otherAziziyaBlock = bundle.blocks.find(
+      (b) => b.allowedLocationIds.includes(aziziya.locationId) && b.id !== usedBlockId,
+    )!;
+    await upsertAccommodation(aziziya.id, {
+      locationId: aziziya.locationId,
+      allowedBlockIds: [otherAziziyaBlock.id],
+    });
+  }
+
+  it("keeps saving an untouched stay, even once its hotel is narrowed away from that block", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await narrowAziziyaAwayFromItsUsedBlock();
+
+    // The same stays, saved back unchanged, must not trip on the narrowing.
+    const resaved = await updateQuotation(String(quotation._id), baseInput, staff);
+    expect(resaved!.stays[0]!.accommodationName).toBe("Aziziya Hotel");
+  });
+
+  it("still validates a stay the moment the user actually changes it", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await narrowAziziyaAwayFromItsUsedBlock();
+
+    // Same hotel and block, but the row no longer matches its baseline -
+    // the inventory checks apply to it again, narrowing included.
+    const touched: QuotationInput = {
+      ...baseInput,
+      stays: [{ ...baseInput.stays[0]!, mealId: null }, baseInput.stays[1]!],
+    };
+    // The outer message is the generic "cannot be saved yet" - the specific
+    // reason rides in `.issues`.
+    await expect(updateQuotation(String(quotation._id), touched, staff)).rejects.toThrow(
+      QuotationError,
+    );
+    try {
+      await updateQuotation(String(quotation._id), touched, staff);
+      expect.fail("expected updateQuotation to reject");
+    } catch (err) {
+      expect(err).toBeInstanceOf(QuotationError);
+      expect((err as QuotationError).issues.join(" ")).toMatch(/not offered for this date block/i);
+    }
+  });
+
+  it("lets the live preview render an untouched stay too, once its hotel is narrowed away from that block", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await narrowAziziyaAwayFromItsUsedBlock();
+
+    // Without a baseline (what the preview endpoint did before this fix),
+    // the untouched row is re-checked against today's narrowed inventory and
+    // rejected - the same "cannot be saved yet" the builder's Live Preview
+    // panel showed for a quotation that could actually still be saved fine.
+    await expect(buildQuotationDocument(baseInput, staff, quotation.quotationId)).rejects.toThrow(
+      QuotationError,
+    );
+
+    // With the saved quotation's own rows as the baseline - what the preview
+    // now fetches via `getQuotationBaseline` - the untouched row is left
+    // alone, exactly as `updateQuotation` already treats it.
+    const baseline = await getQuotationBaseline(String(quotation._id));
+    const doc = await buildQuotationDocument(baseInput, staff, quotation.quotationId, baseline);
+    expect(doc.stays[0]!.accommodationName).toBe("Aziziya Hotel");
+  });
+
+  it("blocks confirmation once a used hotel is no longer available, but leaves the quotation editable", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await narrowAziziyaAwayFromItsUsedBlock();
+
+    await expect(
+      changeQuotationStatus(
+        String(quotation._id),
+        { status: "confirmed", hbNumber: "HB-AVAIL-1" },
+        staff,
+      ),
+    ).rejects.toThrow(/can no longer be confirmed/i);
+
+    const stillDraft = await QuotationModel.findById(quotation._id).lean();
+    expect(stillDraft!.status).toBe("draft");
+    expect(stillDraft!.hbNumber).toBeFalsy();
+
+    // Editing/saving the untouched quotation is still allowed - only
+    // confirming was blocked.
+    const resaved = await updateQuotation(String(quotation._id), baseInput, staff);
+    expect(resaved!.stays[0]!.accommodationName).toBe("Aziziya Hotel");
+  });
+});
+
+/**
+ * The follow-up to the availability fix: a rate change since a quotation was
+ * saved must not silently reprice it either - same "never rewrite a document
+ * already sent" rule, just for money instead of for what's bookable.
+ */
+describe("a hotel's rate changing after a quotation is saved", () => {
+  let originalRate: Record<string, unknown>;
+  let aziziyaId: string;
+  let usedBlockId: string;
+
+  beforeAll(async () => {
+    const bundle = await getConfigBundle(DEFAULT_SEASON);
+    const aziziya = bundle.accommodations.find((a) => a.name === "Aziziya Hotel")!;
+    aziziyaId = aziziya.id;
+    usedBlockId = baseInput.stays[0]!.blockId;
+    const rate = bundle.rates.find(
+      (r) => r.accommodationId === aziziyaId && r.blockId === usedBlockId,
+    )! as unknown as Record<string, unknown>;
+    originalRate = { ...rate };
+  });
+
+  afterEach(async () => {
+    // Every test below bumps Aziziya's rate for baseInput's block - put it
+    // back so the rest of the file's tests price baseInput normally.
+    await upsertRate(aziziyaId, usedBlockId, DEFAULT_SEASON, originalRate);
+  });
+
+  async function bumpAziziyaRate() {
+    await upsertRate(aziziyaId, usedBlockId, DEFAULT_SEASON, {
+      model: "sharingOrSeparate",
+      sharing: 999_999,
+      separate: { Sharing: 999_999, Triple: 999_999, Double: 999_999 },
+    });
+  }
+
+  it("keeps an unchanged stay's frozen rate, even after the hotel's rate goes up", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const originalLineTotal = quotation.stays[0]!.lineTotal;
+    const originalFinalTotal = quotation.finalTotal;
+
+    await bumpAziziyaRate();
+
+    const resaved = await updateQuotation(String(quotation._id), baseInput, staff);
+    expect(resaved!.stays[0]!.lineTotal).toBe(originalLineTotal);
+    expect(resaved!.finalTotal).toBe(originalFinalTotal);
+  });
+
+  it("re-prices a stay the moment the user actually changes it", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const originalLineTotal = quotation.stays[0]!.lineTotal;
+
+    await bumpAziziyaRate();
+
+    const touched: QuotationInput = {
+      ...baseInput,
+      stays: [{ ...baseInput.stays[0]!, mealId: null }, baseInput.stays[1]!],
+    };
+    const resaved = await updateQuotation(String(quotation._id), touched, staff);
+    expect(resaved!.stays[0]!.lineTotal).not.toBe(originalLineTotal);
+  });
+
+  it("an explicit refresh re-prices every stay, including ones nobody touched", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const originalLineTotal = quotation.stays[0]!.lineTotal;
+
+    await bumpAziziyaRate();
+
+    const refreshed = await updateQuotation(String(quotation._id), baseInput, staff, {
+      refreshRates: true,
+    });
+    expect(refreshed!.stays[0]!.lineTotal).not.toBe(originalLineTotal);
+  });
+
+  it("refuses to refresh rates on a confirmed booking", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await changeQuotationStatus(
+      String(quotation._id),
+      { status: "confirmed", hbNumber: "HB-RATE-REFRESH-1" },
+      staff,
+    );
+
+    await bumpAziziyaRate();
+
+    await expect(
+      updateQuotation(String(quotation._id), baseInput, staff, { refreshRates: true }),
+    ).rejects.toThrow(/cannot be refreshed/i);
+
+    // An ordinary save (no refresh) is still fine, and still frozen.
+    const resaved = await updateQuotation(String(quotation._id), baseInput, staff);
+    expect(resaved!.stays[0]!.lineTotal).toBe(quotation.stays[0]!.lineTotal);
   });
 });
 
