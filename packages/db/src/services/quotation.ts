@@ -165,13 +165,20 @@ export async function priceQuotation(
   });
 
   const pax = Math.max(1, input.guest.pax);
+  const heads = Math.max(1, Math.round(pax));
   const freshlyPriced = priceStays(input.stays, pricing, pax);
 
-  // Freeze the rate back to what it already was for a row that has not
-  // changed. Skipped for a genuine room mix (rare): the mix's own per-room
-  // figures cannot be reconstructed from the saved snapshot, only the
-  // stay-level total, so a mixed row is always priced fresh to keep the two
-  // consistent with each other.
+  // Freeze the *rate* back to what it already was for a row that has not
+  // changed - that is the figure an admin's later config edit must not
+  // silently rewrite. The party size is not part of that protection: `pax`
+  // sits on the quotation, not the row, so it never fails
+  // `isUnchangedSelection` and must still scale the row's group total, or a
+  // pax edit alone would divide a stale, pre-edit group total by the new
+  // headcount and print a per-person figure that matches neither. Skipped for
+  // a genuine room mix (rare): the mix's own per-room figures cannot be
+  // reconstructed from the saved snapshot, only the stay-level total, so a
+  // mixed row is always priced fresh to keep the two consistent with
+  // each other.
   const priced = freshlyPriced.map((stay, index) => {
     const baseline = baselineStays?.[index];
     if (
@@ -183,8 +190,8 @@ export async function priceQuotation(
         ...stay,
         nights: baseline.nights,
         rateSnapshot: baseline.rateSnapshot,
-        lineTotal: baseline.lineTotal,
-        groupTotal: baseline.groupTotal,
+        lineTotal: baseline.rateSnapshot,
+        groupTotal: baseline.rateSnapshot * heads,
       };
     }
     return stay;

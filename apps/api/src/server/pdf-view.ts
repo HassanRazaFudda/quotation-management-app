@@ -135,10 +135,10 @@ function formatDate(value: Date | string | null | undefined): string {
  * "Aziziya Hotel (Separate - Triple)". The wording is frozen on the quotation
  * when it is saved, so a sent document never rewords itself.
  *
- * The Hajj row shows the Maktab category rather than the tent's internal name -
- * "Maktab A Category" is what the customer recognises. A package that books no
- * tent has no Maktab to name, so it prints that option's name instead. The tier
- * is optional and no longer decides this; "books no tent" does.
+ * The Hajj row leads with the Maktab category - "Maktab A Category" is what
+ * the customer recognises, and no other choice on the row (a tier, a split
+ * across tiers, or booking no tent at all) ever replaces it; each just adds
+ * on in brackets alongside it, exactly as the room size does for a hotel row.
  */
 /** "standard" -> "Standard". */
 const capTier = (tier: string): string => (tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : "");
@@ -163,7 +163,8 @@ function minaTiers(stay: QuotationLike["stays"][number]): string[] {
  * How the accommodation column reads when a stay holds a mix of rooms - a
  * family in one Sharing and one Triple, or two pilgrims in different Mina tiers.
  * Hotels share one name with the room sizes beside it; Mina lists each tier,
- * since the tiers are different accommodations.
+ * since the tiers are different accommodations - still under the Maktab
+ * category, exactly as the unsplit Hajj row carries it (see `minaLabel`).
  */
 /** Two-digit people count, e.g. 3 -> "03". */
 const paxTag = (headcount: number): string =>
@@ -187,7 +188,11 @@ function roomMixLabel(stay: QuotationLike["stays"][number], packageCategory: str
         return label ? `${label} ${paxTag(room.headcount)}` : "";
       })
       .filter(Boolean);
-    return parts.join(" + ");
+    const joined = parts.join(" + ");
+    // The split names which tents, not which package - the Maktab category
+    // still has to lead, or splitting a room mix is the one way to make the
+    // customer's own Maktab category vanish off the page.
+    return packageCategory ? `${packageCategory} (${joined})` : joined;
   }
   const parts = rooms.map(
     (room) => `${room.roomLabel || roomLabel(room) || "Room"} ${paxTag(room.headcount)}`,
@@ -195,9 +200,15 @@ function roomMixLabel(stay: QuotationLike["stays"][number], packageCategory: str
   return `${stay.accommodationName} (${parts.join(" + ")})`;
 }
 
-/** "Maktab A Category (Standard)", or "(Premium + Deluxe)" when the tents are mixed. */
+/**
+ * "Maktab A Category (Standard)", "Maktab A Category (Premium + Deluxe)" for a
+ * mix, or "Maktab A Category (Without Mina)" when the package books no tent -
+ * the category leads every time; only what follows in brackets changes.
+ */
 function minaLabel(stay: QuotationLike["stays"][number], packageCategory: string): string {
-  if (stay.withoutMina) return stay.accommodationName;
+  if (stay.withoutMina) {
+    return packageCategory ? `${packageCategory} (${stay.accommodationName})` : stay.accommodationName;
+  }
   const tiers = minaTiers(stay);
   if (!packageCategory) {
     // The tent name already carries its tier; only a mix needs it spelled out.

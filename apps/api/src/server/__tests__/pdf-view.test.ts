@@ -128,11 +128,23 @@ describe("toPdfView", () => {
     expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Economy)");
   });
 
-  /** No tent means no Maktab to name, whatever the package category says. */
-  it("names the without-Mina option rather than the category", async () => {
+  /** Booking no tent still leaves the Maktab category leading, in brackets. */
+  it("adds the without-Mina option alongside the category, not instead of it", async () => {
     const view = await toPdfView({
       ...quotationWithDiscount,
       packageCategory: "Maktab A Category",
+      stays: [
+        quotationWithDiscount.stays[0]!,
+        { ...quotationWithDiscount.stays[1]!, accommodationName: "Without Mina", minaTier: null, withoutMina: true },
+      ],
+    } as never);
+    expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Without Mina)");
+  });
+
+  it("falls back to just the without-Mina option when no Maktab category is set", async () => {
+    const view = await toPdfView({
+      ...quotationWithDiscount,
+      packageCategory: "",
       stays: [
         quotationWithDiscount.stays[0]!,
         { ...quotationWithDiscount.stays[1]!, accommodationName: "Without Mina", minaTier: null, withoutMina: true },
@@ -180,6 +192,8 @@ describe("toPdfView", () => {
    * A Mina stay can be split across tiers, exactly like a room can be split
    * across sizes. The Hajj row then names the categories directly, joined with
    * " + " - and "Without Mina" is a category in its own right, never dropped.
+   * The Maktab category still leads, exactly as the unsplit row names it -
+   * splitting the room is not supposed to make it disappear.
    */
   describe("a Mina split across tiers", () => {
     const minaSplit = (
@@ -193,17 +207,17 @@ describe("toPdfView", () => {
       ],
     });
 
-    it("names two tiers with a '+' and their pax counts, from the frozen labels", async () => {
+    it("keeps the Maktab category and names two tiers with a '+' and their pax counts, from the frozen labels", async () => {
       const view = await toPdfView(
         minaSplit([
           { accommodationName: "Mina Premium", minaTier: "premium", roomLabel: "Premium", headcount: 3 },
           { accommodationName: "Mina Standard", minaTier: "standard", roomLabel: "Standard", headcount: 1 },
         ]) as never,
       );
-      expect(view.stays[1]!.accommodation).toBe("Premium [03] + Standard [01]");
+      expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Premium [03] + Standard [01])");
     });
 
-    it("keeps 'Without Mina' as a category, deriving labels when unfrozen", async () => {
+    it("keeps the Maktab category and 'Without Mina' as a category, deriving labels when unfrozen", async () => {
       // No roomLabel here, so the label is derived from tier / withoutMina.
       const view = await toPdfView(
         minaSplit([
@@ -211,7 +225,18 @@ describe("toPdfView", () => {
           { accommodationName: "Without Mina", minaTier: null, withoutMina: true, headcount: 3 },
         ]) as never,
       );
-      expect(view.stays[1]!.accommodation).toBe("Standard [02] + Without Mina [03]");
+      expect(view.stays[1]!.accommodation).toBe("Maktab A Category (Standard [02] + Without Mina [03])");
+    });
+
+    it("falls back to just the tiers when no Maktab category is set", async () => {
+      const view = await toPdfView({
+        ...minaSplit([
+          { accommodationName: "Mina Premium", minaTier: "premium", roomLabel: "Premium", headcount: 3 },
+          { accommodationName: "Mina Standard", minaTier: "standard", roomLabel: "Standard", headcount: 1 },
+        ]),
+        packageCategory: "",
+      } as never);
+      expect(view.stays[1]!.accommodation).toBe("Premium [03] + Standard [01]");
     });
   });
 

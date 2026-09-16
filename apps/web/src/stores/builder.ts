@@ -413,10 +413,15 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
         .filter((block): block is (typeof config.blocks)[number] => Boolean(block)),
     );
 
-    // A row still exactly as it was loaded keeps its own frozen rate here
+    // A row still exactly as it was loaded keeps its own frozen *rate* here
     // too, so the preview never shows a number the save would then discard;
-    // see `isUnchangedSelection`. A genuine room mix is always priced fresh -
-    // its own per-room figures cannot be reconstructed from the saved stay.
+    // see `isUnchangedSelection`. Pax is not part of that check - it lives on
+    // the quotation, not the row - so the group total is still rebuilt from
+    // the frozen rate at today's pax; freezing it outright would leave a
+    // stale, pre-edit total behind for the new headcount to divide into,
+    // printing a per-person figure that matches neither pax. A genuine room
+    // mix is always priced fresh - its own per-room figures cannot be
+    // reconstructed from the saved stay.
     const frozenRate = (stay: StayInput, index: number, priced: PricedStay) => {
       const baseline = state.originalStays?.[index];
       if (
@@ -427,12 +432,13 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       ) {
         return priced;
       }
+      const heads = Math.max(1, Math.round(state.pax));
       return {
         ...priced,
         nights: baseline.nights,
         rateSnapshot: baseline.rateSnapshot,
-        lineTotal: baseline.lineTotal,
-        groupTotal: baseline.groupTotal,
+        lineTotal: baseline.rateSnapshot,
+        groupTotal: baseline.rateSnapshot * heads,
       };
     };
 

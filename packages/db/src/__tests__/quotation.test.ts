@@ -1003,6 +1003,36 @@ describe("a hotel's rate changing after a quotation is saved", () => {
   });
 });
 
+/**
+ * The bug this guards against: `pax` lives on the quotation, not on any one
+ * stay, so it never fails `isUnchangedSelection` and an untouched row's
+ * *group* total (rate x the old pax) must not be frozen along with its rate -
+ * only the per-person rate is the figure a later edit must not silently
+ * rewrite. Freezing the group total too left it stuck at the old headcount,
+ * so re-saving with a different pax divided that stale total by the new
+ * headcount and printed a per-person figure that matched neither.
+ */
+describe("changing pax on a saved quotation", () => {
+  it("rescales every untouched stay's group total to the new pax, keeping the per-person rate", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const perPersonRate = quotation.stays[0]!.lineTotal;
+    const originalPax = baseInput.guest.pax;
+
+    const morePax: QuotationInput = { ...baseInput, guest: { ...baseInput.guest, pax: originalPax + 3 } };
+    const resaved = await updateQuotation(String(quotation._id), morePax, staff);
+
+    // The rate itself - what an admin's later edit must not silently rewrite -
+    // is unchanged; only the party size grew, so the row's group total grows
+    // with it rather than staying pinned to the old headcount.
+    expect(resaved!.stays[0]!.lineTotal).toBe(perPersonRate);
+    expect(resaved!.stays[0]!.groupTotal).toBe(perPersonRate * (originalPax + 3));
+    // Every rate here is quoted per person, so adding guests must not change
+    // what each of them pays - the bug divided a stale (old-headcount) group
+    // total by the new headcount instead, moving this number for no reason.
+    expect(resaved!.finalTotal).toBe(quotation.finalTotal);
+  });
+});
+
 describe("ownership", () => {
   it("stops staff editing someone else's quotation", async () => {
     const mine = await createQuotation(baseInput, staff);
