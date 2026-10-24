@@ -107,6 +107,12 @@ function socialIcons(company: QuotationPdfView["company"]): string {
     return html ? `<div class="social">${html}</div>` : "";
 }
 
+/** The header's third cell; nothing at all when the company lists no links. */
+function socialCell(company: QuotationPdfView["company"]): string {
+    const icons = socialIcons(company);
+    return icons ? `<td class="social-cell">${icons}</td>` : "";
+}
+
 function listItems(items: StyledLine[]): string {
     return items
         .map((item) => {
@@ -375,13 +381,17 @@ ${FONT_FACE_CSS}
         .header-wrap { position: relative; }
         .header-table { width: 100%; margin-bottom: 10px; border-bottom: 3px solid #9f0b1f; padding-bottom: 8px; }
         .header-table td { vertical-align: middle; }
-        .logo-cell { width: 140px; text-align: left; padding-right: 15px; }
+        /* Logo and social links are each as wide as their own content (width: 1%
+           shrinks a cell to fit); the name takes what is left and centres in it, so
+           it sits evenly between the two however long the company name is. */
+        .logo-cell { width: 1%; text-align: left; padding-right: 15px; }
         .logo-cell img { max-width: 130px; max-height: 110px; width: auto; height: auto; display: block; object-fit: contain; object-position: left center; }
-        .company-info { text-align: center; padding-right: 140px; }
+        .company-info { text-align: center; }
 
-        /* Social links, pinned to the top-right corner - one per line, the icon
-           in its own platform colour beside the readable link. */
-        .social { position: absolute; top: 0; right: 0; display: flex; flex-direction: column; gap: 16px; align-items: flex-start;}
+        /* Social links, in a column at the right - one per line, the icon in its
+           own platform colour beside the readable link. */
+        .social-cell { width: 1%; padding-left: 15px; }
+        .social { display: flex; flex-direction: column; gap: 16px; align-items: flex-start;}
         .social a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: #374151; font-size: 8pt; }
         .social svg { width: 14px; height: 14px; flex-shrink: 0; display: block; }
         .social .url { white-space: nowrap; }
@@ -506,7 +516,6 @@ ${FONT_FACE_CSS}
 <div class="sheet">
     <div class="sheet-body">
         ${view.branding ? `<div class="header-wrap">
-        ${socialIcons(view.company)}
         <table class="header-table">
             <tr>
                 <td class="logo-cell"><img src="${view.logoDataUri}" alt="${escapeHtml(view.company.name)} Logo" /></td>
@@ -517,6 +526,7 @@ ${FONT_FACE_CSS}
                     <p>${escapeHtml(view.company.address)}</p>
                     <p>${escapeHtml(view.company.contact)}</p>
                 </td>
+                ${socialCell(view.company)}
             </tr>
         </table>
         </div>` : ""}

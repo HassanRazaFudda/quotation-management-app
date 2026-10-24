@@ -444,10 +444,12 @@ export default function UmrahQuotationDetailPage({ params }: { params: Promise<{
             onChange={(e) => setBranding(e.target.checked)}
             className="size-4 accent-brand-500"
           />
-          Include the letterhead
+          Include Junaidi branding
         </label>
         {!branding && (
-          <p className="mt-1 text-xs text-muted">The PDF prints with no logo or letterhead - a neutral copy.</p>
+          <p className="mt-1 text-xs text-muted">
+            The PDF prints with no logo, letterhead or agency signature - a neutral copy.
+          </p>
         )}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" size="sm" onClick={() => setShowPrint(false)}>

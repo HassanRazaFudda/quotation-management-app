@@ -235,6 +235,15 @@ NEXT_PUBLIC_API_URL=https://quote.junaidi.com
 > Using the IP instead of a domain? Set both to `http://YOUR_VPS_IP` here, and
 > follow the HTTP-only note in Part 8.
 
+**Umrah settings page (optional, not given to clients by default).** The page
+where the Umrah letterhead and default text are edited is **off by default**:
+leave these out and it has no menu entry, `/admin/umrah-settings` is a 404 and
+saving settings through the API is a 404 too (Umrah quotations themselves are
+unaffected). To switch it on, add `UMRAH_SETTINGS_ENABLED=true` to the backend
+`.env.local` and `NEXT_PUBLIC_UMRAH_SETTINGS_ENABLED=true` to the frontend one.
+The frontend value is inlined at build time, so rebuild the web app after
+changing it; the backend only needs a restart.
+
 ---
 
 ## Part 7 — Install, build, seed

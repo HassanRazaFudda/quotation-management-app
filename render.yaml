@@ -27,3 +27,7 @@ services:
         value: production
       - key: PORT
         value: "10000"
+      # The Umrah settings page is not given to clients by default, so
+      # UMRAH_SETTINGS_ENABLED is deliberately not listed: absent means off. Add
+      # UMRAH_SETTINGS_ENABLED=true in the dashboard only where it should be on
+      # (and NEXT_PUBLIC_UMRAH_SETTINGS_ENABLED=true on the frontend).

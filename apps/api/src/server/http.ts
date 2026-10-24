@@ -150,6 +150,34 @@ export function route(
   };
 }
 
+/**
+ * Editing the Umrah letterhead and default text is not part of what every client
+ * gets: it is off unless this deployment sets `UMRAH_SETTINGS_ENABLED=true`.
+ * (Reading the settings stays open - the quotation builder needs the defaults.)
+ * Read per request, so a restart is all it takes.
+ */
+export function umrahSettingsEnabled(): boolean {
+  return ["true", "1"].includes((process.env.UMRAH_SETTINGS_ENABLED ?? "").trim().toLowerCase());
+}
+
+/**
+ * `route`, but answering 404 while `enabled()` is false - before touching the
+ * database or the login, exactly as if the route did not exist, so nothing about
+ * it can be probed.
+ */
+export function routeWhen(
+  enabled: () => boolean,
+  handler: Parameters<typeof route>[0],
+): ReturnType<typeof route> {
+  const guarded = route(handler);
+  return async (request, context) => {
+    if (!enabled()) {
+      return Response.json({ error: "Not found." }, { status: 404, headers: corsHeaders(request) });
+    }
+    return guarded(request, context);
+  };
+}
+
 // -------------------------------------------------------------- utilities
 
 export async function readJson<T>(request: Request): Promise<T> {

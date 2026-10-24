@@ -105,9 +105,10 @@ export function UmrahBuilder({
     builder.charges.length === 0;
   const issues = untouched ? [] : pricing.issues;
 
-  const defaultTitle = pricing.totalNights > 0 ? `Umrah Package - ${pricing.totalNights} Nights` : "";
+  // Umrah packages are sold by the day: 9 nights is a "10 Days" package.
+  const defaultTitle = pricing.totalNights > 0 ? `Umrah Package - ${pricing.totalNights + 1} Days` : "";
 
-  /** The payload as it will be saved; an unset title falls back to the nights. */
+  /** The payload as it will be saved; an unset title falls back to the days. */
   function payload() {
     const body = toUmrahPayload(builder);
     return { ...body, packageTitle: body.packageTitle.trim() || defaultTitle };
@@ -206,7 +207,7 @@ export function UmrahBuilder({
             <Field label="Valid until">
               <Input type="date" value={builder.validUntil} onChange={(e) => builder.set("validUntil", e.target.value)} />
             </Field>
-            <Field label="Package title" hint="Leave empty to use the number of nights" className="@xl:col-span-2">
+            <Field label="Package title" hint="Leave empty to use the number of days" className="@xl:col-span-2">
               <Input
                 value={builder.packageTitle}
                 onChange={(e) => builder.set("packageTitle", e.target.value)}

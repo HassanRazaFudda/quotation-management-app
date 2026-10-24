@@ -44,6 +44,30 @@ describe("the rendered document", () => {
     expect(branded).not.toContain("instagram"); // empty link renders no icon
   });
 
+  it("gives the social links a header cell of their own, so a long company name cannot run into them", () => {
+    const company = (social: { facebook: string; instagram: string; youtube: string }) => ({
+      name: "JUNAIDI AIR TRAVEL",
+      subheading: "",
+      tagline: "",
+      address: "Karachi",
+      contact: "info@x.com",
+      social,
+    });
+    const withLinks = buildHtml(
+      buildPdfView({
+        ...sampleInput,
+        company: company({ facebook: "https://facebook.com/x", instagram: "", youtube: "" }),
+      }),
+    );
+    expect(withLinks).toContain('<td class="social-cell"><div class="social">');
+
+    // No links: no empty column is reserved, the name centres in the full width.
+    const withoutLinks = buildHtml(
+      buildPdfView({ ...sampleInput, company: company({ facebook: "", instagram: "", youtube: "" }) }),
+    );
+    expect(withoutLinks).not.toContain('<td class="social-cell">');
+  });
+
   it("embeds the Nexa brand font so the header does not fall back to a system face", () => {
     expect(html).toContain("@font-face");
     expect(html).toContain("'Nexa'");

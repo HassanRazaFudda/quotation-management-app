@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { UMRAH_SETTINGS_ENABLED } from "@/lib/features";
 import { useHydrated } from "@/lib/useHydrated";
 import { isAdmin, useAuthStore } from "@/stores/auth";
 import { useUiStore } from "@/stores/ui";
@@ -39,6 +40,8 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  /** Left out of the menu, e.g. a page this deployment has not switched on. */
+  hidden?: boolean;
   /** Active only on exactly this path, not on pages beneath it. */
   exact?: boolean;
   /** Pages under `href` that belong to a different item, so this one is not lit for them. */
@@ -82,7 +85,13 @@ const NAV: NavGroup[] = [
         except: ["/umrah-quotations/new"],
       },
       { href: "/umrah-quotations/new", label: "New Quotation", icon: <Plus className={icon} />, exact: true },
-      { href: "/admin/umrah-settings", label: "Settings", icon: <SlidersHorizontal className={icon} />, adminOnly: true },
+      {
+        href: "/admin/umrah-settings",
+        label: "Settings",
+        icon: <SlidersHorizontal className={icon} />,
+        adminOnly: true,
+        hidden: !UMRAH_SETTINGS_ENABLED,
+      },
     ],
   },
   {
@@ -130,7 +139,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const groups = NAV.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.adminOnly || isAdmin(user)),
+    items: group.items.filter((item) => !item.hidden && (!item.adminOnly || isAdmin(user))),
   })).filter((group) => group.items.length > 0);
 
   const isActive = (item: NavItem) => {
