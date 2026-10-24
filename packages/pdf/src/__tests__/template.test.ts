@@ -327,3 +327,52 @@ describe("auto-fit scaling", () => {
     expect(buildHtml(sampleView, 0.88)).toContain("height: 312.500mm;");
   });
 });
+
+describe("quotation-type wording and transport", () => {
+  it("keeps the Hajj wording by default", () => {
+    const html = buildHtml(buildPdfView({ ...sampleInput, hbNumber: "HB-1" }));
+    expect(html).toContain("HB Number:");
+    expect(html).toContain("<th>Location / Phase</th>");
+    expect(html).toContain("<th>Accommodation / Maktab</th>");
+  });
+
+  it("prints no transport table when there is no transport", () => {
+    const html = buildHtml(sampleView);
+    // (The word itself can appear in a Hajj "includes" line; the table is what matters.)
+    expect(html).not.toContain('<div class="section-title transport-title">');
+    expect(html).not.toContain('<table class="data-table transport-table">');
+  });
+
+  it("uses the labels a quotation type supplies, and only those", () => {
+    const html = buildHtml(
+      buildPdfView({
+        ...sampleInput,
+        hbNumber: "UB-1",
+        labels: { bookingRef: "Booking No.", phaseHeader: "City" },
+      }),
+    );
+    expect(html).toContain("Booking No.:");
+    expect(html).not.toContain("HB Number:");
+    expect(html).toContain("<th>City</th>");
+    // A label left out keeps the Hajj wording.
+    expect(html).toContain("<th>Accommodation / Maktab</th>");
+  });
+
+  it("lists transport legs with their vehicle and no price, dropping blank routes", () => {
+    const html = buildHtml(
+      buildPdfView({
+        ...sampleInput,
+        transport: [
+          { route: "Makkah to Madinah", vehicle: "Private Staria" },
+          { route: "  ", vehicle: "ignored" },
+          { route: "Jeddah <Airport> to Makkah", vehicle: "" },
+        ],
+      }),
+    );
+    expect(html).toContain('<div class="section-title transport-title">Transportation</div>');
+    expect(html).toContain("<strong>Makkah to Madinah</strong>");
+    expect(html).toContain("Private Staria");
+    expect(html).not.toContain("ignored");
+    expect(html).toContain("Jeddah &lt;Airport&gt; to Makkah"); // escaped
+  });
+});

@@ -62,6 +62,31 @@ export interface PdfTravel {
   note: string;
 }
 
+/**
+ * The few words that differ between quotation types. The defaults are the Hajj
+ * wording exactly, so a Hajj quotation prints as it always has.
+ */
+export interface PdfLabels {
+  /** The confirmed-booking reference row: "HB Number" for Hajj. */
+  bookingRef: string;
+  /** First itinerary column heading. */
+  phaseHeader: string;
+  /** Third itinerary column heading. */
+  accommodationHeader: string;
+}
+
+export const DEFAULT_PDF_LABELS: PdfLabels = {
+  bookingRef: "HB Number",
+  phaseHeader: "Location / Phase",
+  accommodationHeader: "Accommodation / Maktab",
+};
+
+/** One leg of ground transport, printed without its cost. */
+export interface PdfTransportLeg {
+  route: string;
+  vehicle: string;
+}
+
 /** The agency behind the software. Printed small, on every page. */
 export const POWERED_BY = {
   name: "Digitli",
@@ -126,6 +151,9 @@ export interface QuotationPdfView {
 
   travel: PdfTravel;
   stays: PdfStayRow[];
+  /** Ground transport, listed under the itinerary. Empty prints nothing. */
+  transport: PdfTransportLeg[];
+  labels: PdfLabels;
   qurbaniIncluded: boolean;
 
   includes: StyledLine[];
@@ -171,6 +199,10 @@ export interface PdfViewInput {
   addOns?: PdfAddOn[];
   travel?: Partial<PdfTravel>;
   stays: PdfStayRow[];
+  /** Omit for Hajj. */
+  transport?: PdfTransportLeg[];
+  /** Omit for Hajj; any label left out keeps the Hajj wording. */
+  labels?: Partial<PdfLabels>;
   qurbaniIncluded?: boolean;
   includes?: Array<string | StyledLine>;
   includesNote?: string;
@@ -223,6 +255,10 @@ export function buildPdfView(input: PdfViewInput): QuotationPdfView {
     },
 
     stays: input.stays,
+    transport: (input.transport ?? [])
+      .map((leg) => ({ route: leg.route.trim(), vehicle: leg.vehicle.trim() }))
+      .filter((leg) => leg.route.length > 0),
+    labels: { ...DEFAULT_PDF_LABELS, ...input.labels },
     qurbaniIncluded: input.qurbaniIncluded ?? true,
 
     includes: cleanLines(input.includes),

@@ -18,7 +18,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import type { Quotation, QuotationPayment } from "@/lib/types";
+import type { QuotationPayment } from "@/lib/types";
 import { useConfigStore } from "@/stores/config";
 
 const OTHER = "__other__";
@@ -29,17 +29,40 @@ const STATUS_LABEL: Record<PaymentStatus, string> = {
 };
 
 /**
+ * What a payments card needs from a booking. Hajj and Umrah quotations both
+ * fit, so one card serves both; only the API path and the total differ.
+ */
+export interface PayableQuotation {
+  _id: string;
+  finalTotal: number;
+  guest: { pax: number };
+  currency?: { code: string; symbol: string; decimals: number };
+  payments?: QuotationPayment[];
+  assignedStaff?: { userId: string | null; name: string };
+}
+
+/**
  * Payment management for a confirmed booking: the running financial picture, the
  * list of payments, and a form to add or correct them. All figures are in the
  * quotation's own currency; a payment taken in another currency is converted at
  * a rate frozen on the entry.
  */
-export function PaymentsCard({
+export function PaymentsCard<Q extends PayableQuotation>({
   quotation,
   onUpdated,
+  apiBase = "/api/quotations",
+  total,
 }: {
-  quotation: Quotation;
-  onUpdated: (q: Quotation) => void;
+  quotation: Q;
+  onUpdated: (q: Q) => void;
+  /** The collection the booking lives in. Defaults to Hajj quotations. */
+  apiBase?: string;
+  /**
+   * The booking's whole value when it is not simply "per-person price x pax" -
+   * an Umrah booking has separate prices for with-bed guests, infants, and so
+   * on. Omit for the usual per-person total.
+   */
+  total?: { amount: number; hint: string };
 }) {
   const config = useConfigStore();
   const [staff, setStaff] = useState<Array<{ id: string; name: string }>>([]);
@@ -62,22 +85,21 @@ export function PaymentsCard({
 
   const summary = useMemo(
     () =>
+      // A fixed booking total is one lump: priced as a single "person".
       paymentSummary({
-        finalTotal: quotation.finalTotal,
-        pax: quotation.guest.pax,
+        finalTotal: total ? total.amount : quotation.finalTotal,
+        pax: total ? 1 : quotation.guest.pax,
         decimals: currency.decimals,
         payments,
       }),
-    [quotation.finalTotal, quotation.guest.pax, currency.decimals, payments],
+    [total, quotation.finalTotal, quotation.guest.pax, currency.decimals, payments],
   );
 
   async function remove() {
     if (!toRemove) return;
     setRemoving(true);
     try {
-      const updated = await api.del<Quotation>(
-        `/api/quotations/${quotation._id}/payments/${toRemove._id}`,
-      );
+      const updated = await api.del<Q>(`${apiBase}/${quotation._id}/payments/${toRemove._id}`);
       onUpdated(updated);
       toast.success("Payment removed");
       setToRemove(null);
@@ -110,7 +132,11 @@ export function PaymentsCard({
 
       {/* -------- financial summary -------- */}
       <div className="grid gap-px bg-line sm:grid-cols-3">
-        <Stat label="Grand total" value={money(summary.grandTotal)} hint={`${summary.pax} pax · ${money(summary.costPerPerson)} / person`} />
+        <Stat
+          label="Grand total"
+          value={money(summary.grandTotal)}
+          hint={total ? total.hint : `${summary.pax} pax · ${money(summary.costPerPerson)} / person`}
+        />
         <Stat label="Received" value={money(summary.totalReceived)} tone="green" />
         <Stat
           label="Outstanding"
@@ -170,9 +196,10 @@ export function PaymentsCard({
         )}
       </div>
 
-      <PaymentModal
+      <PaymentModal<Q>
         open={open}
         onClose={() => setOpen(false)}
+        apiBase={apiBase}
         quotationId={quotation._id}
         currency={currency}
         currencyOptions={currencyOptions(currency.code, config.currencies)}
@@ -234,9 +261,10 @@ function Stat({
   );
 }
 
-function PaymentModal({
+function PaymentModal<Q>({
   open,
   onClose,
+  apiBase,
   quotationId,
   currency,
   currencyOptions,
@@ -247,13 +275,14 @@ function PaymentModal({
 }: {
   open: boolean;
   onClose: () => void;
+  apiBase: string;
   quotationId: string;
   currency: { code: string; symbol: string; decimals: number };
   currencyOptions: string[];
   staff: Array<{ id: string; name: string }>;
   assignedStaff?: { userId: string | null; name: string };
   editing: QuotationPayment | null;
-  onSaved: (q: Quotation) => void;
+  onSaved: (q: Q) => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
@@ -324,11 +353,9 @@ function PaymentModal({
     };
     try {
       const path = editing
-        ? `/api/quotations/${quotationId}/payments/${editing._id}`
-        : `/api/quotations/${quotationId}/payments`;
-      const updated = editing
-        ? await api.patch<Quotation>(path, body)
-        : await api.post<Quotation>(path, body);
+        ? `${apiBase}/${quotationId}/payments/${editing._id}`
+        : `${apiBase}/${quotationId}/payments`;
+      const updated = editing ? await api.patch<Q>(path, body) : await api.post<Q>(path, body);
       onSaved(updated);
       toast.success(editing ? "Payment updated" : "Payment recorded");
     } catch (err) {

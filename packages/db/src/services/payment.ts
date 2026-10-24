@@ -45,8 +45,8 @@ async function resolveReceiver(input: PaymentInput): Promise<{ userId: Types.Obj
   return { userId: null, name: (input.receivedByName ?? "").trim() };
 }
 
-/** Shared validation and conversion for a new or edited payment. */
-async function prepared(quotation: any, input: PaymentInput) {
+/** Validates and converts a new or edited payment; shared by the Hajj and Umrah payment services. */
+export async function preparePayment(quotation: any, input: PaymentInput) {
   const amount = Math.max(0, input.amount);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new QuotationError("The amount received must be greater than zero.");
@@ -76,7 +76,7 @@ export async function addPayment(quotationId: string, input: PaymentInput, actor
     throw new QuotationError("Payments can only be recorded on a confirmed booking.");
   }
 
-  const fields = await prepared(quotation, input);
+  const fields = await preparePayment(quotation, input);
   quotation.payments.push({
     ...fields,
     recordedBy: Types.ObjectId.isValid(actor.userId) ? new Types.ObjectId(actor.userId) : null,
@@ -97,7 +97,7 @@ export async function updatePayment(
   const payment = quotation.payments.id(paymentId);
   if (!payment) throw new QuotationError("Payment not found.");
 
-  Object.assign(payment, await prepared(quotation, input));
+  Object.assign(payment, await preparePayment(quotation, input));
   await quotation.save();
   return quotation;
 }

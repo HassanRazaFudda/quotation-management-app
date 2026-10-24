@@ -168,6 +168,33 @@ function priceSection(view: QuotationPdfView): string {
 }
 
 /**
+ * Ground transport, listed under the itinerary - route and vehicle, no price: a
+ * cost is either inside the package price or shown in the add-ons band. Prints
+ * nothing when there are no legs, which is every Hajj quotation.
+ */
+function transportSection(view: QuotationPdfView): string {
+  if (view.transport.length === 0) return "";
+  const rows = view.transport
+    .map(
+      (leg, index) => `
+                <tr${index % 2 === 1 ? ' class="row-highlight"' : ""}>
+                    <td><strong>${escapeHtml(leg.route)}</strong></td>
+                    <td>${escapeHtml(leg.vehicle)}</td>
+                </tr>`,
+    )
+    .join("");
+  return `
+        <div class="section-title transport-title">Transportation</div>
+        <table class="data-table transport-table">
+            <thead>
+                <tr><th>Route</th><th>Vehicle</th></tr>
+            </thead>
+            <tbody>${rows}
+            </tbody>
+        </table>`;
+}
+
+/**
  * Per-room-type surcharges, in a band under the itinerary - "Aziziya Triple Bed
  * PKR 200,000 /-". A package-only extra; empty for a quotation, so nothing
  * prints. Only the ones this print does NOT include show here - one that is
@@ -431,6 +458,10 @@ ${FONT_FACE_CSS}
         .total-section h2 { margin: 0; color: #9f0b1f; font-size: 18pt; }
         .total-section p { margin: 3px 0 0 0; color: #111827; font-weight: bold; font-size: 11pt; }
 
+        .transport-title { margin-top: 12px; }
+        /* Two short columns: the vehicle may wrap, the route never does. */
+        .transport-table td:nth-child(2), .transport-table th:nth-child(2) { white-space: normal; }
+
         /* A package's two or three prices for one itinerary, side by side. */
         .tier-caption { margin: 0 0 7px; text-align: center; color: #111827; font-weight: bold; font-size: 11pt; letter-spacing: 0.3px; }
         .tier-band { display: flex; gap: 10px; }
@@ -493,7 +524,7 @@ ${FONT_FACE_CSS}
         <table class="meta-table">
             ${view.hbNumber
             ? `<tr>
-                <td class="label">HB Number:</td>
+                <td class="label">${escapeHtml(view.labels.bookingRef)}:</td>
                 <td><strong style="color:#9f0b1f; letter-spacing:0.3px">${escapeHtml(view.hbNumber)}</strong></td>
                 <td class="label">Status:</td>
                 <td><strong>Confirmed</strong></td>
@@ -529,15 +560,16 @@ ${travelSection(view.travel)}
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Location / Phase</th>
+                    <th>${escapeHtml(view.labels.phaseHeader)}</th>
                     <th>Stay Dates</th>
-                    <th>Accommodation / Maktab</th>
+                    <th>${escapeHtml(view.labels.accommodationHeader)}</th>
                     <th>Meal Plan</th>
                 </tr>
             </thead>
             <tbody>${stayRows(view)}
             </tbody>
         </table>
+${transportSection(view)}
 ${addOnsBand(view)}
         <div class="spacer"></div>
 ${priceSection(view)}
