@@ -74,6 +74,8 @@ export interface UmrahBuilderFlight {
   outbound: string;
   inbound: string;
   adultFare: number;
+  /** Null: children pay the adult fare. */
+  childFare: number | null;
   infantFare: number;
   currencyCode: string;
 }
@@ -99,8 +101,12 @@ export interface UmrahBuilderState {
   quotationId: string | null;
 
   guestName: string;
-  pax: number;
+  adults: number;
+  children: number;
+  /** Of the adults and children, how many share a room without their own bed. */
   withoutBedPax: number;
+  /** Of the without-bed guests, how many are children. */
+  withoutBedChildren: number;
   infants: number;
   date: string;
   validUntil: string;
@@ -163,10 +169,15 @@ export const emptyLineControl = (): LineControl => ({ offered: true, discount: 0
 export const emptyLines = (): LineControls => ({
   main: emptyLineControl(),
   withoutBed: emptyLineControl(),
+  child: emptyLineControl(),
+  childWithoutBed: emptyLineControl(),
   infant: emptyLineControl(),
   Quad: emptyLineControl(),
   Triple: emptyLineControl(),
   Double: emptyLineControl(),
+  "Quad:child": emptyLineControl(),
+  "Triple:child": emptyLineControl(),
+  "Double:child": emptyLineControl(),
 });
 
 const emptyRoom = (): UmrahBuilderRoom => ({ key: newKey(), roomType: "Quad", rooms: 1, persons: 0, rate: 0 });
@@ -197,6 +208,7 @@ const emptyFlight = (): UmrahBuilderFlight => ({
   outbound: "",
   inbound: "",
   adultFare: 0,
+  childFare: null,
   infantFare: 0,
   currencyCode: "PKR",
 });
@@ -224,8 +236,10 @@ type BuilderData = Omit<
 const freshData = (): BuilderData => ({
   quotationId: null,
   guestName: "",
-  pax: 2,
+  adults: 2,
+  children: 0,
   withoutBedPax: 0,
+  withoutBedChildren: 0,
   infants: 0,
   date: today(),
   validUntil: "",
@@ -320,6 +334,22 @@ export const useUmrahBuilderStore = create<UmrahBuilderState>((set) => ({
 
 // ------------------------------------------------------------------ helpers
 
+/** Guests with their own bed: the adults and children, less those sharing without one. */
+export function withBedCount(state: Pick<BuilderData, "adults" | "children" | "withoutBedPax">): number {
+  return state.adults + state.children - state.withoutBedPax;
+}
+
+/** The guest counts as the pricing and the API store them. */
+function guestCounts(state: BuilderData) {
+  return {
+    pax: withBedCount(state),
+    withoutBedPax: state.withoutBedPax,
+    infants: state.infants,
+    children: state.children,
+    withoutBedChildren: state.children > 0 ? state.withoutBedChildren : 0,
+  };
+}
+
 /**
  * A single-room-type quote seats everyone with a bed in the one room line, so
  * the guest count is never typed twice: it is always the quote's PAX.
@@ -354,7 +384,7 @@ export function toPricingInput(state: BuilderData): UmrahPricingInput {
     mode: state.pricingMode,
     priceDisplay: state.priceDisplay,
     transportDisplay: state.transportDisplay,
-    guest: { pax: state.pax, withoutBedPax: state.withoutBedPax, infants: state.infants },
+    guest: guestCounts(state),
     currency: state.currency,
     exchangeRates: usedCurrencyCodes(state).map((code) => ({ code, rate: state.exchangeRates[code] ?? 0 })),
     stays: state.stays.map((stay) => ({
@@ -366,7 +396,7 @@ export function toPricingInput(state: BuilderData): UmrahPricingInput {
       meal: stay.meal,
       currencyCode: stay.currencyCode,
       rateBasis: stay.rateBasis,
-      rooms: normaliseRooms(state.pricingMode, state.pax, stay.rooms).map(({ roomType, rooms, persons, rate }) => ({
+      rooms: normaliseRooms(state.pricingMode, withBedCount(state), stay.rooms).map(({ roomType, rooms, persons, rate }) => ({
         roomType,
         rooms,
         persons,
@@ -406,7 +436,7 @@ const toText = (items: StyledLine[]): string => items.map((item) => item.text).j
 export function toUmrahPayload(state: BuilderData) {
   const input = toPricingInput(state);
   return {
-    guest: { name: state.guestName.trim(), pax: state.pax, withoutBedPax: state.withoutBedPax, infants: state.infants },
+    guest: { name: state.guestName.trim(), ...guestCounts(state) },
     date: state.date,
     validUntil: state.validUntil || null,
     packageTitle: state.packageTitle,
@@ -487,8 +517,11 @@ export function builderDataFromQuotation(
   return {
     quotationId: mode === "edit" ? q._id : null,
     guestName: q.guest.name,
-    pax: q.guest.pax,
+    // Stored as bed counts; the form asks for adults and children.
+    adults: q.guest.pax + (q.guest.withoutBedPax ?? 0) - (q.guest.children ?? 0),
+    children: q.guest.children ?? 0,
     withoutBedPax: q.guest.withoutBedPax ?? 0,
+    withoutBedChildren: q.guest.withoutBedChildren ?? 0,
     infants: q.guest.infants ?? 0,
     date: mode === "edit" ? q.date.slice(0, 10) : today(),
     validUntil: mode === "edit" ? (q.validUntil?.slice(0, 10) ?? "") : "",
@@ -513,7 +546,7 @@ export function builderDataFromQuotation(
       withoutBedRate: stay.withoutBedRate,
     })),
     transportLegs: q.transportLegs.map((leg) => ({ key: newKey(), ...leg })),
-    flight: { ...q.flight },
+    flight: { ...q.flight, childFare: q.flight.childFare ?? null },
     charges: q.charges.map((charge) => ({ key: newKey(), ...charge })),
     lines,
     discountNote: mode === "edit" ? q.discountNote : "",

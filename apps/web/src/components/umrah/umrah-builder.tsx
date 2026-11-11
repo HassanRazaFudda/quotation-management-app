@@ -18,6 +18,7 @@ import {
   toUmrahPayload,
   usedCurrencyCodes,
   useUmrahBuilderStore,
+  withBedCount,
 } from "@/stores/umrah-builder";
 import { ChargesSection } from "./charges-section";
 import { IssueList } from "./fields";
@@ -122,7 +123,7 @@ export function UmrahBuilder({
         "stays",
         builder.stays.map((stay) => ({
           ...stay,
-          rooms: stay.rooms.map((room, i) => (i === 0 ? { ...room, persons: builder.pax } : room)),
+          rooms: stay.rooms.map((room, i) => (i === 0 ? { ...room, persons: withBedCount(builder) } : room)),
         })),
       );
     }
@@ -192,15 +193,27 @@ export function UmrahBuilder({
                 placeholder="Rashid Shahid"
               />
             </Field>
-            <Field label="Guests with a bed" hint="Adults and children who have their own bed">
-              <NumberInput min={1} fallback={1} value={builder.pax} onChange={(v) => builder.set("pax", Math.round(v))} />
+            <Field label="Adults">
+              <NumberInput min={1} fallback={1} value={builder.adults} onChange={(v) => builder.set("adults", Math.round(v))} />
             </Field>
-            <Field label="Guests without a bed" hint="Share a room, no extra bed - any age">
-              <NumberInput min={0} value={builder.withoutBedPax} onChange={(v) => builder.set("withoutBedPax", Math.round(v))} />
+            <Field label="Children" hint="Own flight fare when the airline has a child fare">
+              <NumberInput min={0} value={builder.children} onChange={(v) => builder.set("children", Math.round(v))} />
             </Field>
             <Field label="Infants" hint="Own flight fare; no room or transport share">
               <NumberInput min={0} value={builder.infants} onChange={(v) => builder.set("infants", Math.round(v))} />
             </Field>
+            <Field label="Guests without a bed" hint="Adults or children sharing a room, no extra bed">
+              <NumberInput min={0} value={builder.withoutBedPax} onChange={(v) => builder.set("withoutBedPax", Math.round(v))} />
+            </Field>
+            {builder.children > 0 && builder.withoutBedPax > 0 && (
+              <Field label="Of them, children" hint="How many of the guests without a bed are children">
+                <NumberInput
+                  min={0}
+                  value={builder.withoutBedChildren}
+                  onChange={(v) => builder.set("withoutBedChildren", Math.round(v))}
+                />
+              </Field>
+            )}
             <Field label="Quotation date">
               <Input type="date" value={builder.date} onChange={(e) => builder.set("date", e.target.value)} />
             </Field>

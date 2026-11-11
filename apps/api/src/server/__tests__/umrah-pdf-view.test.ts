@@ -4,7 +4,7 @@
  * document carries.
  */
 
-import { buildHtml } from "@junaidi/pdf";
+import { buildUmrahHtml } from "@junaidi/pdf";
 import { describe, expect, it } from "vitest";
 
 import { toUmrahPdfView, umrahPdfFilename } from "../umrah-pdf-view";
@@ -78,17 +78,20 @@ const quotation = {
   lineSettings: [{ key: "main", discount: 63_000, roundOff: -321, manualTotal: null }],
 };
 
+const render = async (overrides: Record<string, unknown> = {}, branding?: boolean) =>
+  buildUmrahHtml(await toUmrahPdfView({ ...quotation, ...overrides } as never, { company, branding }));
+
 describe("toUmrahPdfView", () => {
   it("carries no field capable of holding the discount", async () => {
     const view = await toUmrahPdfView(quotation as never, { company });
     const keys = Object.keys(view);
-    for (const forbidden of ["discount", "discountNote", "subtotal", "roundOff", "lineSettings"]) {
+    for (const forbidden of ["discount", "discountNote", "subtotal", "roundOff", "lineSettings", "priceLines"]) {
       expect(keys).not.toContain(forbidden);
     }
   });
 
   it("produces HTML with no trace of the discount, subtotal or round-off", async () => {
-    const html = buildHtml(await toUmrahPdfView(quotation as never, { company }));
+    const html = await render();
     for (const hidden of ["63000", "63,000", "291000", "291,000", "321", "repeat customer"]) {
       expect(html).not.toContain(hidden);
     }
@@ -97,76 +100,88 @@ describe("toUmrahPdfView", () => {
   });
 
   it("keeps the signature line exactly as it always reads", async () => {
-    const html = buildHtml(await toUmrahPdfView(quotation as never, { company }));
+    const html = await render();
     expect(html).toContain("<span>Authorised Signature</span>");
     expect(html).toContain("<span>Guest Signature</span>");
   });
 
-  it("uses the Umrah wording and the letterhead from the settings", async () => {
-    const view = await toUmrahPdfView({ ...quotation, bookingRef: "UB-12" } as never, { company });
-    const html = buildHtml(view);
-    expect(view.labels).toEqual({ bookingRef: "Booking No.", phaseHeader: "City", accommodationHeader: "Hotel / Rooms" });
-    expect(html).toContain("Booking No.:");
-    expect(html).not.toContain("HB Number");
-    expect(html).toContain(">JUNAIDI</span>");
-    expect(html).toContain(">A TRAVEL</span>");
+  it("is the Umrah document, with the letterhead from the settings", async () => {
+    const html = await render({ bookingRef: "UB-12" });
+    expect(html).toContain("Umrah Quotation");
+    expect(html).toContain("<dt>Booking No.</dt>");
+    expect(html).toContain("UB-12");
+    expect(html).toContain('<span class="brand-red">JUNAIDI</span> A TRAVEL');
     expect(html).toContain("https://wa.me/923001234567");
-    expect(html).not.toContain("Maktab");
-    expect(html).not.toContain("Qurbani");
+    for (const hajj of ["HB Number", "Maktab", "Qurbani", "Mina", "Arafat"]) expect(html).not.toContain(hajj);
   });
 
-  it("prints the party, the dates and the flight", async () => {
+  it("describes the party, the dates and the journey", async () => {
     const view = await toUmrahPdfView(quotation as never, { company });
-    expect(view.guestName).toBe("Rashid Shahid * 03 PAX + 01 WITHOUT BED + 01 INF");
-    expect(view.travel).toMatchObject({
-      included: true,
-      departureDate: "10 December 2026",
-      returnDate: "19 December 2026",
-      outbound: "KHI - MED (Emirates)",
-      inbound: "JED - KHI (Emirates)",
-      note: "",
-    });
+    expect(view.guestName).toBe("Rashid Shahid");
+    expect(view.party).toBe("4 Guests · 1 Infant · 1 without a bed");
+    expect(view.totalDays).toBe("10"); // 9 nights
+    expect(view.ticketIncluded).toBe(true);
+    expect(view.departure).toEqual({ title: "Departure", detail: "10 December 2026", sub: "KHI - MED (Emirates)" });
+    expect(view.stops.map((stop) => [stop.title, stop.detail])).toEqual([
+      ["Madinah", "02 nights"],
+      ["Makkah", "07 nights"],
+    ]);
+    expect(view.arrival).toEqual({ title: "Return", detail: "19 December 2026", sub: "JED - KHI (Emirates)" });
+    expect(view.travelNote).toBe("");
   });
 
-  it("names each hotel with its rooms, distance and without-bed guests", async () => {
+  it("counts adults and children apart when there are children", async () => {
+    const view = await toUmrahPdfView(
+      { ...quotation, guest: { name: "Ali", pax: 3, withoutBedPax: 1, infants: 1, children: 2, withoutBedChildren: 1 } } as never,
+      { company },
+    );
+    expect(view.party).toBe("2 Adults · 2 Children · 1 Infant · 1 without a bed");
+  });
+
+  it("names each hotel's rooms, distance and without-bed guests", async () => {
     const view = await toUmrahPdfView(quotation as never, { company });
-    expect(view.stays[0]).toMatchObject({
-      phase: "Madinah",
-      nights: "02 Nights",
+    expect(view.hotels[0]).toMatchObject({
+      city: "Madinah",
+      hotel: "Safwat Al Madinah",
+      rooms: "1x Quad + 1x Double + 01 Without Bed",
+      distance: "200 mtrs",
+      nights: "02",
       meal: "Breakfast",
-      accommodation: "Safwat Al Madinah (1x Quad + 1x Double + 01 Without Bed) · 200 mtrs",
     });
     // A per-person rate names the room with how many it holds.
-    expect(view.stays[1]!.accommodation).toBe("Emaar Al Khalil (Suite [03] + 01 Without Bed)");
+    expect(view.hotels[1]!.rooms).toBe("Suite [03] + 01 Without Bed");
   });
 
   it("lists transport without prices when it is inside the package price", async () => {
     const view = await toUmrahPdfView(quotation as never, { company });
-    const html = buildHtml(view);
     expect(view.transport).toEqual([
       { route: "Madinah to Makkah", vehicle: "Private Staria" },
       { route: "Makkah to Jeddah Airport", vehicle: "" },
     ]);
     expect(view.addOns).toEqual([]);
+    const html = await render();
     expect(html).not.toContain("117,000");
     expect(html).not.toContain("142,000");
   });
 
   it("shows transport as its own charge when the agent chose that", async () => {
     const view = await toUmrahPdfView({ ...quotation, transportDisplay: "separate" } as never, { company });
-    expect(view.addOns).toEqual([{ label: "Transportation Charges", amountFormatted: "PKR 142,000 /-" }]);
+    expect(view.addOns).toEqual([{ label: "transportation charges", price: "PKR 142,000 /-" }]);
   });
 
-  it("prints each price, and extra charges by name only", async () => {
+  it("lists each price, and extra charges by name only", async () => {
     const view = await toUmrahPdfView(quotation as never, { company });
-    expect(view.tierPrices.map((t) => t.label)).toEqual([
-      "Per Person (With Bed)",
-      "Per Person (Without Bed)",
-      "Per Infant",
-    ]);
+    expect(view.prices).toEqual({
+      kind: "list",
+      caption: "Package price per person",
+      rows: [
+        { label: "Per Person (With Bed)", price: "PKR 228,000 /-" },
+        { label: "Per Person (Without Bed)", price: "PKR 150,000 /-" },
+        { label: "Per Infant", price: "PKR 38,000 /-" },
+      ],
+    });
     expect(view.includes.map((l) => l.text)).toEqual(["Umrah visa", "Ziyarat", "Hotel accommodation"]);
-    const html = buildHtml(view);
-    expect(html).not.toContain("25,000");
+    expect(await render()).not.toContain("25,000");
   });
 
   it("prints a charge name once when it is charged twice (visa per adult and per infant)", async () => {
@@ -180,23 +195,43 @@ describe("toUmrahPdfView", () => {
     expect(view.includes.map((l) => l.text)).toEqual(["Umrah visa", "Ziyarat", "Hotel accommodation"]);
   });
 
-  it("prints a plain total when there is only one price", async () => {
+  it("prints one figure when there is only one price", async () => {
     const view = await toUmrahPdfView(
-      {
-        ...quotation,
-        guest: { name: "Ali", pax: 2 },
-        priceLines: [{ key: "main", label: "Per Person", finalTotal: 99_000 }],
-      } as never,
+      { ...quotation, guest: { name: "Ali", pax: 2 }, priceLines: [{ key: "main", label: "Per Person", finalTotal: 99_000 }] } as never,
       { company },
     );
-    expect(view.tierPrices).toEqual([]);
-    expect(view.totalPrice).toBe("PKR 99,000 /-");
+    expect(view.prices).toEqual({ kind: "single", caption: "Package price per person", price: "PKR 99,000 /-" });
+  });
+
+  it("prints room types as a table with an Adult and a Child price", async () => {
+    const priceLines = [
+      { key: "Quad", label: "Quad · Adult", finalTotal: 115_000 },
+      { key: "Quad:child", label: "Quad · Child", finalTotal: 95_000 },
+      { key: "Double", label: "Double · Adult", finalTotal: 140_000 },
+      { key: "infant", label: "Infant", finalTotal: 38_000 },
+    ];
+    const view = await toUmrahPdfView({ ...quotation, priceLines } as never, { company });
+    expect(view.prices).toEqual({
+      kind: "matrix",
+      caption: "Package price per person",
+      columns: ["Adult", "Child"],
+      rows: [
+        { label: "Quad", cells: ["PKR 115,000 /-", "PKR 95,000 /-"] },
+        { label: "Double", cells: ["PKR 140,000 /-", ""] },
+      ],
+      extras: [{ label: "Infant", price: "PKR 38,000 /-" }],
+    });
+    const html = buildUmrahHtml(view);
+    for (const figure of ["PKR 115,000 /-", "PKR 95,000 /-", "PKR 140,000 /-", "PKR 38,000 /-"]) {
+      expect(html).toContain(figure);
+    }
   });
 
   it("states when the ticket is not part of the package", async () => {
     const view = await toUmrahPdfView({ ...quotation, flight: { included: false } } as never, { company });
-    expect(view.travel.included).toBe(false);
-    expect(view.travel.note).toContain("not part of this package");
+    expect(view.ticketIncluded).toBe(false);
+    expect(view.flight).toBeNull();
+    expect(view.travelNote).toContain("not part of this package");
   });
 
   it("prints a foreign currency the way the quotation holds it", async () => {
@@ -204,12 +239,14 @@ describe("toUmrahPdfView", () => {
       { ...quotation, currency: { code: "SAR", decimals: 2 }, priceLines: [{ key: "main", label: "Per Person", finalTotal: 1234.5 }] } as never,
       { company },
     );
-    expect(view.totalPrice).toBe("SAR 1,234.50");
+    expect(view.prices).toMatchObject({ kind: "single", price: "SAR 1,234.50" });
   });
 
   it("drops the letterhead when branding is off, keeping the signature", async () => {
-    const html = buildHtml(await toUmrahPdfView(quotation as never, { company, branding: false }));
-    expect(html).not.toContain("JUNAIDI</span>");
+    const html = await render({}, false);
+    expect(html).not.toContain('<span class="brand-red">');
+    expect(html).not.toContain("wa.me");
+    expect(html).toContain("Umrah Quotation");
     expect(html).toContain("<span>Authorised Signature</span>");
   });
 

@@ -30,7 +30,7 @@ const CONTENT_HEIGHT_MM = PAGE_HEIGHT_MM - PAD_TOP_MM - PAD_BOTTOM_MM;
 
 const SMALL = "font-size:8.5pt; color:#4b5563;";
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
     return value
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -59,7 +59,7 @@ function brandName(name: string): string {
  * Instagram's own gradient (carried inside the SVG). The gradient id is unique
  * to the page, and the header only appears once, so there is no clash.
  */
-const SOCIAL_SVG = {
+export const SOCIAL_SVG = {
     facebook:
         '<svg viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.6 4.5-4.6 1.3 0 2.7.2 2.7.2v2.9h-1.5c-1.5 0-1.9.9-1.9 1.8V12h3.3l-.5 3.5h-2.8v8.4A12 12 0 0 0 24 12z"/></svg>',
     instagram:
@@ -76,7 +76,7 @@ const SOCIAL_SVG = {
 } as const;
 
 /** The link as it reads on the page - the protocol and www. are noise. */
-function cleanUrl(url: string): string {
+export function cleanUrl(url: string): string {
     return url.trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "");
 }
 

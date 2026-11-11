@@ -2,14 +2,15 @@
 
 import { Card, CardHeader, Field, Input, NumberInput, RadioGroup } from "@/components/ui";
 import { useUmrahBuilderStore } from "@/stores/umrah-builder";
+import { NullableNumberInput } from "./fields";
 import { CurrencySelect } from "./fields";
 
 /**
  * Air travel, typed in: there is no fare list for Umrah, so the agent writes the
- * sectors and the fare. Infants fly at their own fare.
+ * sectors and the fare. Children and infants can fly at their own fares.
  */
 export function FlightSection() {
-  const { flight, setFlight, infants } = useUmrahBuilderStore();
+  const { flight, setFlight, infants, children } = useUmrahBuilderStore();
 
   return (
     <Card>
@@ -35,9 +36,18 @@ export function FlightSection() {
             <Field label="Return" hint="Leave empty for a one-way ticket">
               <Input value={flight.inbound} onChange={(e) => setFlight({ inbound: e.target.value })} placeholder="Jeddah - Karachi" />
             </Field>
-            <Field label="Fare per adult / child">
+            <Field label="Fare per adult">
               <NumberInput min={0} step="any" value={flight.adultFare} onChange={(v) => setFlight({ adultFare: v })} />
             </Field>
+            {children > 0 && (
+              <Field label="Fare per child" hint="Leave empty when a child pays the adult fare">
+                <NullableNumberInput
+                  value={flight.childFare}
+                  placeholder="same as adult fare"
+                  onChange={(value) => setFlight({ childFare: value })}
+                />
+              </Field>
+            )}
             <Field label="Fare per infant" hint={infants === 0 ? "No infants on this quotation" : undefined}>
               <NumberInput min={0} step="any" value={flight.infantFare} onChange={(v) => setFlight({ infantFare: v })} />
             </Field>

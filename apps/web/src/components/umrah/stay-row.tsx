@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { Button, Field, Input, NumberInput, RadioGroup } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { normaliseRooms, useUmrahBuilderStore, type UmrahBuilderStay } from "@/stores/umrah-builder";
+import { normaliseRooms, useUmrahBuilderStore, withBedCount, type UmrahBuilderStay } from "@/stores/umrah-builder";
 import { CurrencySelect, NullableNumberInput } from "./fields";
 
 /*
@@ -34,8 +34,9 @@ export function StayRow({
   invalid: boolean;
   removable: boolean;
 }) {
-  const { updateStay, removeStay, addRoom, updateRoom, removeRoom, pricingMode, pax, withoutBedPax } =
+  const { updateStay, removeStay, addRoom, updateRoom, removeRoom, pricingMode, adults, children, withoutBedPax } =
     useUmrahBuilderStore();
+  const pax = withBedCount({ adults, children, withoutBedPax });
 
   const perRoom = stay.rateBasis === "room";
   const unit = perRoom ? "room" : "person";

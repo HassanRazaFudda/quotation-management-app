@@ -398,3 +398,102 @@ describe("umrahPartyLine", () => {
     expect(umrahPartyLine("Ali", { pax: 3, withoutBedPax: 1, infants: 1 })).toBe("Ali * 03 PAX + 01 WITHOUT BED + 01 INF");
   });
 });
+
+describe("children", () => {
+  const fares = (childFare: number | null) => ({
+    included: true,
+    airline: "PK",
+    outbound: "KHI-JED",
+    inbound: "JED-KHI",
+    adultFare: 100_000,
+    childFare,
+    infantFare: 30_000,
+    currencyCode: "PKR",
+  });
+  const family = (overrides: Partial<UmrahPricingInput> = {}) =>
+    quote({
+      mode: "family",
+      priceDisplay: "breakdown",
+      guest: { pax: 4, withoutBedPax: 0, infants: 0, children: 2 },
+      stays: [stay({ rooms: [{ roomType: "Quad", rooms: 1, persons: 4, rate: 40_000 }] })],
+      flight: fares(80_000),
+      transportLegs: [{ route: "Jeddah to Makkah", vehicle: "Staria", cost: 20_000, currencyCode: "PKR" }],
+      charges: [{ label: "Umrah visa", amount: 25_000, currencyCode: "PKR", basis: "perPerson" }],
+      ...overrides,
+    });
+  const line = (result: ReturnType<typeof priceUmrahQuotation>, key: string) => result.lines.find((l) => l.key === key);
+
+  it("prices a child on the child fare, sharing the room, visa and van like an adult", () => {
+    const result = priceUmrahQuotation(family());
+    expect(result.hasErrors).toBe(false);
+    // 10,000 room + 25,000 visa + 5,000 van, plus the fare.
+    expect(line(result, "main")).toMatchObject({ label: "Adult", count: 2, finalTotal: 140_000 });
+    expect(line(result, "child")).toMatchObject({ label: "Child", count: 2, finalTotal: 120_000 });
+    expect(result.grandTotal).toBe(520_000);
+  });
+
+  it("charges a child the adult fare when no child fare is set", () => {
+    const result = priceUmrahQuotation(family({ flight: fares(null) }));
+    expect(line(result, "child")!.finalTotal).toBe(140_000);
+  });
+
+  it("splits children with and without a bed", () => {
+    const result = priceUmrahQuotation(
+      family({
+        guest: { pax: 3, withoutBedPax: 1, infants: 0, children: 2, withoutBedChildren: 1 },
+        stays: [stay({ rooms: [{ roomType: "Triple", rooms: 1, persons: 3, rate: 30_000 }], withoutBedRate: 5_000 })],
+        transportLegs: [],
+        charges: [],
+      }),
+    );
+    expect(result.lines.map((l) => [l.key, l.label, l.count, l.finalTotal])).toEqual([
+      ["main", "Adult (With Bed)", 2, 110_000],
+      ["child", "Child (With Bed)", 1, 90_000],
+      ["childWithoutBed", "Child (Without Bed)", 1, 85_000],
+    ]);
+    expect(result.grandTotal).toBe(395_000);
+  });
+
+  it("averages each age over its own beds when one price is asked for", () => {
+    const result = priceUmrahQuotation(
+      family({
+        priceDisplay: "average",
+        guest: { pax: 3, withoutBedPax: 1, infants: 0, children: 2, withoutBedChildren: 1 },
+        stays: [stay({ rooms: [{ roomType: "Triple", rooms: 1, persons: 3, rate: 30_000 }], withoutBedRate: 5_000 })],
+        transportLegs: [],
+        charges: [],
+      }),
+    );
+    expect(line(result, "main")).toMatchObject({ label: "Adult", count: 2, finalTotal: 110_000 });
+    // (10,000 + 5,000 + 2 x 80,000) / 2
+    expect(line(result, "child")).toMatchObject({ label: "Child", count: 2, finalTotal: 87_500 });
+  });
+
+  it("gives every room type a child price", () => {
+    const result = priceUmrahQuotation(
+      quote({
+        mode: "tiered",
+        guest: { pax: 4, withoutBedPax: 0, infants: 0, children: 1 },
+        stays: [stay({ checkOut: "2026-12-12", currencyCode: "SAR", rooms: [], tierRates: { Quad: 400, Triple: 360, Double: 300 } })],
+        flight: fares(80_000),
+      }),
+    );
+    expect(result.hasErrors).toBe(false);
+    expect(line(result, "Quad")).toMatchObject({ label: "Quad · Adult", count: 3, finalTotal: 115_000 });
+    expect(line(result, "Quad:child")).toMatchObject({ label: "Quad · Child", count: 1, finalTotal: 95_000 });
+    expect(line(result, "Double:child")!.finalTotal).toBe(102_500);
+  });
+
+  it("refuses counts that do not add up", () => {
+    const more = priceUmrahQuotation(family({ guest: { pax: 3, withoutBedPax: 1, infants: 0, children: 1, withoutBedChildren: 2 } }));
+    expect(errors(more)).toContain("More children without a bed than children.");
+    const noAdult = priceUmrahQuotation(family({ guest: { pax: 4, withoutBedPax: 0, infants: 0, children: 4 } }));
+    expect(errors(noAdult)).toContain("At least one adult is needed.");
+  });
+
+  it("prints adults and children on the guest line", () => {
+    expect(umrahPartyLine("Ali", { pax: 3, withoutBedPax: 1, infants: 1, children: 2, withoutBedChildren: 1 })).toBe(
+      "Ali * 02 ADULT + 02 CHILD + 01 INF",
+    );
+  });
+});

@@ -26,7 +26,7 @@ import { CurrencySelect, NullableNumberInput } from "./fields";
 export function PricingSection({ pricing }: { pricing: UmrahPricing }) {
   const state = useUmrahBuilderStore();
   const config = useConfigStore();
-  const { currency, exchangeRates, pricingMode, priceDisplay, withoutBedPax, lines, setLine } = state;
+  const { currency, exchangeRates, pricingMode, priceDisplay, withoutBedPax, children, lines, setLine } = state;
 
   const money = (value: number) => formatMoney(value, currency);
   const codes = usedCurrencyCodes(state);
@@ -48,8 +48,16 @@ export function PricingSection({ pricing }: { pricing: UmrahPricing }) {
     state.set("currency", next);
   }
 
+  // A tier's child price sits right under it; a line with no guests is not drawn.
   const lineKeys: UmrahLineKey[] =
-    pricingMode === "tiered" ? [...UMRAH_TIERS, "withoutBed", "infant"] : ["main", "withoutBed", "infant"];
+    pricingMode === "tiered"
+      ? [
+          ...UMRAH_TIERS.flatMap((tier) => (children > 0 ? [tier, `${tier}:child` as const] : [tier])),
+          "withoutBed",
+          "childWithoutBed",
+          "infant",
+        ]
+      : ["main", "child", "withoutBed", "childWithoutBed", "infant"];
   const printed = new Map(pricing.lines.map((line) => [line.key, line]));
   const hasDiscount = pricing.lines.some((line) => line.discount > 0);
 
@@ -113,6 +121,7 @@ export function PricingSection({ pricing }: { pricing: UmrahPricing }) {
                 key={key}
                 className={cn(
                   "rounded-lg border p-4",
+                  key.endsWith(":child") && "ml-6",
                   control.offered || !isTier ? "border-line bg-white" : "border-dashed border-line bg-canvas/50",
                 )}
               >

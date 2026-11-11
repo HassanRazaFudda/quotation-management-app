@@ -1,21 +1,28 @@
 /**
  * Umrah quotation document -> PDF payload.
  *
- * The same single door the Hajj quotation uses: fields are copied across by hand
- * into `buildPdfView`, so `discount`, `roundOff`, `subtotal` and the per-line
- * controls are simply never read and the target type has nowhere to put them.
- * The renderer, template, logo and the "Authorised Signature" line are the
- * existing ones - only the wording and the data differ.
+ * Umrah has its own template (`buildUmrahHtml`), kept apart from the Hajj one so
+ * the two documents never look alike. The door is the same kind: fields are
+ * copied across by hand into `buildUmrahPdfView`, so `discount`, `roundOff`,
+ * `subtotal` and the per-line controls are never read and the target type has
+ * nowhere to put them. The signature line reads "Authorised Signature".
  */
 
 import {
   formatGregorian,
   formatGregorianRange,
   formatMoney,
-  umrahPartyLine,
+  umrahParty,
+  UMRAH_TIERS,
   type StyledLine,
 } from "@junaidi/shared";
-import { buildPdfView, loadLogoDataUri, type PdfCompany, type QuotationPdfView } from "@junaidi/pdf";
+import {
+  buildUmrahPdfView,
+  loadLogoDataUri,
+  type PdfCompany,
+  type UmrahPdfPrices,
+  type UmrahPdfView,
+} from "@junaidi/pdf";
 
 /** Only the parts of an Umrah quotation the customer's document is built from. */
 export interface UmrahQuotationLike {
@@ -24,7 +31,14 @@ export interface UmrahQuotationLike {
   date: Date | string;
   validUntil?: Date | string | null;
   packageTitle?: string;
-  guest: { name: string; pax: number; withoutBedPax?: number; infants?: number };
+  guest: {
+    name: string;
+    pax: number;
+    withoutBedPax?: number;
+    infants?: number;
+    children?: number;
+    withoutBedChildren?: number;
+  };
   transportDisplay?: "included" | "separate";
   currency?: { code?: string; symbol?: string; decimals?: number } | null;
   stays: Array<{
@@ -68,25 +82,83 @@ function formatDate(value: Date | string | null | undefined): string {
 const two = (n: number): string => String(Math.max(0, Math.round(n))).padStart(2, "0");
 
 /**
- * How the hotel column reads: "Emaar Al Khalil (1x Quad + 1x Double) · 500 mtrs".
- * A per-person rate names the room with how many guests it holds instead
- * ("Quad [04]"). Guests without a bed are added once, at the end of the rooms.
- * A room-types quote carries no rooms - its price cards name the room - so only
- * the hotel prints.
+ * The rooms under a hotel's name: "1x Quad + 1x Double + 01 Without Bed". A
+ * per-person rate names the room with how many guests it holds ("Quad [04]").
+ * Guests without a bed are added once, at the end. A room-types quote carries
+ * no rooms - its price table names the room - so nothing prints.
  */
-function accommodationLabel(
-  stay: UmrahQuotationLike["stays"][number],
-  withoutBedPax: number,
-): string {
+function roomsLabel(stay: UmrahQuotationLike["stays"][number], withoutBedPax: number): string {
   const rooms = (stay.rooms ?? []).filter((room) => room.roomType.trim());
   const parts = rooms.map((room) =>
     stay.rateBasis === "person" ? `${room.roomType.trim()} [${two(room.persons)}]` : `${room.rooms}x ${room.roomType.trim()}`,
   );
   if (rooms.length > 0 && withoutBedPax > 0) parts.push(`${two(withoutBedPax)} Without Bed`);
+  return parts.join(" + ");
+}
 
-  const hotel = parts.length > 0 ? `${stay.hotelName} (${parts.join(" + ")})` : stay.hotelName;
-  const distance = (stay.distance ?? "").trim();
-  return distance ? `${hotel} · ${distance}` : hotel;
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+/** "3 Adults · 2 Children · 1 Infant · 1 without a bed". */
+function partyText(guest: UmrahQuotationLike["guest"]): string {
+  const withoutBed = guest.withoutBedPax ?? 0;
+  const party = umrahParty({
+    pax: guest.pax,
+    withoutBedPax: withoutBed,
+    infants: guest.infants ?? 0,
+    children: guest.children ?? 0,
+    withoutBedChildren: guest.withoutBedChildren ?? 0,
+  });
+  const parts =
+    party.children > 0
+      ? [plural(party.adults, "Adult", "Adults"), plural(party.children, "Child", "Children")]
+      : [plural(party.adults, "Guest", "Guests")];
+  if (party.infants > 0) parts.push(plural(party.infants, "Infant", "Infants"));
+  if (withoutBed > 0) parts.push(`${withoutBed} without a bed`);
+  return parts.join(" · ");
+}
+
+const PRICE_CAPTION = "Package price per person";
+
+/**
+ * The printed prices. Room types become a table (type down the side, Adult and
+ * Child across); one plain price prints as one figure; anything else is a list.
+ */
+function pricesOf(lines: UmrahQuotationLike["priceLines"], currency: UmrahQuotationLike["currency"]): UmrahPdfPrices {
+  const money = (amount: number) => formatMoney(amount, currency);
+  const tiers = UMRAH_TIERS as readonly string[];
+  const isTierKey = (key: string) => tiers.includes(key.split(":")[0]!);
+  const tierLines = lines.filter((line) => isTierKey(line.key));
+
+  if (tierLines.length > 0) {
+    const byKey = new Map(lines.map((line) => [line.key, line]));
+    const withChild = tierLines.some((line) => line.key.endsWith(":child"));
+    const rows = UMRAH_TIERS.filter((tier) => byKey.has(tier) || byKey.has(`${tier}:child`)).map((tier) => {
+      const cell = (key: string) => {
+        const line = byKey.get(key);
+        return line ? money(line.finalTotal) : "";
+      };
+      return { label: tier, cells: withChild ? [cell(tier), cell(`${tier}:child`)] : [cell(tier)] };
+    });
+    return {
+      kind: "matrix",
+      caption: PRICE_CAPTION,
+      columns: withChild ? ["Adult", "Child"] : ["Per person"],
+      rows,
+      extras: lines
+        .filter((line) => !isTierKey(line.key))
+        .map((line) => ({ label: line.label, price: money(line.finalTotal) })),
+    };
+  }
+
+  const main = lines[0];
+  if (lines.length === 1 && main?.key === "main") {
+    return { kind: "single", caption: PRICE_CAPTION, price: money(main.finalTotal) };
+  }
+  return {
+    kind: "list",
+    caption: PRICE_CAPTION,
+    rows: lines.map((line) => ({ label: line.label, price: money(line.finalTotal) })),
+  };
 }
 
 function travelNote(flight: UmrahQuotationLike["flight"]): string {
@@ -124,71 +196,73 @@ function sector(text: string | undefined, airline: string | undefined): string {
 export async function toUmrahPdfView(
   quotation: UmrahQuotationLike,
   options: UmrahPdfOptions,
-): Promise<QuotationPdfView> {
+): Promise<UmrahPdfView> {
   const guest = quotation.guest;
   const withoutBedPax = guest.withoutBedPax ?? 0;
-  const lines = quotation.priceLines;
-  const main = lines[0];
-  const legs = quotation.transportLegs ?? [];
+  const stays = quotation.stays;
 
-  // The earliest check-in and the latest check-out head the document.
-  const checkIns = quotation.stays.map((stay) => stay.checkIn).filter(Boolean).sort();
-  const checkOuts = quotation.stays.map((stay) => stay.checkOut).filter(Boolean).sort();
+  // The earliest check-in and the latest check-out bound the trip.
+  const checkIns = stays.map((stay) => stay.checkIn).filter(Boolean).sort();
+  const checkOuts = stays.map((stay) => stay.checkOut).filter(Boolean).sort();
+  const first = checkIns[0] ?? "";
+  const last = checkOuts[checkOuts.length - 1] ?? "";
   const flight = quotation.flight;
   const flightIncluded = Boolean(flight?.included);
+  const totalNights = stays.reduce((sum, stay) => sum + (stay.nights ?? 0), 0);
 
   const transportSeparate = quotation.transportDisplay === "separate" && (quotation.transportTotal ?? 0) > 0;
 
-  return buildPdfView({
+  return buildUmrahPdfView({
     quotationId: quotation.quotationId,
-    hbNumber: quotation.bookingRef ?? "",
+    bookingRef: quotation.bookingRef ?? "",
     date: formatDate(quotation.date),
-    guestName: umrahPartyLine(guest.name, {
-      pax: guest.pax,
-      withoutBedPax,
-      infants: guest.infants ?? 0,
-    }),
     validUntil: formatDate(quotation.validUntil),
+
+    guestName: guest.name,
+    party: partyText(guest),
     packageTitle: quotation.packageTitle ?? "",
+    // sold by the day: 14 nights is a "15 days" package, as the builder titles it
+    totalDays: String(totalNights > 0 ? totalNights + 1 : 0),
+    travelDates: first && last ? formatGregorianRange(first, last) : "",
+
+    ticketIncluded: flightIncluded,
+    departure: {
+      title: "Departure",
+      detail: first ? formatGregorian(first) : "",
+      sub: flightIncluded ? sector(flight?.outbound, flight?.airline) : "",
+    },
+    stops: stays.map((stay) => ({
+      title: stay.city,
+      detail: `${two(stay.nights)} nights`,
+      sub: formatGregorianRange(stay.checkIn, stay.checkOut),
+    })),
+    arrival: {
+      title: "Return",
+      detail: last ? formatGregorian(last) : "",
+      sub: flightIncluded ? sector(flight?.inbound, flight?.airline) : "",
+    },
+    travelNote: travelNote(flight),
+
+    hotels: stays.map((stay) => ({
+      city: stay.city,
+      hotel: stay.hotelName,
+      rooms: roomsLabel(stay, withoutBedPax),
+      distance: stay.distance ?? "",
+      dates: formatGregorianRange(stay.checkIn, stay.checkOut),
+      nights: two(stay.nights),
+      meal: stay.meal ?? "",
+    })),
+    flight: flightIncluded
+      ? { airline: flight?.airline ?? "", outbound: flight?.outbound ?? "", inbound: flight?.inbound ?? "" }
+      : null,
+    transport: (quotation.transportLegs ?? []).map((leg) => ({ route: leg.route, vehicle: leg.vehicle ?? "" })),
 
     // Only already-final prices go across; nothing else about money is passed.
-    totalPriceFormatted: formatMoney(main?.finalTotal ?? 0, quotation.currency),
-    // One plain price when there is just the one; otherwise a card per price.
-    tierPrices:
-      lines.length === 1 && main?.key === "main"
-        ? undefined
-        : lines.map((line) => ({
-            label: line.label,
-            priceFormatted: formatMoney(line.finalTotal, quotation.currency),
-          })),
+    prices: pricesOf(quotation.priceLines, quotation.currency),
     // A separately-charged transport total reads as the extra it is.
     addOns: transportSeparate
-      ? [{ label: "Transportation Charges", amountFormatted: formatMoney(quotation.transportTotal ?? 0, quotation.currency) }]
-      : undefined,
-
-    travel: {
-      included: flightIncluded,
-      departureDate: checkIns[0] ? formatGregorian(checkIns[0]) : "",
-      returnDate: checkOuts.length ? formatGregorian(checkOuts[checkOuts.length - 1]!) : "",
-      outbound: flightIncluded ? sector(flight?.outbound, flight?.airline) : "",
-      inbound: flightIncluded ? sector(flight?.inbound, flight?.airline) : "",
-      note: travelNote(flight),
-    },
-
-    stays: quotation.stays.map((stay) => ({
-      phase: stay.city,
-      nights: `${two(stay.nights)} Nights`,
-      dates: formatGregorianRange(stay.checkIn, stay.checkOut),
-      datesSub: "",
-      accommodation: accommodationLabel(stay, withoutBedPax),
-      meal: stay.meal ?? "",
-      mealNote: "",
-    })),
-    transport: legs.map((leg) => ({ route: leg.route, vehicle: leg.vehicle ?? "" })),
-    labels: { bookingRef: "Booking No.", phaseHeader: "City", accommodationHeader: "Hotel / Rooms" },
-
-    // Umrah has no Qurbani, Mina or Arafat services.
-    qurbaniIncluded: false,
+      ? [{ label: "transportation charges", price: formatMoney(quotation.transportTotal ?? 0, quotation.currency) }]
+      : [],
 
     // Extra charges (visa, ziyarat...) print by name only; their amounts are inside the price.
     // The same name can be charged twice (visa per adult, visa per infant) - print it once.
@@ -199,7 +273,6 @@ export async function toUmrahPdfView(
 
     generatedBy: quotation.createdByName ?? "",
     branding: options.branding ?? true,
-
     company: options.company,
     logoDataUri: await loadLogoDataUri(),
   });

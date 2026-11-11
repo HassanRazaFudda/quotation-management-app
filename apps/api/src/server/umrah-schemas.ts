@@ -12,6 +12,7 @@
 import { UMRAH_QUOTATION_GROUPS, UMRAH_QUOTATION_SORTS, UMRAH_QUOTATION_STATUSES } from "@junaidi/db";
 import {
   UMRAH_CHARGE_BASES,
+  UMRAH_LINE_KEYS,
   UMRAH_PRICE_DISPLAYS,
   UMRAH_PRICING_MODES,
   UMRAH_RATE_BASES,
@@ -73,6 +74,8 @@ const flightSchema = z.object({
   outbound: z.string().max(120).default(""),
   inbound: z.string().max(120).default(""),
   adultFare: money.default(0),
+  /** Empty: children pay the adult fare. */
+  childFare: money.nullish().transform((value) => value ?? null),
   infantFare: money.default(0),
   currencyCode: currencyCode.default("PKR"),
 });
@@ -85,7 +88,7 @@ const chargeSchema = z.object({
 });
 
 const lineSettingSchema = z.object({
-  key: z.enum(["main", "withoutBed", "infant", "Quad", "Triple", "Double"]),
+  key: z.enum(UMRAH_LINE_KEYS),
   offered: z.boolean().optional(),
   discount: money.default(0),
   roundOff: z.number().min(-MAX_MONEY).max(MAX_MONEY).default(0),
@@ -105,6 +108,8 @@ export const umrahQuotationSchema = z.object({
     pax: z.number().int().min(1).max(500).default(1),
     withoutBedPax: count.default(0),
     infants: count.default(0),
+    children: count.default(0),
+    withoutBedChildren: count.default(0),
   }),
   date: z.coerce.date(),
   validUntil: z.coerce.date().nullish(),
@@ -132,12 +137,14 @@ export const umrahQuotationSchema = z.object({
     outbound: "",
     inbound: "",
     adultFare: 0,
+    childFare: null,
     infantFare: 0,
     currencyCode: "PKR",
   }),
   charges: z.array(chargeSchema).max(30).default([]),
 
-  lineSettings: z.array(lineSettingSchema).max(10).default([]),
+  // the builder sends a setting for every line key (11), printed or not
+  lineSettings: z.array(lineSettingSchema).max(20).default([]),
   discountNote: z.string().max(300).default(""),
 
   includes: lines,

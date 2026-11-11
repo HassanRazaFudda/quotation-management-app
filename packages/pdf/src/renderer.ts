@@ -13,6 +13,8 @@
 import puppeteer, { type Browser, type Page } from "puppeteer";
 
 import { buildHtml } from "./template";
+import { buildUmrahHtml } from "./umrah-template";
+import type { UmrahPdfView } from "./umrah-view";
 import type { QuotationPdfView } from "./view";
 
 /**
@@ -134,8 +136,12 @@ async function overflows(page: Page): Promise<boolean> {
   );
 }
 
-export async function renderQuotation(
-  view: QuotationPdfView,
+/**
+ * Print one document, shrinking it a step at a time until nothing overflows.
+ * `build` returns the page HTML at a given scale.
+ */
+async function renderFitted(
+  build: (scale: number) => string,
   options: RenderOptions = {},
 ): Promise<Uint8Array> {
   const { autoFit = true, timeoutMs = 60_000 } = options;
@@ -151,7 +157,7 @@ export async function renderQuotation(
     for (let index = 0; index < scales.length; index += 1) {
       // The template embeds its logo as a data URI and loads nothing else, so
       // "load" is enough - "networkidle0" would only add latency.
-      await page.setContent(buildHtml(view, scales[index]!), { waitUntil: "load" });
+      await page.setContent(build(scales[index]!), { waitUntil: "load" });
 
       // The last rung is printed whatever it looks like: a slightly clipped
       // page beats no quotation at all.
@@ -168,6 +174,22 @@ export async function renderQuotation(
     await page.close().catch(() => undefined);
     release();
   }
+}
+
+/** A Hajj quotation or package, on the Hajj template. */
+export async function renderQuotation(
+  view: QuotationPdfView,
+  options: RenderOptions = {},
+): Promise<Uint8Array> {
+  return renderFitted((scale) => buildHtml(view, scale), options);
+}
+
+/** An Umrah quotation, on its own template. */
+export async function renderUmrahQuotation(
+  view: UmrahPdfView,
+  options: RenderOptions = {},
+): Promise<Uint8Array> {
+  return renderFitted((scale) => buildUmrahHtml(view, scale), options);
 }
 
 /**

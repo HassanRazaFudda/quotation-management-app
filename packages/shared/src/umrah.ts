@@ -100,6 +100,8 @@ export interface UmrahFlightInput {
   outbound: string;
   inbound: string;
   adultFare: number;
+  /** A child's ticket. Null or absent: the child pays the adult fare. */
+  childFare?: number | null;
   infantFare: number;
   currencyCode: string;
 }
@@ -131,6 +133,10 @@ export interface UmrahPricingInput {
     /** Guests sharing a room without their own bed - any age. */
     withoutBedPax: number;
     infants: number;
+    /** How many of the with-bed and without-bed guests are children. Absent: none. */
+    children?: number;
+    /** How many of the without-bed guests are children. Absent: none. */
+    withoutBedChildren?: number;
   };
   /** The currency every price is shown in. */
   currency: { code: string; symbol: string; decimals: number };
@@ -158,7 +164,72 @@ export interface UmrahPricedStay {
   cost: number;
 }
 
-export type UmrahLineKey = "main" | "withoutBed" | "infant" | UmrahTier;
+export type UmrahLineKey =
+  | "main"
+  | "withoutBed"
+  | "child"
+  | "childWithoutBed"
+  | "infant"
+  | UmrahTier
+  | `${UmrahTier}:child`;
+
+/** Every line key, for schemas that validate a stored line setting. */
+export const UMRAH_LINE_KEYS: readonly UmrahLineKey[] = [
+  "main",
+  "withoutBed",
+  "child",
+  "childWithoutBed",
+  "infant",
+  ...UMRAH_TIERS,
+  ...UMRAH_TIERS.map((tier) => `${tier}:child` as const),
+];
+
+/** The guest counts as stored on a quotation. */
+export interface UmrahGuestCounts {
+  pax: number;
+  withoutBedPax: number;
+  infants: number;
+  children?: number;
+  withoutBedChildren?: number;
+}
+
+/** Who is travelling, split by age and by bed. Every count is a whole number, never negative. */
+export interface UmrahParty {
+  adults: number;
+  children: number;
+  adultsWithBed: number;
+  childrenWithBed: number;
+  adultsWithoutBed: number;
+  childrenWithoutBed: number;
+  infants: number;
+}
+
+const whole = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+
+/**
+ * Split the stored counts. `pax` and `withoutBedPax` stay the bed counts the
+ * rooms are priced on; `children` says how many of those people are children.
+ * Out-of-range counts are clamped here - the pricing reports them as errors.
+ */
+export function umrahParty(guest: UmrahGuestCounts): UmrahParty {
+  const withBed = whole(guest.pax);
+  const withoutBed = whole(guest.withoutBedPax);
+  const children = Math.min(whole(guest.children), withBed + withoutBed);
+  const childrenWithoutBed = Math.min(whole(guest.withoutBedChildren), children, withoutBed);
+  const childrenWithBed = Math.min(children - childrenWithoutBed, withBed);
+  const adultsWithBed = withBed - childrenWithBed;
+  const adultsWithoutBed = withoutBed - childrenWithoutBed;
+  return {
+    adults: adultsWithBed + adultsWithoutBed,
+    children: childrenWithBed + childrenWithoutBed,
+    adultsWithBed,
+    childrenWithBed,
+    adultsWithoutBed,
+    childrenWithoutBed,
+    infants: whole(guest.infants),
+  };
+}
 
 export interface UmrahPriceLine {
   key: UmrahLineKey;
@@ -275,6 +346,20 @@ export function priceUmrahQuotation(input: UmrahPricingInput): UmrahPricing {
   const bare = isCount(W) ? W : 0;
   const infants = isCount(I) ? I : 0;
   const paying = beds + bare;
+
+  // children are some of the paying guests, with or without a bed
+  const C = input.guest.children ?? 0;
+  const Wc = input.guest.withoutBedChildren ?? 0;
+  if (!isCount(C)) error("guest.children", "Children must be a whole number.");
+  if (!isCount(Wc)) error("guest.withoutBedChildren", "Children without a bed must be a whole number.");
+  if (isCount(C) && isCount(Wc)) {
+    if (Wc > C) error("guest.withoutBedChildren", "More children without a bed than children.");
+    else if (Wc > bare) error("guest.withoutBedChildren", "More children without a bed than guests without a bed.");
+    else if (C - Wc > beds) error("guest.children", "More children with a bed than guests with a bed.");
+    else if (C > 0 && C >= paying) error("guest.adults", "At least one adult is needed.");
+  }
+  const party = umrahParty({ pax: beds, withoutBedPax: bare, infants, children: C, withoutBedChildren: Wc });
+  const hasChildren = party.children > 0;
 
   // ---- currencies: every one used needs a rate, never a silent fallback
   const quoteRate = rateOf(input.currency.code, input.exchangeRates);
@@ -403,13 +488,16 @@ export function priceUmrahQuotation(input: UmrahPricingInput): UmrahPricing {
   // ---- flight
   const flight = input.flight;
   let adultFare = 0;
+  let childFare = 0;
   let infantFare = 0;
   if (flight.included) {
     const fx = factor(flight.currencyCode, "flight.currencyCode");
-    if (!isMoney(flight.adultFare) || !isMoney(flight.infantFare)) {
+    const childTicket = flight.childFare ?? flight.adultFare;
+    if (!isMoney(flight.adultFare) || !isMoney(flight.infantFare) || !isMoney(childTicket)) {
       error("flight", "Flight fares must be positive numbers.");
     } else {
       adultFare = flight.adultFare * fx;
+      childFare = childTicket * fx;
       infantFare = flight.infantFare * fx;
     }
   }
@@ -448,6 +536,10 @@ export function priceUmrahQuotation(input: UmrahPricingInput): UmrahPricing {
   const pool = (input.transportDisplay === "included" ? transportTotal : 0) + perGroupCharges;
   const share = pool / paying;
   const extraEach = adultFare + perPersonCharges + share;
+  const childExtraEach = childFare + perPersonCharges + share;
+  // the room cost of one guest with a bed, and of one without
+  const bedEach = beds > 0 ? bedCostTotal / beds : 0;
+  const bareEach = bare > 0 ? withoutBedCostTotal / bare : 0;
 
   const withBedBase = extraEach * beds;
   const withoutBedGroup = withoutBedCostTotal + extraEach * bare;
@@ -488,16 +580,65 @@ export function priceUmrahQuotation(input: UmrahPricingInput): UmrahPricing {
       const setting = settings.get(tier);
       if (setting?.offered === false) continue;
       offeredAny = true;
-      if (tierIncomplete[tier] && (setting?.manualTotal ?? null) === null) {
+      const childKey = `${tier}:child` as const;
+      const typed = (key: string) => (settings.get(key)?.manualTotal ?? null) !== null;
+      const short = hasChildren
+        ? (party.adultsWithBed > 0 && !typed(tier)) || (party.childrenWithBed > 0 && !typed(childKey))
+        : !typed(tier);
+      if (tierIncomplete[tier] && short) {
         error(
           `tiers.${tier}`,
           `${tier} has no rate for ${tierMissingHotels[tier].join(", ")}. Add it, type a price for ${tier}, or stop offering ${tier}.`,
         );
       }
-      addLine(tier, tier, beds, tierBedTotal[tier] + withBedBase);
+      if (!hasChildren) {
+        addLine(tier, tier, beds, tierBedTotal[tier] + withBedBase);
+        continue;
+      }
+      // a tier's room cost is the same for every bed; only the fare differs by age
+      const tierEach = tierBedTotal[tier] / beds;
+      addLine(tier, `${tier} · Adult`, party.adultsWithBed, (tierEach + extraEach) * party.adultsWithBed);
+      addLine(childKey, `${tier} · Child`, party.childrenWithBed, (tierEach + childExtraEach) * party.childrenWithBed);
     }
     if (!offeredAny) error("tiers", "Offer at least one room type.");
-    addLine("withoutBed", "Without Bed", bare, withoutBedGroup);
+    if (hasChildren) {
+      addLine("withoutBed", "Adult (Without Bed)", party.adultsWithoutBed, (bareEach + extraEach) * party.adultsWithoutBed);
+      addLine(
+        "childWithoutBed",
+        "Child (Without Bed)",
+        party.childrenWithoutBed,
+        (bareEach + childExtraEach) * party.childrenWithoutBed,
+      );
+    } else {
+      addLine("withoutBed", "Without Bed", bare, withoutBedGroup);
+    }
+    addLine("infant", "Infant", infants, infantGroup);
+  } else if (hasChildren && input.priceDisplay === "average") {
+    // one price per age: each averages its own with-bed and without-bed guests
+    addLine(
+      "main",
+      "Adult",
+      party.adults,
+      bedEach * party.adultsWithBed + bareEach * party.adultsWithoutBed + extraEach * party.adults,
+    );
+    addLine(
+      "child",
+      "Child",
+      party.children,
+      bedEach * party.childrenWithBed + bareEach * party.childrenWithoutBed + childExtraEach * party.children,
+    );
+    addLine("infant", "Infant", infants, infantGroup);
+  } else if (hasChildren) {
+    const withBed = bare > 0 ? " (With Bed)" : "";
+    addLine("main", `Adult${withBed}`, party.adultsWithBed, (bedEach + extraEach) * party.adultsWithBed);
+    addLine("child", `Child${withBed}`, party.childrenWithBed, (bedEach + childExtraEach) * party.childrenWithBed);
+    addLine("withoutBed", "Adult (Without Bed)", party.adultsWithoutBed, (bareEach + extraEach) * party.adultsWithoutBed);
+    addLine(
+      "childWithoutBed",
+      "Child (Without Bed)",
+      party.childrenWithoutBed,
+      (bareEach + childExtraEach) * party.childrenWithoutBed,
+    );
     addLine("infant", "Infant", infants, infantGroup);
   } else if (input.priceDisplay === "average") {
     addLine("main", "Per Person", paying, bedCostTotal + withBedBase + withoutBedGroup);
@@ -533,12 +674,18 @@ export function priceUmrahQuotation(input: UmrahPricingInput): UmrahPricing {
 
 // ---------------------------------------------------------------- list text
 
-/** "Name * 04 PAX + 01 WITHOUT BED + 01 INF" - the guest line as printed. */
-export function umrahPartyLine(
-  name: string,
-  guest: { pax: number; withoutBedPax: number; infants: number },
-): string {
+/**
+ * The guest line as printed: "Name * 04 PAX + 01 WITHOUT BED + 01 INF", or with
+ * children "Name * 03 ADULT + 02 CHILD + 01 INF".
+ */
+export function umrahPartyLine(name: string, guest: UmrahGuestCounts): string {
   const two = (n: number): string => String(Math.max(0, Math.round(n))).padStart(2, "0");
+  const party = umrahParty(guest);
+  if (party.children > 0) {
+    const parts = [`${two(party.adults)} ADULT`, `${two(party.children)} CHILD`];
+    if (party.infants > 0) parts.push(`${two(party.infants)} INF`);
+    return `${name} * ${parts.join(" + ")}`;
+  }
   const parts = [`${two(guest.pax)} PAX`];
   if (guest.withoutBedPax > 0) parts.push(`${two(guest.withoutBedPax)} WITHOUT BED`);
   if (guest.infants > 0) parts.push(`${two(guest.infants)} INF`);

@@ -82,7 +82,14 @@ export interface UmrahQuotation {
   status: UmrahStatus;
   bookingRef: string;
   assignedStaff?: { userId: string | null; name: string };
-  guest: { name: string; pax: number; withoutBedPax: number; infants: number };
+  guest: {
+    name: string;
+    pax: number;
+    withoutBedPax: number;
+    infants: number;
+    children?: number;
+    withoutBedChildren?: number;
+  };
   date: string;
   validUntil: string | null;
   packageTitle: string;
@@ -99,6 +106,7 @@ export interface UmrahQuotation {
     outbound: string;
     inbound: string;
     adultFare: number;
+    childFare?: number | null;
     infantFare: number;
     currencyCode: string;
   };

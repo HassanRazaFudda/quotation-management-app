@@ -1,5 +1,5 @@
 import { getUmrahQuotation, getUmrahSettings } from "@junaidi/db";
-import { renderQuotation } from "@junaidi/pdf";
+import { renderUmrahQuotation } from "@junaidi/pdf";
 
 import { sessionFrom } from "@/server/auth";
 import { handleOptions, notFound, pdfResponse, readJson, route } from "@/server/http";
@@ -26,7 +26,7 @@ export const POST = route(async (request, { params }) => {
   const settings = await getUmrahSettings();
   // toUmrahPdfView copies fields explicitly; the discount has no way through.
   const view = await toUmrahPdfView(quotation as never, { branding, company: settings.company });
-  const pdf = await renderQuotation(view);
+  const pdf = await renderUmrahQuotation(view);
 
   return pdfResponse(request, pdf, umrahPdfFilename(quotation as never));
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { formatGregorianRange, formatMoney } from "@junaidi/shared";
+import { formatGregorianRange, formatMoney, umrahParty } from "@junaidi/shared";
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -130,10 +130,19 @@ export default function UmrahQuotationDetailPage({ params }: { params: Promise<{
   const money = (value: number) => formatMoney(value, q.currency);
   const tiered = q.pricingMode === "tiered";
   const discounted = q.priceLines.filter((line) => line.discount > 0 || line.roundOff !== 0);
+  const people = umrahParty(q.guest);
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const withoutBed =
+    q.guest.withoutBedPax > 0
+      ? people.childrenWithoutBed > 0
+        ? `${q.guest.withoutBedPax} without a bed (${count(people.childrenWithoutBed, "child", "children")})`
+        : `${q.guest.withoutBedPax} without a bed`
+      : "";
   const party = [
-    `${q.guest.pax} with a bed`,
-    q.guest.withoutBedPax > 0 ? `${q.guest.withoutBedPax} without a bed` : "",
-    q.guest.infants > 0 ? `${q.guest.infants} infant${q.guest.infants === 1 ? "" : "s"}` : "",
+    people.children > 0 ? count(people.adults, "adult", "adults") : `${q.guest.pax} with a bed`,
+    people.children > 0 ? count(people.children, "child", "children") : "",
+    withoutBed,
+    q.guest.infants > 0 ? count(q.guest.infants, "infant", "infants") : "",
   ].filter(Boolean);
 
   return (
@@ -258,7 +267,10 @@ export default function UmrahQuotationDetailPage({ params }: { params: Promise<{
                     {q.flight.inbound || "one-way ticket only"}
                   </p>
                   <p className="pt-1 text-xs text-muted">
-                    {q.flight.currencyCode} {q.flight.adultFare.toLocaleString("en-US")} per adult / child
+                    {q.flight.currencyCode} {q.flight.adultFare.toLocaleString("en-US")}{" "}
+                    {people.children > 0 ? "per adult" : "per adult / child"}
+                    {people.children > 0 &&
+                      ` · ${q.flight.currencyCode} ${(q.flight.childFare ?? q.flight.adultFare).toLocaleString("en-US")} per child`}
                     {q.guest.infants > 0 && ` · ${q.flight.currencyCode} ${q.flight.infantFare.toLocaleString("en-US")} per infant`}
                   </p>
                 </>

@@ -44,7 +44,14 @@ export interface UmrahAuthor {
 }
 
 export interface UmrahQuotationInput {
-  guest: { name: string; pax: number; withoutBedPax: number; infants: number };
+  guest: {
+    name: string;
+    pax: number;
+    withoutBedPax: number;
+    infants: number;
+    children?: number;
+    withoutBedChildren?: number;
+  };
   date: Date | string;
   validUntil?: Date | string | null;
   packageTitle?: string;
@@ -108,7 +115,8 @@ export function buildUmrahQuotationDocument(
 
   const date = new Date(input.date);
   const tiered = input.pricingMode === "tiered";
-  const tierKeys = ["Quad", "Triple", "Double"];
+  // a tier and its child price keep their settings while the tier is not offered
+  const tierKeys = ["Quad", "Triple", "Double", "Quad:child", "Triple:child", "Double:child"];
 
   // Only the settings of lines that actually exist are kept; a line the mode
   // does not use must not linger from an earlier choice.
@@ -131,6 +139,8 @@ export function buildUmrahQuotationDocument(
       pax: input.guest.pax,
       withoutBedPax: input.guest.withoutBedPax,
       infants: input.guest.infants,
+      children: input.guest.children ?? 0,
+      withoutBedChildren: input.guest.withoutBedChildren ?? 0,
     },
     date,
     validUntil: input.validUntil ? new Date(input.validUntil) : null,
@@ -180,6 +190,7 @@ export function buildUmrahQuotationDocument(
       outbound: input.flight.outbound.trim(),
       inbound: input.flight.inbound.trim(),
       adultFare: input.flight.adultFare,
+      childFare: input.flight.childFare ?? null,
       infantFare: input.flight.infantFare,
       currencyCode: input.flight.currencyCode.trim().toUpperCase(),
     },

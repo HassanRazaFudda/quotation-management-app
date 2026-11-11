@@ -22,7 +22,16 @@ const base = {
 describe("umrahQuotationSchema", () => {
   it("accepts a minimal quotation, tidying and defaulting it", () => {
     const parsed = umrahQuotationSchema.parse(base);
-    expect(parsed.guest).toEqual({ name: "Rashid Shahid", pax: 4, withoutBedPax: 0, infants: 0 });
+    expect(parsed.guest).toEqual({
+      name: "Rashid Shahid",
+      pax: 4,
+      withoutBedPax: 0,
+      infants: 0,
+      children: 0,
+      withoutBedChildren: 0,
+    });
+    // An old payload has no child fare: children then pay the adult fare.
+    expect(parsed.flight.childFare).toBeNull();
     expect(parsed.stays[0]!.currencyCode).toBe("SAR");
     expect(parsed.stays[0]!.rateBasis).toBe("room");
     expect(parsed.stays[0]!.tierRates).toEqual({ Quad: null, Triple: null, Double: null });
@@ -32,6 +41,15 @@ describe("umrahQuotationSchema", () => {
     expect(parsed.flight.included).toBe(false);
     expect(parsed.transportLegs).toEqual([]);
     expect(parsed.lineSettings).toEqual([]);
+  });
+
+  it("accepts a setting for every line key, child prices included", () => {
+    const keys = ["main", "withoutBed", "child", "childWithoutBed", "infant", "Quad", "Triple", "Double"];
+    const tiers = ["Quad:child", "Triple:child", "Double:child"];
+    const lineSettings = [...keys, ...tiers].map((key) => ({ key, discount: 0, roundOff: 0, manualTotal: null }));
+    const parsed = umrahQuotationSchema.parse({ ...base, lineSettings, flight: { included: true, childFare: 90_000 } });
+    expect(parsed.lineSettings).toHaveLength(11);
+    expect(parsed.flight.childFare).toBe(90_000);
   });
 
   it("never accepts a price, total or night count from the client", () => {

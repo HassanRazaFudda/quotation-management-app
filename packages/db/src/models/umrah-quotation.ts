@@ -158,6 +158,10 @@ const umrahQuotationSchema = new Schema(
       pax: { type: Number, default: 1, min: 1 },
       withoutBedPax: { type: Number, default: 0, min: 0 },
       infants: { type: Number, default: 0, min: 0 },
+      /** How many of the guests above (with or without a bed) are children. */
+      children: { type: Number, default: 0, min: 0 },
+      /** How many of the without-bed guests are children. */
+      withoutBedChildren: { type: Number, default: 0, min: 0 },
     },
 
     date: { type: Date, required: true },
@@ -188,6 +192,8 @@ const umrahQuotationSchema = new Schema(
       outbound: { type: String, default: "", trim: true },
       inbound: { type: String, default: "", trim: true },
       adultFare: { type: Number, default: 0, min: 0 },
+      /** Null: children pay the adult fare. */
+      childFare: { type: Number, default: null, min: 0 },
       infantFare: { type: Number, default: 0, min: 0 },
       currencyCode: { type: String, default: "PKR", trim: true, uppercase: true },
     },

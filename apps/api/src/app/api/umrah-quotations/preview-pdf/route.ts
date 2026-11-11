@@ -1,5 +1,5 @@
 import { buildUmrahQuotationDocument, getUmrahSettings } from "@junaidi/db";
-import { renderQuotation } from "@junaidi/pdf";
+import { renderUmrahQuotation } from "@junaidi/pdf";
 
 import { sessionFrom } from "@/server/auth";
 import { corsHeaders, handleOptions, readJson, route } from "@/server/http";
@@ -28,7 +28,7 @@ export const POST = route(async (request) => {
 
   const settings = await getUmrahSettings();
   const view = await toUmrahPdfView(doc as never, { company: settings.company });
-  const pdf = await renderQuotation(view);
+  const pdf = await renderUmrahQuotation(view);
 
   // Inline (not an attachment) so it can show in an <iframe>.
   return new Response(pdf as BodyInit, {
