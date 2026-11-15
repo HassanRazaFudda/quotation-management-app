@@ -30,7 +30,8 @@ const INK = "#1f2328";
 const SLATE = "#57606a";
 const HAIRLINE = "#d0d7de";
 const PAPER = "#f6f8fa";
-const RED = "#9f0b1f";
+/** Junaidi Air Travel red, as in its logo. The Hajj document keeps its own darker red. */
+const RED = "#E20D29";
 
 const e = escapeHtml;
 
@@ -99,9 +100,15 @@ function letterhead(view: UmrahPdfView): string {
   return `
     <header class="lh">
         <div class="lh-brand">
-            ${view.logoDataUri ? `<img src="${view.logoDataUri}" alt="${e(company.name)} logo" />` : ""}
+            ${view.logoDataUri ? `<img class="lh-emblem" src="${view.logoDataUri}" alt="" />` : ""}
             <div class="lh-text">
-                <div class="lh-name">${brandName(company.name)}</div>
+                ${
+                  // The wordmark already spells the name, so the typed name prints
+                  // only when there is no wordmark to show.
+                  view.wordmarkDataUri
+                    ? `<img class="lh-wordmark" src="${view.wordmarkDataUri}" alt="${e(company.name)}" />`
+                    : `<div class="lh-name">${brandName(company.name)}</div>`
+                }
                 ${company.subheading ? `<div class="lh-sub">${e(company.subheading)}</div>` : ""}
                 ${company.tagline ? `<div class="lh-tag">${e(company.tagline)}</div>` : ""}
                 ${company.address ? `<div class="lh-meta">${e(company.address)}</div>` : ""}
@@ -331,8 +338,11 @@ ${FONT_FACE_CSS}
     /* ---- letterhead: the brand on the left, the document on the right */
     .lh { display: flex; justify-content: space-between; align-items: flex-start; gap: 10mm; }
     .lh-plain { justify-content: flex-end; }
-    .lh-brand { display: flex; gap: 4mm; align-items: flex-start; min-width: 0; }
-    .lh-brand img { width: auto; height: auto; max-width: 26mm; max-height: 24mm; object-fit: contain; display: block; }
+    /* the emblem stretches to the height of the text beside it */
+    .lh-brand { display: flex; gap: 4.5mm; align-items: stretch; min-width: 0; }
+    /* a fixed-width column; the emblem fills its full height, scaled to fit */
+    .lh-emblem { flex: 0 0 27mm; width: 27mm; height: auto; min-height: 24mm; object-fit: contain; object-position: center; display: block; }
+    .lh-wordmark { display: block; height: 12mm; width: auto; max-width: 70mm; object-fit: contain; object-position: left center; margin-bottom: 2mm; }
     .lh-text { min-width: 0; }
     .lh-name { font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif; font-weight: 700; font-size: 17pt; letter-spacing: 0.6px; line-height: 1.05; color: ${INK}; -webkit-text-stroke: 1.2px ${INK}; }
     .lh-sub { font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif; font-weight: 700; font-size: 8.5pt; letter-spacing: 2px; color: ${SLATE}; margin-top: 2px; }
@@ -343,7 +353,8 @@ ${FONT_FACE_CSS}
     .lh-social svg { width: 10px; height: 10px; display: block; flex-shrink: 0; }
 
     .doc { flex-shrink: 0; text-align: right; }
-    .doc-title { font-size: 17pt; font-weight: 300; letter-spacing: 0.2px; color: ${INK}; line-height: 1.1; }
+    /* the brand face (Nexa, as in the wordmark), so the title reads as part of the letterhead */
+    .doc-title { font-family: 'Nexa', 'Helvetica Neue', Arial, sans-serif; font-size: 17pt; font-weight: 700; letter-spacing: 0.4px; color: ${INK}; line-height: 1.1; -webkit-text-stroke: 0.6px ${INK}; }
     /* two columns: labels right-aligned against values left-aligned, so a short
        value sits right beside its label instead of across a gap */
     .doc dl { margin: 6px 0 0; display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: 8px; font-size: 8.5pt; line-height: 1.55; }

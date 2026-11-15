@@ -97,12 +97,23 @@ export interface UmrahPdfView {
   /** Print the letterhead. Off prints a neutral copy for a sub-agent. */
   branding: boolean;
   company: PdfCompany;
+  /** The emblem, standing the full height of the letterhead. */
   logoDataUri: string;
+  /** The name as lettered in the logo; the typed name prints when it is missing. */
+  wordmarkDataUri: string;
 }
 
 export type UmrahPdfViewInput = Omit<
   UmrahPdfView,
-  "includes" | "requirements" | "terms" | "company" | "logoDataUri" | "bookingRef" | "generatedBy" | "remarks"
+  | "includes"
+  | "requirements"
+  | "terms"
+  | "company"
+  | "logoDataUri"
+  | "wordmarkDataUri"
+  | "bookingRef"
+  | "generatedBy"
+  | "remarks"
 > & {
   bookingRef?: string;
   includes?: Array<string | StyledLine>;
@@ -112,6 +123,7 @@ export type UmrahPdfViewInput = Omit<
   generatedBy?: string;
   company?: PdfCompany;
   logoDataUri?: string;
+  wordmarkDataUri?: string;
 };
 
 const text = (value: string | undefined): string => (value ?? "").trim();
@@ -195,5 +207,6 @@ export function buildUmrahPdfView(input: UmrahPdfViewInput): UmrahPdfView {
     branding: input.branding,
     company: input.company ?? DEFAULT_COMPANY,
     logoDataUri: input.logoDataUri ?? "",
+    wordmarkDataUri: input.wordmarkDataUri ?? "",
   };
 }

@@ -91,7 +91,9 @@ describe("toUmrahPdfView", () => {
   });
 
   it("produces HTML with no trace of the discount, subtotal or round-off", async () => {
-    const html = await render();
+    // Embedded images are base64: drop them, or a run of digits inside the logo
+    // reads as a leaked figure.
+    const html = (await render()).replace(/data:[a-z]+\/[a-z+]+;base64,[A-Za-z0-9+/=]+/g, "");
     for (const hidden of ["63000", "63,000", "291000", "291,000", "321", "repeat customer"]) {
       expect(html).not.toContain(hidden);
     }

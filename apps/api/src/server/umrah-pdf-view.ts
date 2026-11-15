@@ -18,7 +18,7 @@ import {
 } from "@junaidi/shared";
 import {
   buildUmrahPdfView,
-  loadLogoDataUri,
+  loadUmrahLogo,
   type PdfCompany,
   type UmrahPdfPrices,
   type UmrahPdfView,
@@ -212,6 +212,7 @@ export async function toUmrahPdfView(
 
   const transportSeparate = quotation.transportDisplay === "separate" && (quotation.transportTotal ?? 0) > 0;
 
+  const logo = await loadUmrahLogo();
   return buildUmrahPdfView({
     quotationId: quotation.quotationId,
     bookingRef: quotation.bookingRef ?? "",
@@ -274,7 +275,8 @@ export async function toUmrahPdfView(
     generatedBy: quotation.createdByName ?? "",
     branding: options.branding ?? true,
     company: options.company,
-    logoDataUri: await loadLogoDataUri(),
+    logoDataUri: logo.emblem,
+    wordmarkDataUri: logo.wordmark,
   });
 }
 
