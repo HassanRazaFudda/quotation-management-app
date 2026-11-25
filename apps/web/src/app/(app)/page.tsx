@@ -44,7 +44,11 @@ export default function DashboardPage() {
           <StatCard
             icon={<TrendingUp className="size-5" />}
             label="Latest value"
-            value={recent[0] ? formatMoney(recent[0].finalTotal, recent[0].currency) : "-"}
+            value={
+              recent[0]
+                ? `${formatMoney(recent[0].finalTotal, recent[0].currency)}${recent[0].priceAsWhole ? " (whole)" : ""}`
+                : "-"
+            }
           />
           <Link href="/quotations/new" className="block">
             <Card className="flex h-full items-center gap-3 border-dashed p-5 text-brand-600 transition-colors hover:bg-brand-50">
@@ -94,6 +98,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                       <span className="hidden text-sm font-semibold text-ink sm:block">
                         {formatMoney(q.finalTotal, q.currency)}
+                        {q.priceAsWhole && <span className="ml-1 text-xs font-normal text-muted">whole</span>}
                       </span>
                       <Badge tone={q.status}>{q.status}</Badge>
                     </div>

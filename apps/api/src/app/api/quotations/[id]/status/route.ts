@@ -18,6 +18,22 @@ const statusSchema = z.object({
     .regex(/^[a-f\d]{24}$/i)
     .nullish(),
   assignedStaffName: z.string().max(120).optional(),
+  /** Optional on confirm: the people on the booking. Every field may be blank. */
+  passengers: z
+    .array(
+      z.object({
+        surname: z.string().max(120).optional(),
+        givenName: z.string().max(120).optional(),
+        gender: z.enum(["male", "female", ""]).optional(),
+        passportNo: z.string().max(40).optional(),
+        contact: z.string().max(60).optional(),
+        email: z.string().max(120).optional(),
+        preRegNo: z.string().max(60).optional(),
+        roomPicks: z.array(z.number().int().min(-1).max(50)).max(40).optional(),
+      }),
+    )
+    .max(500)
+    .optional(),
 });
 
 /**

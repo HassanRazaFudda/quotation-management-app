@@ -30,6 +30,7 @@ import {
   type QuotationInput,
 } from "../services/quotation";
 import { addPayment, deletePayment, updatePayment } from "../services/payment";
+import { listPassengerSheet } from "../services/passengers";
 import { connectTestDb, dropTestDb } from "./setup";
 
 const staff: QuotationAuthor = { userId: "64b000000000000000000001", name: "Bilal", role: "staff" };
@@ -696,6 +697,25 @@ describe("duplicating", () => {
     expect(copy.finalTotal).toBe(original.finalTotal);
     expect(String(copy.createdBy)).toBe(other.userId);
     expect(copy.createdByName).toBe("Sana");
+  });
+
+  it("never carries payments, passengers or the assigned staff onto the copy", async () => {
+    const original = await createQuotation(baseInput, staff);
+    const id = String(original._id);
+    await changeQuotationStatus(
+      id,
+      { status: "confirmed", hbNumber: "HB-DUP-PAY", assignedStaffName: "Kamran", passengers: [{ surname: "One" }] },
+      staff,
+    );
+    await addPayment(id, { date: new Date("2027-01-20"), amount: 100_000, method: "Cash", receivedByName: "Bilal" }, staff as never);
+    expect((await QuotationModel.findById(id).lean())!.payments).toHaveLength(1);
+
+    const copy = await duplicateQuotation(id, staff);
+    expect(copy.payments).toHaveLength(0);
+    expect(copy.passengers).toHaveLength(0);
+    expect(copy.assignedStaff?.name ?? "").toBe("");
+    // The original keeps its own payment.
+    expect((await QuotationModel.findById(id).lean())!.payments).toHaveLength(1);
   });
 
   it("does not carry the HB number onto the copy", async () => {
@@ -1493,5 +1513,122 @@ describe("a Mina tent with an admin-added tier", () => {
     const doc = await buildQuotationDocument(input, staff, "HQ-TEST");
     expect(doc.stays[0]!.minaTier).toBe("economy");
     expect(doc.stays[0]!.accommodationName).toBe("Mina Economy Camp");
+  });
+});
+
+/** The people on a booking, recorded at confirmation for the passenger sheet. */
+describe("passengers on a confirmed booking", () => {
+  it("saves the passengers sent with the confirmation, blanks and all", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const confirmed = await changeQuotationStatus(
+      String(quotation._id),
+      {
+        status: "confirmed",
+        hbNumber: "HB-PAX-1",
+        passengers: [{ surname: " Ahmed ", givenName: "Muhammad", gender: "male", passportNo: "AZ1234" }, {}],
+      },
+      staff,
+    );
+    expect(confirmed.passengers).toHaveLength(2);
+    expect(confirmed.passengers[0]).toMatchObject({ surname: "Ahmed", givenName: "Muhammad", gender: "male" });
+    expect(confirmed.passengers[1]).toMatchObject({ surname: "", givenName: "", gender: "", passportNo: "" });
+    expect(confirmed.passengers[0]!.roomPicks).toEqual([-1, -1]);
+  });
+
+  it("confirms with no passenger details at all", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const confirmed = await changeQuotationStatus(
+      String(quotation._id),
+      { status: "confirmed", hbNumber: "HB-PAX-2" },
+      staff,
+    );
+    expect(confirmed.status).toBe("confirmed");
+    expect(confirmed.passengers).toHaveLength(0);
+  });
+
+  it("keeps no more passengers than the booking has pax", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const confirmed = await changeQuotationStatus(
+      String(quotation._id),
+      { status: "confirmed", hbNumber: "HB-PAX-3", passengers: [{}, {}, { surname: "Extra" }] },
+      staff,
+    );
+    expect(confirmed.passengers).toHaveLength(2);
+  });
+
+  it("refuses a pick that names a room the stay does not have", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await expect(
+      changeQuotationStatus(
+        String(quotation._id),
+        { status: "confirmed", hbNumber: "HB-PAX-4", passengers: [{ roomPicks: [0, -1] }] },
+        staff,
+      ),
+    ).rejects.toThrow(/room that does not exist/i);
+  });
+
+  it("updates the passengers when the confirmation is reopened, and drops them on a copy", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const id = String(quotation._id);
+    await changeQuotationStatus(id, { status: "confirmed", hbNumber: "HB-PAX-5", passengers: [{ surname: "One" }] }, staff);
+    const again = await changeQuotationStatus(
+      id,
+      { status: "confirmed", hbNumber: "HB-PAX-5", passengers: [{ surname: "One" }, { surname: "Two" }] },
+      staff,
+    );
+    expect(again.passengers.map((p) => p.surname)).toEqual(["One", "Two"]);
+
+    const copy = await duplicateQuotation(id, staff);
+    expect(copy.passengers).toHaveLength(0);
+  });
+
+  it("lists every pax of the season's confirmed bookings on the sheet", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await changeQuotationStatus(
+      String(quotation._id),
+      { status: "confirmed", hbNumber: "HB-SHEET-1", passengers: [{ surname: "Sheet", passportNo: "ZX999" }] },
+      staff,
+    );
+    const sheet = await listPassengerSheet({ season: DEFAULT_SEASON, search: "ZX999" });
+    expect(sheet.bookings).toHaveLength(1);
+    const rows = sheet.bookings[0]!.rows;
+    // Two pax, one of them entered: the other is a blank row, not a missing one.
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.passenger.surname).toBe("Sheet");
+    expect(rows[1]!.passenger.surname).toBe("");
+    expect(rows[0]!.hbNumber).toBe("HB-SHEET-1");
+    expect(sheet.seasons).toContain(DEFAULT_SEASON);
+  });
+});
+
+/** A quotation priced as the whole booking: the party's total, never divided by pax. */
+describe("pricing as a whole booking", () => {
+  const whole: QuotationAuthor = { userId: "64b000000000000000000009", name: "Whole", role: "staff" };
+
+  it("saves the whole amount, pax times the per-person price", async () => {
+    const perPerson = await createQuotation(baseInput, whole);
+    const asWhole = await createQuotation({ ...baseInput, priceAsWhole: true }, whole);
+    expect(perPerson.priceAsWhole).toBe(false);
+    expect(asWhole.priceAsWhole).toBe(true);
+    expect(asWhole.finalTotal).toBe(perPerson.finalTotal * baseInput.guest.pax);
+  });
+
+  it("takes the discount and round-off off the whole amount", async () => {
+    const plain = await createQuotation({ ...baseInput, priceAsWhole: true }, whole);
+    const rounded = await createQuotation(
+      { ...baseInput, priceAsWhole: true, discount: 10_000, roundOff: -500 },
+      whole,
+    );
+    expect(rounded.subtotal).toBe(plain.finalTotal);
+    expect(rounded.finalTotal).toBe(plain.finalTotal - 10_500);
+  });
+
+  it("keeps the staff report in per-person figures", async () => {
+    const before = (await staffReport({ season: DEFAULT_SEASON })).find((row) => row.userId === whole.userId)!;
+    const perPerson = await createQuotation(baseInput, whole);
+    await createQuotation({ ...baseInput, priceAsWhole: true }, whole);
+    const after = (await staffReport({ season: DEFAULT_SEASON })).find((row) => row.userId === whole.userId)!;
+    // Two more quotations, each counted at its per-person price.
+    expect(after.totalQuoted - before.totalQuoted).toBe(perPerson.finalTotal * 2);
   });
 });

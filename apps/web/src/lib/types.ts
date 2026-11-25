@@ -1,6 +1,6 @@
 /** Shapes returned by the API, mirrored for the client. */
 
-import type { ConfigBundle, Currency, PackageAddOn, SharingWord, StyledLine } from "@junaidi/shared";
+import type { ConfigBundle, Currency, PackageAddOn, Passenger, SharingWord, StyledLine } from "@junaidi/shared";
 
 export type { Currency, StyledLine };
 
@@ -167,8 +167,12 @@ export interface Quotation {
   roundOff: number;
   finalTotal: number;
   manualOverride: boolean;
+  /** `finalTotal` (and subtotal, discount, round-off) is the whole booking's amount. */
+  priceAsWhole?: boolean;
   /** Payments taken against this booking; present once confirmed. */
   payments?: QuotationPayment[];
+  /** The people on a confirmed booking, entered at confirmation. Any field may be blank. */
+  passengers?: Passenger[];
   createdBy: string;
   createdByName: string;
   createdAt: string;

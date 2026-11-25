@@ -5,6 +5,7 @@ import {
   finalTierTotal,
   formatMoney,
   nextBlockOptions,
+  roundToDecimals,
   sharingWordsFor,
   TIER_OCCUPANCIES,
   type FlightOption,
@@ -274,6 +275,8 @@ export function Builder({
         // Round-off is per-customer too, so a duplicate starts unrounded.
         roundOff: editing ? (source.roundOff ?? 0) : 0,
         manualTotal: editing && source.manualOverride ? source.finalTotal : null,
+        // Whether the price is per person or the whole booking: a pricing choice, kept on both.
+        priceAsWhole: source.priceAsWhole ?? false,
         minaServiceIds: source.minaServiceIds ?? [],
         arafatServiceIds: source.arafatServiceIds ?? [],
         includeIds: source.includeIds ?? [],
@@ -908,7 +911,38 @@ export function Builder({
                     </p>
                   )}
 
-                  <Field label={`Discount in ${result.currency.code} (not shown on the quotation)`}>
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-canvas/50 p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={builder.priceAsWhole}
+                      onChange={(e) => {
+                        const whole = e.target.checked;
+                        // Keep what the discount and a typed price are worth: per person
+                        // x pax is the whole booking, and back. Round-off tidies one
+                        // figure, so it starts again - as it does on a currency switch.
+                        const pax = Math.max(1, builder.pax);
+                        const scale = (value: number) => (whole ? value * pax : value / pax);
+                        // Rounded to the currency's own decimals, so a USD price keeps its cents.
+                        const money = (value: number) => roundToDecimals(scale(value), result.currency.decimals);
+                        builder.set("discount", money(builder.discount));
+                        if (builder.manualTotal !== null) builder.set("manualTotal", money(builder.manualTotal));
+                        builder.set("roundOff", 0);
+                        builder.set("priceAsWhole", whole);
+                      }}
+                      className="mt-0.5 size-4 accent-brand-500"
+                    />
+                    <span>
+                      <span className="font-medium text-ink">Price as whole (not per person)</span>
+                      <span className="block text-xs text-muted">
+                        One amount for all {builder.pax} {builder.pax === 1 ? "person" : "persons"}; the
+                        quotation will not say "per person". Discount and round-off apply to the whole amount.
+                      </span>
+                    </span>
+                  </label>
+
+                  <Field
+                    label={`Discount in ${result.currency.code}${builder.priceAsWhole ? " on the whole booking" : ""} (not shown on the quotation)`}
+                  >
                     <NumberInput
                       min={0}
                       value={builder.discount}
@@ -939,7 +973,9 @@ export function Builder({
                 cards below. Only a customer quotation prices to a single total. */}
             {!asPackage && (
               <div className="flex flex-col items-end justify-center rounded-lg bg-brand-50 p-5">
-                <p className="text-xs font-semibold text-muted">TOTAL PER PERSON</p>
+                <p className="text-xs font-semibold text-muted">
+                  {builder.priceAsWhole ? `TOTAL FOR ${builder.pax} ${builder.pax === 1 ? "PERSON" : "PERSONS"}` : "TOTAL PER PERSON"}
+                </p>
                 <p className="text-3xl font-bold text-brand-600">
                   {formatMoney(result.finalTotal, result.currency)}
                 </p>

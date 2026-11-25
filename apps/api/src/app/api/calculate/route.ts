@@ -19,7 +19,7 @@ export const POST = route(async (request) => {
 
   const priced = await priceQuotation({
     ...input,
-    guest: { name: "preview", pax: 1 },
+    guest: { name: "preview", pax: input.pax ?? 1 },
     date: new Date(),
   });
 

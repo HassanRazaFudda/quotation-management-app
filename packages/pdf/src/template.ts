@@ -152,7 +152,7 @@ function priceSection(view: QuotationPdfView): string {
   if (view.tierPrices.length === 0) {
     return `
         <div class="total-section">
-            <p>Total Estimated Package Price Per Person</p>
+            <p>${escapeHtml(view.totalPriceCaption)}</p>
             <h2>${escapeHtml(view.totalPrice)}</h2>
         </div>`;
   }

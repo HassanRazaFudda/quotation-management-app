@@ -1,15 +1,17 @@
 "use client";
 
-import { convertFromPkr, formatMoney, minaCategoryLabel, roomLabel } from "@junaidi/shared";
+import { convertFromPkr, formatMoney, minaCategoryLabel, roomLabel, type Passenger } from "@junaidi/shared";
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Copy, Download, Pencil, Plane, Trash2 } from "lucide-react";
 
 import { PageHeader } from "@/components/app-shell";
+import { ConfirmBookingDialog } from "@/components/confirm-booking-dialog";
+import { PassengersCard } from "@/components/passengers-card";
 import { PaymentsCard } from "@/components/payments-card";
 import { toast } from "@/components/toast";
-import { Badge, Button, Card, Field, Input, Modal, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, Modal, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { api, ApiError } from "@/lib/api";
 import type { Quotation, QuotationFlight, StyledLine } from "@/lib/types";
@@ -139,7 +141,12 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
 
   async function changeStatus(
     status: Status,
-    extra?: { hbNumber?: string; assignedStaffUserId?: string | null; assignedStaffName?: string },
+    extra?: {
+      hbNumber?: string;
+      assignedStaffUserId?: string | null;
+      assignedStaffName?: string;
+      passengers?: Passenger[];
+    },
   ) {
     if (!q) return;
     setSavingStatus(true);
@@ -298,7 +305,23 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
           </Card>
 
           {/* ---------------- payments (confirmed bookings only) ---------------- */}
-          {q.status === "confirmed" && <PaymentsCard quotation={q} onUpdated={setQ} />}
+          {q.status === "confirmed" && (
+            <PaymentsCard
+              quotation={q}
+              onUpdated={setQ}
+              // A whole-booking price is already the grand total; never multiply it by pax again.
+              total={
+                q.priceAsWhole
+                  ? { amount: q.finalTotal, hint: `whole booking · ${q.guest.pax} ${q.guest.pax === 1 ? "person" : "persons"}` }
+                  : undefined
+              }
+            />
+          )}
+
+          {/* ---------------- passengers (confirmed bookings only) ---------------- */}
+          {q.status === "confirmed" && (
+            <PassengersCard quotation={q} onEdit={canEdit ? () => setConfirming(true) : undefined} />
+          )}
 
           {/* ---------------- services & terms ---------------- */}
           {(q.minaServices.length > 0 || q.arafatServices.length > 0) && (
@@ -329,7 +352,9 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         {/* ---------------- summary ---------------- */}
         <div className="space-y-5">
           <Card className="p-5">
-            <p className="text-xs font-semibold text-muted">TOTAL PER PERSON</p>
+            <p className="text-xs font-semibold text-muted">
+              {q.priceAsWhole ? `TOTAL FOR ${q.guest.pax} ${q.guest.pax === 1 ? "PERSON" : "PERSONS"}` : "TOTAL PER PERSON"}
+            </p>
             <p className="text-3xl font-bold text-brand-600">{money(q.finalTotal)}</p>
             <p className="mt-1 text-sm text-muted">
               {q.totalNights} nights
@@ -399,7 +424,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                       onClick={() => setConfirming(true)}
                       className="text-xs font-medium text-brand-600 hover:text-brand-700"
                     >
-                      Edit HB / assigned staff
+                      Edit HB, staff and passengers
                     </button>
                   )}
                 </div>
@@ -432,11 +457,10 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      <ConfirmDialog
+      <ConfirmBookingDialog
         open={confirming}
         saving={savingStatus}
-        initialHb={q.hbNumber}
-        initialStaff={q.assignedStaff}
+        quotation={q}
         onCancel={() => setConfirming(false)}
         onConfirm={(payload) => changeStatus("confirmed", payload)}
       />
@@ -492,120 +516,6 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </Modal>
     </>
-  );
-}
-
-/**
- * Confirming a booking asks for its HB number. It is required, and the server
- * rejects one already used elsewhere - that error surfaces as a toast while
- * this dialog stays open so the number can be corrected.
- */
-const OTHER_STAFF = "__other__";
-
-function ConfirmDialog({
-  open,
-  saving,
-  initialHb,
-  initialStaff,
-  onCancel,
-  onConfirm,
-}: {
-  open: boolean;
-  saving: boolean;
-  initialHb: string;
-  initialStaff?: { userId: string | null; name: string };
-  onCancel: () => void;
-  onConfirm: (payload: {
-    hbNumber: string;
-    assignedStaffUserId: string | null;
-    assignedStaffName: string;
-  }) => void;
-}) {
-  const [hb, setHb] = useState(initialHb);
-  const [staff, setStaff] = useState<Array<{ id: string; name: string }>>([]);
-  const [staffChoice, setStaffChoice] = useState("");
-  const [otherName, setOtherName] = useState("");
-
-  useEffect(() => {
-    api
-      .get<{ users: Array<{ id: string; name: string }> }>("/api/users/basic")
-      .then((r) => setStaff(r.users))
-      .catch(() => undefined);
-  }, []);
-
-  // Reset the fields each time the dialog opens, seeding the assigned staff.
-  useEffect(() => {
-    if (!open) return;
-    setHb(initialHb);
-    if (initialStaff?.userId) {
-      setStaffChoice(initialStaff.userId);
-      setOtherName("");
-    } else if (initialStaff?.name) {
-      setStaffChoice(OTHER_STAFF);
-      setOtherName(initialStaff.name);
-    } else {
-      setStaffChoice("");
-      setOtherName("");
-    }
-  }, [open, initialHb, initialStaff]);
-
-  const trimmed = hb.trim();
-
-  return (
-    <Modal open={open} onClose={onCancel} title="Confirm booking">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!trimmed) return;
-          onConfirm({
-            hbNumber: trimmed,
-            assignedStaffUserId: staffChoice && staffChoice !== OTHER_STAFF ? staffChoice : null,
-            assignedStaffName: staffChoice === OTHER_STAFF ? otherName.trim() : "",
-          });
-        }}
-        className="space-y-4"
-      >
-        <p className="text-sm text-muted">
-          Enter the HB number for this booking. It must be unique - the same
-          number cannot be used on another booking.
-        </p>
-        <Field label="HB Number">
-          <Input
-            value={hb}
-            onChange={(e) => setHb(e.target.value)}
-            placeholder="HB-1448-0001"
-            autoFocus
-            required
-          />
-        </Field>
-        <Field label="Assigned staff (optional)">
-          <Select
-            options={[
-              { value: "", label: "— none —" },
-              ...staff.map((s) => ({ value: s.id, label: s.name })),
-              { value: OTHER_STAFF, label: "Other (type a name)" },
-            ]}
-            value={staffChoice}
-            onChange={(e) => setStaffChoice(e.target.value)}
-          />
-        </Field>
-        {staffChoice === OTHER_STAFF && (
-          <Input
-            value={otherName}
-            onChange={(e) => setOtherName(e.target.value)}
-            placeholder="Staff name"
-          />
-        )}
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={saving} disabled={!trimmed}>
-            Confirm booking
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

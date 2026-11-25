@@ -79,8 +79,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T;
 }
 
-/** GET a PDF as a blob (for preview and download). */
-async function requestPdf(path: string, options: RequestOptions = {}): Promise<Blob> {
+/** GET a PDF (or another file) as a blob, for preview and download. */
+async function requestPdf(
+  path: string,
+  options: RequestOptions = {},
+  failure = "Could not generate the PDF.",
+): Promise<Blob> {
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   const token = useAuthStore.getState().token;
@@ -96,7 +100,7 @@ async function requestPdf(path: string, options: RequestOptions = {}): Promise<B
   if (response.status === 401) useAuthStore.getState().clear();
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new ApiError(payload?.error ?? "Could not generate the PDF.", response.status);
+    throw new ApiError(payload?.error ?? failure, response.status);
   }
   return response.blob();
 }
@@ -109,4 +113,6 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   login: <T>(body: unknown) => request<T>("/api/auth/login", { method: "POST", body, anonymous: true }),
   pdf: requestPdf,
+  /** GET a file to download, e.g. the passenger sheet. */
+  file: (path: string) => requestPdf(path, { method: "GET" }, "Could not download the file."),
 };

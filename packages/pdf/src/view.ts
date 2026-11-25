@@ -75,6 +75,9 @@ export interface PdfLabels {
   accommodationHeader: string;
 }
 
+/** What the single price has always been called. */
+export const DEFAULT_PRICE_CAPTION = "Total Estimated Package Price Per Person";
+
 export const DEFAULT_PDF_LABELS: PdfLabels = {
   bookingRef: "HB Number",
   phaseHeader: "Location / Phase",
@@ -141,6 +144,8 @@ export interface QuotationPdfView {
 
   /** "PKR 919,000 /-" — the single price, when not printing tiers. */
   totalPrice: string;
+  /** The words above that price: per person by default, or the whole booking's. */
+  totalPriceCaption: string;
   /**
    * A package's two or three prices for one itinerary. When present, these
    * replace the single `totalPrice` panel. Empty for a customer quotation.
@@ -193,6 +198,8 @@ export interface PdfViewInput {
   packageTitle: string;
   /** Pass the FINAL price only — already discounted, already formatted. */
   totalPriceFormatted: string;
+  /** Defaults to "Total Estimated Package Price Per Person". */
+  totalPriceCaption?: string;
   /** A package's tier prices, each already final and formatted. Omit for a quotation. */
   tierPrices?: PdfTierPrice[];
   /** A package's add-on surcharges, each already formatted. Omit for a quotation. */
@@ -237,6 +244,7 @@ export function buildPdfView(input: PdfViewInput): QuotationPdfView {
     packageTitle: input.packageTitle.trim(),
 
     totalPrice: input.totalPriceFormatted.trim(),
+    totalPriceCaption: (input.totalPriceCaption ?? "").trim() || DEFAULT_PRICE_CAPTION,
     tierPrices: (input.tierPrices ?? []).map((tier) => ({
       label: tier.label.trim(),
       priceFormatted: tier.priceFormatted.trim(),

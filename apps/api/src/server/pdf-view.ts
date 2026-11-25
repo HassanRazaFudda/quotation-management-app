@@ -38,6 +38,8 @@ interface QuotationLike {
   guest: { name: string; pax: number };
   totalNights: number;
   finalTotal: number;
+  /** `finalTotal` is the whole booking's amount, not per person. */
+  priceAsWhole?: boolean;
   /** The currency the final is in; absent (or PKR) prints the familiar "PKR X /-". */
   currency?: { code?: string; symbol?: string; decimals?: number } | null;
   qurbaniIncluded?: boolean;
@@ -338,6 +340,10 @@ export async function toPdfView(
     // The final, already-discounted figure, in the quotation's currency.
     // Nothing else about money is passed.
     totalPriceFormatted: formatMoney(quotation.finalTotal, quotation.currency),
+    // A whole-booking price says how many it is for, and never "Per Person".
+    totalPriceCaption: quotation.priceAsWhole
+      ? `Total Estimated Package Price (${String(Math.max(1, quotation.guest.pax)).padStart(2, "0")} Persons)`
+      : undefined,
     // Already converted to the quotation's currency by the caller - same
     // formatting rule as the main total, just per tier / per add-on line.
     tierPrices: options.tierPrices?.map((tier) => ({

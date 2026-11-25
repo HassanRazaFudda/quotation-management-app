@@ -95,6 +95,8 @@ export interface BuilderState {
   /** Signed rounding adjustment on the net (subtotal - discount). Internal. */
   roundOff: number;
   manualTotal: number | null;
+  /** Price the whole booking as one amount, never divided by pax. Quotations only. */
+  priceAsWhole: boolean;
 
   // Package-only three-price pricing. Ignored entirely in quotation mode. A
   // package always prints all three tiers - there is no single-price mode.
@@ -252,6 +254,7 @@ const EMPTY: BuilderData = {
   discountNote: "",
   roundOff: 0,
   manualTotal: null,
+  priceAsWhole: false,
   tiers: emptyTiers(),
   addOns: [],
 };
@@ -478,6 +481,7 @@ export function computeLocal(state: BuilderState, config: ConfigSnapshot): Local
       roundOff: state.roundOff,
       manualTotal: state.manualTotal,
       pax: state.pax,
+      asWhole: state.priceAsWhole,
       exchangeRate,
       decimals: currency.decimals,
     });
@@ -577,6 +581,7 @@ export function toApiPayload(state: BuilderState, season: string) {
     discountNote: state.discountNote,
     roundOff: state.roundOff,
     manualTotal: state.manualTotal,
+    priceAsWhole: state.priceAsWhole,
   };
 }
 

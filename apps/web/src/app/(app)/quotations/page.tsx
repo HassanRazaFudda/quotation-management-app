@@ -177,6 +177,7 @@ export default function QuotationsPage() {
                     </Link>
                     <span className="hidden text-sm font-semibold text-ink sm:block">
                       {formatMoney(q.finalTotal, q.currency)}
+                      {q.priceAsWhole && <span className="ml-1 text-xs font-normal text-muted">whole</span>}
                     </span>
                     <button
                       onClick={() => duplicate(q)}

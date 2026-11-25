@@ -11,6 +11,7 @@ import {
   Coins,
   FileText,
   LayoutDashboard,
+  ClipboardList,
   ListChecks,
   Luggage,
   LogOut,
@@ -73,6 +74,7 @@ const NAV: NavGroup[] = [
       { href: "/quotations/new", label: "New Quotation", icon: <Plus className={icon} />, exact: true },
       { href: "/packages", label: "Packages", icon: <Package className={icon} /> },
       { href: "/payments", label: "Payments", icon: <Wallet className={icon} /> },
+      { href: "/passengers", label: "Passenger Sheet", icon: <ClipboardList className={icon} /> },
     ],
   },
   {

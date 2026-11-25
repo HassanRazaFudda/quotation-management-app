@@ -437,11 +437,14 @@ export function Modal({
   onClose,
   title,
   children,
+  size = "md",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** "xl" is wide and scrolls inside, for a dialog holding a table. */
+  size?: "md" | "xl";
 }) {
   useEffect(() => {
     if (!open) return;
@@ -458,13 +461,16 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-card border border-line bg-white shadow-lg"
+        className={cn(
+          "w-full rounded-card border border-line bg-white shadow-lg",
+          size === "xl" ? "max-w-6xl" : "max-w-md",
+        )}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="border-b border-line px-5 py-4">
           <h2 className="font-semibold text-ink">{title}</h2>
         </div>
-        <div className="p-5">{children}</div>
+        <div className={cn("p-5", size === "xl" && "max-h-[80vh] overflow-y-auto")}>{children}</div>
       </div>
     </div>
   );

@@ -21,6 +21,9 @@ import {
   isUnchangedSelection,
   makePricingContext,
   nestedHajjBlocks,
+  normalisePassenger,
+  validateRoomPicks,
+  type Passenger,
   makeValidationContext,
   minaCategoryLabel,
   priceFlights,
@@ -91,6 +94,8 @@ export interface QuotationInput {
   /** Signed rounding adjustment on the net. Internal only. In the currency. */
   roundOff?: number;
   manualTotal?: number | null;
+  /** Price the whole booking as one amount, never divided by pax. */
+  priceAsWhole?: boolean;
   status?: "draft" | "sent" | "confirmed" | "expired";
 }
 
@@ -217,6 +222,7 @@ export async function priceQuotation(
     roundOff: input.roundOff,
     manualTotal: input.manualTotal,
     pax,
+    asWhole: input.priceAsWhole ?? false,
     exchangeRate,
     decimals: currency.decimals,
   });
@@ -402,6 +408,7 @@ export async function buildQuotationDocument(
     roundOff: priced.roundOff,
     finalTotal: priced.finalTotal,
     manualOverride: priced.manualOverride,
+    priceAsWhole: input.priceAsWhole ?? false,
 
     createdBy: author.userId,
     createdByName: author.name,
@@ -589,6 +596,8 @@ export async function changeQuotationStatus(
     /** The primary staff handling the booking: a system user, or a typed name. */
     assignedStaffUserId?: string | null;
     assignedStaffName?: string;
+    /** The people on the booking, any field blank. Sent with a confirmation. */
+    passengers?: Array<Partial<Passenger>>;
   },
   author: QuotationAuthor,
 ) {
@@ -639,6 +648,19 @@ export async function changeQuotationStatus(
     } else if ((input.assignedStaffName ?? "").trim()) {
       existing.assignedStaff = { userId: null, name: input.assignedStaffName!.trim() };
     }
+
+    // The passengers: blanks are kept as blanks. Only a room given more people
+    // than it holds, or a pick naming no room, is refused.
+    if (input.passengers) {
+      const stays = existing.stays.map((stay) => stay.toObject() as never);
+      const pax = Math.max(1, existing.guest?.pax ?? 1);
+      const passengers = input.passengers
+        .slice(0, pax)
+        .map((passenger) => normalisePassenger(passenger, existing.stays.length));
+      const problems = validateRoomPicks(stays, passengers);
+      if (problems.length > 0) throw new QuotationError(problems[0]!);
+      existing.set("passengers", passengers);
+    }
   }
 
   existing.status = input.status;
@@ -668,14 +690,29 @@ export async function duplicateQuotation(id: string, author: QuotationAuthor) {
   if (!source) throw new QuotationError("Quotation not found.");
 
   const quotationId = await nextQuotationNumber(source.season);
-  // Drop the HB number too: a copy is a fresh draft, not the same booking.
-  const { _id, createdAt, updatedAt, hbNumber, ...rest } = source as Record<string, unknown>;
+  // A copy is a fresh draft, not the same booking: everything that belongs to
+  // the confirmed booking stays with it - the HB number, the staff assigned at
+  // confirmation, the passengers, and above all the payments, which would
+  // otherwise be counted twice.
+  const {
+    _id,
+    createdAt,
+    updatedAt,
+    hbNumber,
+    payments,
+    passengers,
+    assignedStaff,
+    ...rest
+  } = source as Record<string, unknown>;
 
   return QuotationModel.create({
     ...rest,
     quotationId,
     status: "draft",
     hbNumber: "",
+    payments: [],
+    passengers: [],
+    assignedStaff: { userId: null, name: "" },
     date: new Date(),
     createdBy: author.userId,
     createdByName: author.name,
@@ -865,7 +902,16 @@ export async function staffReport(range: {
         _id: "$createdBy",
         name: { $last: "$createdByName" },
         quotations: { $sum: 1 },
-        totalQuoted: { $sum: "$finalTotal" },
+        // Per-person figures, as before; a whole-booking price counts its per-person share.
+        totalQuoted: {
+          $sum: {
+            $cond: [
+              { $eq: ["$priceAsWhole", true] },
+              { $divide: ["$finalTotal", { $max: [1, { $ifNull: ["$guest.pax", 1] }] }] },
+              "$finalTotal",
+            ],
+          },
+        },
         discountGiven: { $sum: "$discount" },
       },
     },

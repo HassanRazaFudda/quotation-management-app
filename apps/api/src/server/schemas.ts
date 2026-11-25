@@ -90,6 +90,8 @@ export const quotationSchema = z.object({
   /** Signed rounding adjustment on the net; may be negative. Internal only. */
   roundOff: z.number().default(0),
   manualTotal: z.number().min(0).nullish(),
+  /** Price the whole booking as one amount, never divided by pax. */
+  priceAsWhole: z.boolean().default(false),
   status: z.enum(["draft", "sent", "confirmed", "expired"]).default("draft"),
 });
 
@@ -228,6 +230,10 @@ export const calculateSchema = quotationSchema.pick({
   discount: true,
   roundOff: true,
   manualTotal: true,
+  priceAsWhole: true,
+}).extend({
+  /** The party size: a whole-booking price depends on it. Defaults to one. */
+  pax: z.number().int().min(1).max(500).optional(),
 });
 
 export const listQuerySchema = z.object({

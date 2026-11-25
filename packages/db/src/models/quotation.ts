@@ -142,6 +142,25 @@ const staySchema = new Schema(
  * received never shifts when a rate later changes. Keeps its own `_id` so a
  * single entry can be corrected or removed.
  */
+/**
+ * One person on a confirmed booking, recorded at confirmation for the office's
+ * passenger sheet. Every field is optional - a blank prints blank.
+ */
+const passengerSchema = new Schema(
+  {
+    surname: { type: String, default: "", trim: true },
+    givenName: { type: String, default: "", trim: true },
+    gender: { type: String, enum: ["male", "female", ""], default: "" },
+    passportNo: { type: String, default: "", trim: true },
+    contact: { type: String, default: "", trim: true },
+    email: { type: String, default: "", trim: true },
+    preRegNo: { type: String, default: "", trim: true },
+    /** Per stay: which room of a split stay this person is in, -1 for none. */
+    roomPicks: { type: [Number], default: [] },
+  },
+  { _id: false },
+);
+
 const paymentSchema = new Schema(
   {
     date: { type: Date, required: true },
@@ -254,9 +273,17 @@ const quotationSchema = new Schema(
 
     finalTotal: { type: Number, default: 0 },
     manualOverride: { type: Boolean, default: false },
+    /**
+     * Priced as the whole booking, not per person: `finalTotal`, `subtotal`,
+     * `discount` and `roundOff` are then amounts for the whole party.
+     */
+    priceAsWhole: { type: Boolean, default: false },
 
     /** Payments taken against this booking (only meaningful once confirmed). */
     payments: { type: [paymentSchema], default: [] },
+
+    /** The people on a confirmed booking, entered at confirmation. Up to `guest.pax`. */
+    passengers: { type: [passengerSchema], default: [] },
 
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     createdByName: { type: String, default: "" },

@@ -382,6 +382,11 @@ export interface TotalsInput {
    */
   pax?: number;
   /**
+   * Price the whole booking as one amount: the party's total is not divided by
+   * pax, and the discount, round-off and manual total are whole amounts too.
+   */
+  asWhole?: boolean;
+  /**
    * PKR per one unit of the quotation's currency (1 USD = 280 PKR -> 280). The
    * base rates are PKR; the subtotal is converted at this rate, then the
    * discount and round-off - which are given in the currency - are applied.
@@ -404,7 +409,8 @@ export function calculateTotals(input: TotalsInput): QuotationTotals {
   // fare - then divide once, so a mix never drifts from rounding stay by stay.
   const accommodationGroup = input.stays.reduce((sum, stay) => sum + stay.groupTotal, 0);
   const flightGroup = pax * Math.max(0, input.flightTotal ?? 0);
-  const subtotalPkr = (accommodationGroup + flightGroup) / pax;
+  // Per person divides the party's total once; a whole-booking price never divides.
+  const subtotalPkr = (accommodationGroup + flightGroup) / (input.asWhole ? 1 : pax);
 
   // The base rates are PKR; convert to the quotation's currency, then take the
   // discount and round-off off in that currency (both are given in it).
@@ -423,6 +429,23 @@ export function calculateTotals(input: TotalsInput): QuotationTotals {
     : Math.max(0, roundMoney(net + roundOff));
 
   return { totalNights, subtotal, discount, roundOff, finalTotal, manualOverride };
+}
+
+/** What a quotation's price means: per person (the usual), or the whole booking. */
+export interface PricedAmount {
+  finalTotal: number;
+  priceAsWhole?: boolean;
+  guest: { pax: number };
+}
+
+/** The whole booking's amount, whichever way the quotation is priced. */
+export function bookingTotal(q: PricedAmount): number {
+  return q.priceAsWhole ? q.finalTotal : q.finalTotal * Math.max(1, Math.round(q.guest.pax || 1));
+}
+
+/** One person's share, whichever way the quotation is priced. */
+export function perPersonShare(q: PricedAmount): number {
+  return q.priceAsWhole ? q.finalTotal / Math.max(1, Math.round(q.guest.pax || 1)) : q.finalTotal;
 }
 
 /** A discount cannot be negative, nor larger than the subtotal. */

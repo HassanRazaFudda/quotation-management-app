@@ -52,9 +52,10 @@ export default function PaymentsPage() {
   const rows = useMemo(() => {
     return (items ?? []).map((q) => {
       const currency = q.currency ?? { code: "PKR", symbol: "PKR", decimals: 0 };
+      // A whole-booking price is already the grand total: priced as one "person".
       const summary = paymentSummary({
         finalTotal: q.finalTotal,
-        pax: q.guest.pax,
+        pax: q.priceAsWhole ? 1 : q.guest.pax,
         decimals: currency.decimals,
         payments: q.payments ?? [],
       });

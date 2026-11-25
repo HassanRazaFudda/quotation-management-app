@@ -37,3 +37,4 @@ export {
   seedMinaTiers,
   type SeedMinaTiersResult,
 } from "./migrations/seed-mina-tiers";
+export * from "./services/passengers";

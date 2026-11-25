@@ -512,3 +512,21 @@ describe("toPdfView", () => {
     });
   });
 });
+
+describe("a quotation priced as the whole booking", () => {
+  it("prints the whole amount for the party, never per person", async () => {
+    const whole = { ...quotationWithDiscount, priceAsWhole: true, finalTotal: 3_676_000, guest: { name: "Rashid Shahid", pax: 4 } };
+    const view = await toPdfView(whole as never);
+    expect(view.totalPriceCaption).toBe("Total Estimated Package Price (04 Persons)");
+    const html = buildHtml(view);
+    expect(html).toContain("Total Estimated Package Price (04 Persons)");
+    expect(html).not.toContain("Per Person");
+    expect(html).toContain("PKR 3,676,000 /-");
+  });
+
+  it("keeps the per-person wording when the toggle is off", async () => {
+    const view = await toPdfView(quotationWithDiscount as never);
+    expect(view.totalPriceCaption).toBe("Total Estimated Package Price Per Person");
+    expect(buildHtml(view)).toContain("<p>Total Estimated Package Price Per Person</p>");
+  });
+});
