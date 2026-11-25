@@ -202,6 +202,15 @@ const quotationSchema = new Schema(
      * system user (name snapshotted) or a free-typed name. Defaults the sales
      * staff on a payment.
      */
+    /**
+     * C/O - who the booking came through, set on confirmation. Like the
+     * assigned staff it can be a system user (name snapshotted), but any name
+     * may be typed: it need not be a member of staff.
+     */
+    careOf: {
+      userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+      name: { type: String, default: "" },
+    },
     assignedStaff: {
       userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
       name: { type: String, default: "" },

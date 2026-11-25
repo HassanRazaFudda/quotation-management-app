@@ -47,7 +47,7 @@ export async function listPassengerSheet(filter: PassengerSheetFilter = {}): Pro
 
   const docs = await QuotationModel.find({ status: "confirmed", season })
     .select(
-      "quotationId hbNumber date guest assignedStaff packageCategory totalNights finalTotal priceAsWhole flight stays passengers",
+      "quotationId hbNumber date guest assignedStaff careOf packageCategory totalNights finalTotal priceAsWhole flight stays passengers",
     )
     .sort({ date: 1, hbNumber: 1, _id: 1 })
     .lean();

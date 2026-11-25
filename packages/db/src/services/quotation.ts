@@ -596,6 +596,9 @@ export async function changeQuotationStatus(
     /** The primary staff handling the booking: a system user, or a typed name. */
     assignedStaffUserId?: string | null;
     assignedStaffName?: string;
+    /** C/O: who the booking came through - a system user, or any typed name. */
+    careOfUserId?: string | null;
+    careOfName?: string;
     /** The people on the booking, any field blank. Sent with a confirmation. */
     passengers?: Array<Partial<Passenger>>;
   },
@@ -647,6 +650,19 @@ export async function changeQuotationStatus(
       };
     } else if ((input.assignedStaffName ?? "").trim()) {
       existing.assignedStaff = { userId: null, name: input.assignedStaffName!.trim() };
+    }
+
+    // C/O: a picked user (name snapshotted) or any typed name; empty clears it.
+    if (input.careOfUserId !== undefined || input.careOfName !== undefined) {
+      if (input.careOfUserId && Types.ObjectId.isValid(input.careOfUserId)) {
+        const user = await UserModel.findById(input.careOfUserId).select("name").lean();
+        existing.set("careOf", {
+          userId: new Types.ObjectId(input.careOfUserId),
+          name: (user as Record<string, any> | null)?.name ?? (input.careOfName ?? "").trim(),
+        });
+      } else {
+        existing.set("careOf", { userId: null, name: (input.careOfName ?? "").trim() });
+      }
     }
 
     // The passengers: blanks are kept as blanks. Only a room given more people
@@ -702,6 +718,7 @@ export async function duplicateQuotation(id: string, author: QuotationAuthor) {
     payments,
     passengers,
     assignedStaff,
+    careOf,
     ...rest
   } = source as Record<string, unknown>;
 
@@ -713,6 +730,7 @@ export async function duplicateQuotation(id: string, author: QuotationAuthor) {
     payments: [],
     passengers: [],
     assignedStaff: { userId: null, name: "" },
+    careOf: { userId: null, name: "" },
     date: new Date(),
     createdBy: author.userId,
     createdByName: author.name,

@@ -145,6 +145,8 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
       hbNumber?: string;
       assignedStaffUserId?: string | null;
       assignedStaffName?: string;
+      careOfUserId?: string | null;
+      careOfName?: string;
       passengers?: Passenger[];
     },
   ) {
@@ -424,7 +426,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
                       onClick={() => setConfirming(true)}
                       className="text-xs font-medium text-brand-600 hover:text-brand-700"
                     >
-                      Edit HB, staff and passengers
+                      Edit HB, staff, C/O and passengers
                     </button>
                   )}
                 </div>
@@ -437,6 +439,7 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
               <Row label="Quotation ID" value={q.quotationId} />
               {q.hbNumber && <Row label="HB Number" value={q.hbNumber} />}
               {q.assignedStaff?.name && <Row label="Assigned staff" value={q.assignedStaff.name} />}
+              {q.careOf?.name && <Row label="C/O" value={q.careOf.name} />}
               <Row label="Guest" value={q.guest.name} />
               <Row label="PAX" value={String(q.guest.pax)} />
               {q.packageCategory && <Row label="Category" value={q.packageCategory} />}

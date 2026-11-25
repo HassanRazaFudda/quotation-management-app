@@ -18,6 +18,12 @@ const statusSchema = z.object({
     .regex(/^[a-f\d]{24}$/i)
     .nullish(),
   assignedStaffName: z.string().max(120).optional(),
+  /** Optional on confirm: C/O - a system user, or any typed name. */
+  careOfUserId: z
+    .string()
+    .regex(/^[a-f\d]{24}$/i)
+    .nullish(),
+  careOfName: z.string().max(120).optional(),
   /** Optional on confirm: the people on the booking. Every field may be blank. */
   passengers: z
     .array(

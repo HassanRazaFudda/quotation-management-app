@@ -184,7 +184,7 @@ describe("the Excel cells", () => {
     expect(at("TKT STATUS")).toBe("WITH TICKET");
     expect(at("MAKKAH 1ST SESSION")).toBe("14 ZH - 20 ZH");
     // The columns the system does not keep stay blank.
-    for (const blank of ["REMARKS", "CO", "SPECIAL SERVICES", "TRAIN", "FLIGHT NO", "IST INT"]) {
+    for (const blank of ["REMARKS", "SPECIAL SERVICES", "TRAIN", "FLIGHT NO", "IST INT"]) {
       expect(at(blank)).toBe("");
     }
   });
@@ -394,5 +394,21 @@ describe("filtering rows that came over JSON", () => {
     const json = JSON.parse(JSON.stringify(rows));
     expect(filterSheetRows(json, { from: "2027-05-15", to: "2027-05-20" })).toHaveLength(2);
     expect(filterSheetRows(json, { to: "2027-05-09" })).toHaveLength(0);
+  });
+});
+
+describe("C/O", () => {
+  it("prints who the booking came through in the CO column, and offers it as a column filter", () => {
+    const rows = passengerSheetRows(booking({ careOf: { name: "FAISAL NATHANI" }, guest: { name: "x", pax: 2 } }));
+    expect(rows.map((row) => row.careOf)).toEqual(["FAISAL NATHANI", "FAISAL NATHANI"]);
+    const cells = passengerSheetCells(rows[0]!, 1);
+    expect(cells[PASSENGER_SHEET_COLUMNS.indexOf("CO" as never)]).toBe("FAISAL NATHANI");
+    expect(SHEET_COLUMNS.map((c) => c.id).indexOf("careOf")).toBe(SHEET_COLUMNS.map((c) => c.id).indexOf("staff") - 1);
+    expect(filterByColumns(rows, { careOf: ["FAISAL NATHANI"] })).toHaveLength(2);
+  });
+
+  it("leaves CO blank when nobody is named", () => {
+    const [row] = passengerSheetRows(booking({ guest: { name: "x", pax: 1 } }));
+    expect(row!.careOf).toBe("");
   });
 });

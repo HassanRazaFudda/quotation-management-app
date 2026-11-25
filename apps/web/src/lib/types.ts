@@ -131,6 +131,8 @@ export interface Quotation {
   hbNumber: string;
   /** The primary staff handling the booking, set on confirmation. */
   assignedStaff?: { userId: string | null; name: string };
+  /** C/O: who the booking came through - a system user or any typed name. */
+  careOf?: { userId: string | null; name: string };
   guest: { name: string; pax: number };
   date: string;
   validUntil: string | null;

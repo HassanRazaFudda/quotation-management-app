@@ -14,6 +14,8 @@ export interface ConfirmPayload {
   hbNumber: string;
   assignedStaffUserId: string | null;
   assignedStaffName: string;
+  careOfUserId: string | null;
+  careOfName: string;
   passengers: Passenger[];
 }
 
@@ -56,6 +58,8 @@ export function ConfirmBookingDialog({
   const [staff, setStaff] = useState<Array<{ id: string; name: string }>>([]);
   const [staffChoice, setStaffChoice] = useState("");
   const [otherName, setOtherName] = useState("");
+  const [careChoice, setCareChoice] = useState("");
+  const [careName, setCareName] = useState("");
   const [passengers, setPassengers] = useState<Passenger[]>([]);
 
   useEffect(() => {
@@ -79,6 +83,18 @@ export function ConfirmBookingDialog({
     } else {
       setStaffChoice("");
       setOtherName("");
+    }
+    // C/O works the same way: a user, or any typed name.
+    const careOf = quotation.careOf;
+    if (careOf?.userId) {
+      setCareChoice(careOf.userId);
+      setCareName("");
+    } else if (careOf?.name) {
+      setCareChoice(OTHER_STAFF);
+      setCareName(careOf.name);
+    } else {
+      setCareChoice("");
+      setCareName("");
     }
     setPassengers(passengersFor(quotation));
   }, [open, quotation]);
@@ -117,6 +133,8 @@ export function ConfirmBookingDialog({
             hbNumber: trimmed,
             assignedStaffUserId: staffChoice && staffChoice !== OTHER_STAFF ? staffChoice : null,
             assignedStaffName: staffChoice === OTHER_STAFF ? otherName.trim() : "",
+            careOfUserId: careChoice && careChoice !== OTHER_STAFF ? careChoice : null,
+            careOfName: careChoice === OTHER_STAFF ? careName.trim() : "",
             passengers,
           });
         }}
@@ -136,7 +154,7 @@ export function ConfirmBookingDialog({
             <Field label="Assigned staff (optional)">
               <Select
                 options={[
-                  { value: "", label: "— none —" },
+                  { value: "", label: "- none -" },
                   ...staff.map((s) => ({ value: s.id, label: s.name })),
                   { value: OTHER_STAFF, label: "Other (type a name)" },
                 ]}
@@ -146,6 +164,22 @@ export function ConfirmBookingDialog({
             </Field>
             {staffChoice === OTHER_STAFF && (
               <Input value={otherName} onChange={(e) => setOtherName(e.target.value)} placeholder="Staff name" />
+            )}
+          </div>
+          <div className="space-y-2 sm:col-start-2">
+            <Field label="C/O (optional)" hint="Who the booking came through - pick a user or type any name">
+              <Select
+                options={[
+                  { value: "", label: "- none -" },
+                  ...staff.map((s) => ({ value: s.id, label: s.name })),
+                  { value: OTHER_STAFF, label: "Other (type a name)" },
+                ]}
+                value={careChoice}
+                onChange={(e) => setCareChoice(e.target.value)}
+              />
+            </Field>
+            {careChoice === OTHER_STAFF && (
+              <Input value={careName} onChange={(e) => setCareName(e.target.value)} placeholder="Name, e.g. SELF" />
             )}
           </div>
         </div>
@@ -196,7 +230,7 @@ export function ConfirmBookingDialog({
                         <Select
                           aria-label={`Gender, passenger ${index + 1}`}
                           options={[
-                            { value: "", label: "—" },
+                            { value: "", label: "-" },
                             { value: "male", label: "Male" },
                             { value: "female", label: "Female" },
                           ]}

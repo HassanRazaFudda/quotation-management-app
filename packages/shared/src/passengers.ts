@@ -63,6 +63,8 @@ export interface SheetBooking {
   date: Date | string;
   guest: { name: string; pax: number };
   assignedStaff?: { name?: string } | null;
+  /** C/O: who the booking came through. */
+  careOf?: { name?: string } | null;
   packageCategory?: string;
   totalNights?: number;
   /** Already final: per person, or the whole booking when `priceAsWhole`. */
@@ -231,6 +233,8 @@ export interface PassengerSheetRow {
   guestName: string;
   passenger: Passenger;
   salesStaff: string;
+  /** C/O: who the booking came through. */
+  careOf: string;
   aziziaRoom: string;
   makkahMadinahRoom: string;
   /** As printed: the tier on the first person in a tent, "-" on the rest. */
@@ -383,6 +387,7 @@ export function passengerSheetRows(booking: SheetBooking): PassengerSheetRow[] {
       guestName: booking.guest.name,
       passenger,
       salesStaff: booking.assignedStaff?.name?.trim() ?? "",
+      careOf: booking.careOf?.name?.trim() ?? "",
       aziziaRoom: aziziaStays[0] ? cellsFor(aziziaStays[0].index)[p]! : "",
       makkahMadinahRoom: hotelRoomStay ? cellsFor(hotelRoomStay.index)[p]! : "",
       mina: minaStays[0] ? cellsFor(minaStays[0].index)[p]! : "",
@@ -421,7 +426,7 @@ export function passengerSheetCells(row: PassengerSheetRow, serial: number): Arr
     row.passenger.contact,
     row.passenger.surname,
     row.passenger.givenName,
-    "", // CO
+    row.careOf,
     row.salesStaff,
     row.aziziaRoom,
     row.makkahMadinahRoom,
@@ -595,6 +600,7 @@ export const SHEET_COLUMNS: SheetColumn[] = [
   { id: "contact", header: "Cont", value: (r) => r.passenger.contact },
   { id: "surname", header: "Sur name", value: (r) => r.passenger.surname },
   { id: "givenName", header: "Giving name", value: (r) => r.passenger.givenName },
+  { id: "careOf", header: "C/O", value: (r) => r.careOf },
   { id: "staff", header: "Sales staff", value: (r) => r.salesStaff },
   { id: "azizia", header: "Azizia", value: (r) => r.aziziaRoom },
   { id: "makMadina", header: "Mak / Madina", value: (r) => r.makkahMadinahRoom },

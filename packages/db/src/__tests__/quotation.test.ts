@@ -2,6 +2,7 @@ import type { StayInput } from "@junaidi/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { QuotationModel } from "../models/quotation";
+import { UserModel } from "../models/user";
 import { DEFAULT_SEASON, seed } from "../seed";
 import { findConfigProblems, getConfigBundle } from "../services/config";
 import {
@@ -1636,5 +1637,45 @@ describe("pricing as a whole booking", () => {
     const after = (await staffReport({ season: DEFAULT_SEASON })).find((row) => row.userId === whole.userId)!;
     // Two more quotations, each counted at its per-person price.
     expect(after.totalQuoted - before.totalQuoted).toBe(perPerson.finalTotal * 2);
+  });
+});
+
+/** C/O: who the booking came through - a user, or any typed name. */
+describe("C/O on a confirmed booking", () => {
+  it("saves a typed name, or a picked user's own name", async () => {
+    const typed = await createQuotation(baseInput, staff);
+    const one = await changeQuotationStatus(
+      String(typed._id),
+      { status: "confirmed", hbNumber: "HB-CO-1", careOfName: "  SELF  " },
+      staff,
+    );
+    expect(one.careOf).toMatchObject({ userId: null, name: "SELF" });
+
+    const user = await UserModel.create({ name: "Hafiz Sahab", email: "hafiz-co@test.local", passwordHash: "x", role: "staff" } as never);
+    const picked = await createQuotation(baseInput, staff);
+    const two = await changeQuotationStatus(
+      String(picked._id),
+      { status: "confirmed", hbNumber: "HB-CO-2", careOfUserId: String(user._id), careOfName: "" },
+      staff,
+    );
+    expect(two.careOf?.name).toBe("Hafiz Sahab");
+    expect(String(two.careOf?.userId)).toBe(String(user._id));
+  });
+
+  it("clears it when sent empty, and never copies it onto a duplicate", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    const id = String(quotation._id);
+    await changeQuotationStatus(id, { status: "confirmed", hbNumber: "HB-CO-3", careOfName: "FAISAL" }, staff);
+    const copy = await duplicateQuotation(id, staff);
+    expect(copy.careOf?.name ?? "").toBe("");
+    const cleared = await changeQuotationStatus(id, { status: "confirmed", hbNumber: "HB-CO-3", careOfName: "" }, staff);
+    expect(cleared.careOf?.name).toBe("");
+  });
+
+  it("puts C/O on every passenger of the sheet", async () => {
+    const quotation = await createQuotation(baseInput, staff);
+    await changeQuotationStatus(String(quotation._id), { status: "confirmed", hbNumber: "HB-CO-4", careOfName: "NATHANI" }, staff);
+    const sheet = await listPassengerSheet({ season: DEFAULT_SEASON, search: "HB-CO-4" });
+    expect(sheet.bookings[0]!.rows.map((row) => row.careOf)).toEqual(["NATHANI", "NATHANI"]);
   });
 });
