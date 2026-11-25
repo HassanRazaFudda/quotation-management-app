@@ -47,10 +47,10 @@ export function PassengersCard({ quotation, onEdit }: { quotation: Quotation; on
               return (
                 <tr key={index} className="border-t border-line">
                   <td className="py-1.5 pr-3 text-muted tabular-nums">{index + 1}</td>
-                  <td className="py-1.5 pr-3 text-ink">{name || <span className="text-muted">—</span>}</td>
-                  <td className="py-1.5 pr-3 capitalize text-ink">{passenger.gender || <span className="text-muted">—</span>}</td>
-                  <td className="py-1.5 pr-3 text-ink">{passenger.passportNo || <span className="text-muted">—</span>}</td>
-                  <td className="py-1.5 pr-3 text-ink">{passenger.contact || <span className="text-muted">—</span>}</td>
+                  <td className="py-1.5 pr-3 text-ink">{name || <span className="text-muted">-</span>}</td>
+                  <td className="py-1.5 pr-3 capitalize text-ink">{passenger.gender || <span className="text-muted">-</span>}</td>
+                  <td className="py-1.5 pr-3 text-ink">{passenger.passportNo || <span className="text-muted">-</span>}</td>
+                  <td className="py-1.5 pr-3 text-ink">{passenger.contact || <span className="text-muted">-</span>}</td>
                 </tr>
               );
             })}

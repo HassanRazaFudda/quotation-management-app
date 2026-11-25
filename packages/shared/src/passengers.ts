@@ -233,7 +233,10 @@ export interface PassengerSheetRow {
   salesStaff: string;
   aziziaRoom: string;
   makkahMadinahRoom: string;
+  /** As printed: the tier on the first person in a tent, "-" on the rest. */
   mina: string;
+  /** The passenger's own Mina tier, unmarked, for filtering. Empty when unknown. */
+  minaTier: string;
   days: number;
   category: string;
   packageAmount: number;
@@ -292,6 +295,13 @@ function roomCells(stay: SheetStay, passengers: Passenger[], stayIndex: number):
     const room = rooms[pick];
     return room ? cell(String(pick), roomText(room)) : "";
   });
+}
+
+/** A passenger's own room name in one stay, never "-": blank when unassigned in a split. */
+function ownRoom(stay: SheetStay, passenger: Passenger, stayIndex: number): string {
+  if (!isSplit(stay)) return roomText(stay);
+  const room = (stay.rooms ?? [])[passenger.roomPicks[stayIndex] ?? -1];
+  return room ? roomText(room) : "";
 }
 
 /** The hotel a passenger stays at in one stay: a split room can be its own hotel. */
@@ -376,6 +386,7 @@ export function passengerSheetRows(booking: SheetBooking): PassengerSheetRow[] {
       aziziaRoom: aziziaStays[0] ? cellsFor(aziziaStays[0].index)[p]! : "",
       makkahMadinahRoom: hotelRoomStay ? cellsFor(hotelRoomStay.index)[p]! : "",
       mina: minaStays[0] ? cellsFor(minaStays[0].index)[p]! : "",
+      minaTier: minaStays[0] ? ownRoom(minaStays[0].stay, passenger, minaStays[0].index) : "",
       days: nights > 0 ? nights + 1 : 0,
       category: categoryCode(booking.packageCategory),
       // A whole-booking price is shared out, so the column adds up to the booking.
@@ -443,4 +454,231 @@ export function passengerSheetCells(row: PassengerSheetRow, serial: number): Arr
     "", // 2ND
     "", // DATE
   ];
+}
+
+// ------------------------------------------------------------------ filters
+
+/** "none" in a sector or Mina filter means: without a ticket / no tier. */
+export const SHEET_NONE = "none";
+
+/** Every filter is optional; all that are set must match. */
+export interface SheetRowFilter {
+  /** HB number, guest, passenger name or passport. */
+  search?: string;
+  /** The passenger's name only. */
+  haji?: string;
+  staff?: string;
+  category?: string;
+  /** Any of the passenger's hotels, exactly. */
+  hotel?: string;
+  arrivalSector?: string;
+  departureSector?: string;
+  days?: number;
+  mina?: string;
+  /** "yyyy-mm-dd": the trip overlaps this range; either end may be open. */
+  from?: string;
+  to?: string;
+}
+
+const hotelsOf = (row: SheetRowLike): string[] =>
+  [...row.makkah, ...row.azizia, ...row.madinah].map((session) => session.hotel).filter(Boolean);
+
+const contains = (haystack: string, needle: string) => haystack.toLowerCase().includes(needle.toLowerCase());
+
+/** Rows matching every filter that is set. */
+export function filterSheetRows<R extends SheetRowLike>(rows: R[], filter: SheetRowFilter): R[] {
+  const from = toDate(filter.from);
+  const to = toDate(filter.to);
+  const search = filter.search?.trim() ?? "";
+  const haji = filter.haji?.trim() ?? "";
+  const sector = (want: string | undefined, have: string) =>
+    !want || (want === SHEET_NONE ? !have : have.toUpperCase() === want.toUpperCase());
+
+  return rows.filter((row) => {
+    const name = `${row.passenger.surname} ${row.passenger.givenName}`;
+    if (search) {
+      const fields = [row.hbNumber, row.guestName, name, row.passenger.passportNo];
+      if (!fields.some((field) => contains(field, search))) return false;
+    }
+    if (haji && !contains(name, haji)) return false;
+    if (filter.staff && row.salesStaff !== filter.staff) return false;
+    if (filter.category && row.category !== filter.category) return false;
+    if (filter.hotel && !hotelsOf(row).includes(filter.hotel)) return false;
+    if (!sector(filter.arrivalSector, row.arrivalSector)) return false;
+    if (!sector(filter.departureSector, row.departureSector)) return false;
+    if (filter.days !== undefined && row.days !== filter.days) return false;
+    if (filter.mina && !(filter.mina === SHEET_NONE ? !row.minaTier : row.minaTier === filter.mina)) return false;
+    if (from || to) {
+      // The trip overlaps the range; a trip with no dates cannot be placed in it.
+      // Dates are Dates on the server and strings once sent as JSON: read both.
+      const start = toDate(row.arrivalDate ?? row.departureDate);
+      const end = toDate(row.departureDate ?? row.arrivalDate);
+      if (!start || !end) return false;
+      if (from && end < from) return false;
+      if (to && start > to) return false;
+    }
+    return true;
+  });
+}
+
+export interface SheetFilterOptions {
+  staff: string[];
+  categories: string[];
+  hotels: string[];
+  arrivalSectors: string[];
+  departureSectors: string[];
+  days: number[];
+  minaTiers: string[];
+}
+
+/** The choices each filter offers, from all of a season's rows. */
+export function sheetFilterOptions(rows: PassengerSheetRow[]): SheetFilterOptions {
+  const sorted = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
+  return {
+    staff: sorted(rows.map((row) => row.salesStaff)),
+    categories: sorted(rows.map((row) => row.category)),
+    hotels: sorted(rows.flatMap(hotelsOf)),
+    arrivalSectors: sorted(rows.map((row) => row.arrivalSector)),
+    departureSectors: sorted(rows.map((row) => row.departureSector)),
+    days: [...new Set(rows.map((row) => row.days).filter((value) => value > 0))].sort((a, b) => a - b),
+    minaTiers: sorted(rows.map((row) => row.minaTier)),
+  };
+}
+
+// ------------------------------------------------------- columns, Excel-style
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "08 May 2027", in UTC, for a Date or the ISO string it becomes in JSON. */
+function dayText(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getUTCDate()).padStart(2, "0")} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/** A date as a sortable "yyyy-mm-dd", or "" for none. */
+function isoKey(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+/** A sheet row as JSON delivers it: dates may be strings. */
+export type SheetRowLike = Omit<PassengerSheetRow, "bookingDate" | "arrivalDate" | "departureDate"> & {
+  bookingDate: Date | string | null;
+  arrivalDate: Date | string | null;
+  departureDate: Date | string | null;
+};
+
+export interface SheetColumn {
+  id: string;
+  header: string;
+  /** The cell as shown and filtered on: "" means blank. */
+  value: (row: SheetRowLike) => string;
+  /** What it sorts by when that differs from the text: a date, an amount. */
+  sortKey?: (row: SheetRowLike) => string | number;
+}
+
+const session = (list: SheetSession[], index: number, part: keyof SheetSession) => list[index]?.[part] ?? "";
+
+/**
+ * Every column of the office Excel that holds system data, in the Excel's
+ * order. The page shows and filters these; the export applies the same filters.
+ */
+export const SHEET_COLUMNS: SheetColumn[] = [
+  { id: "hb", header: "HB No.", value: (r) => r.hbNumber },
+  { id: "bookingDate", header: "Booking date", value: (r) => dayText(r.bookingDate), sortKey: (r) => isoKey(r.bookingDate) },
+  { id: "preRegNo", header: "Pre reg no", value: (r) => r.passenger.preRegNo },
+  { id: "email", header: "Reg email ID", value: (r) => r.passenger.email },
+  { id: "status", header: "Booking status", value: () => "CONFIRM" },
+  { id: "contact", header: "Cont", value: (r) => r.passenger.contact },
+  { id: "surname", header: "Sur name", value: (r) => r.passenger.surname },
+  { id: "givenName", header: "Giving name", value: (r) => r.passenger.givenName },
+  { id: "staff", header: "Sales staff", value: (r) => r.salesStaff },
+  { id: "azizia", header: "Azizia", value: (r) => r.aziziaRoom },
+  { id: "makMadina", header: "Mak / Madina", value: (r) => r.makkahMadinahRoom },
+  // Filtered on the passenger's own tier, not the "-" printed for a tent-mate.
+  { id: "mina", header: "Mina", value: (r) => r.minaTier },
+  { id: "gender", header: "Gender", value: (r) => r.passenger.gender.toUpperCase() },
+  { id: "passport", header: "Passport no.", value: (r) => r.passenger.passportNo },
+  { id: "days", header: "Days", value: (r) => (r.days > 0 ? `${r.days} DAYS` : ""), sortKey: (r) => r.days },
+  { id: "category", header: "Category", value: (r) => r.category },
+  {
+    id: "amount",
+    header: "Pkg amount",
+    value: (r) => (r.packageAmount ? Math.round(r.packageAmount).toLocaleString("en-US") : ""),
+    sortKey: (r) => r.packageAmount,
+  },
+  { id: "ticket", header: "Tkt status", value: (r) => r.ticketStatus },
+  { id: "arrivalDate", header: "Arrival date", value: (r) => dayText(r.arrivalDate), sortKey: (r) => isoKey(r.arrivalDate) },
+  { id: "arrivalSector", header: "Sector", value: (r) => r.arrivalSector },
+  { id: "departureDate", header: "Departure date", value: (r) => dayText(r.departureDate), sortKey: (r) => isoKey(r.departureDate) },
+  { id: "departureSector", header: "Sector", value: (r) => r.departureSector },
+  { id: "makkah1", header: "Makkah 1st session", value: (r) => session(r.makkah, 0, "block") },
+  { id: "makkah1Hotel", header: "Hotel", value: (r) => session(r.makkah, 0, "hotel") },
+  { id: "makkah2", header: "Makkah 2nd session", value: (r) => session(r.makkah, 1, "block") },
+  { id: "makkah2Hotel", header: "Hotel", value: (r) => session(r.makkah, 1, "hotel") },
+  { id: "azizia1", header: "Azizia section", value: (r) => session(r.azizia, 0, "block") },
+  { id: "azizia1Hotel", header: "Hotel", value: (r) => session(r.azizia, 0, "hotel") },
+  { id: "azizia2", header: "Azizia 2nd section", value: (r) => session(r.azizia, 1, "block") },
+  { id: "azizia2Hotel", header: "Hotel", value: (r) => session(r.azizia, 1, "hotel") },
+  { id: "azizia3", header: "Azizia 3rd section", value: (r) => session(r.azizia, 2, "block") },
+  { id: "azizia3Hotel", header: "Hotel", value: (r) => session(r.azizia, 2, "hotel") },
+  { id: "madina1", header: "Madina 1st session", value: (r) => session(r.madinah, 0, "block") },
+  { id: "madina1Hotel", header: "Madina hotel", value: (r) => session(r.madinah, 0, "hotel") },
+  { id: "madina2", header: "Madina 2nd session", value: (r) => session(r.madinah, 1, "block") },
+  { id: "madina2Hotel", header: "Madina hotel", value: (r) => session(r.madinah, 1, "hotel") },
+];
+
+/** Per column id, the values kept - as Excel's checkbox filter. "" stands for blanks. */
+export type ColumnFilters = Record<string, string[]>;
+
+const COLUMN_BY_ID = new Map(SHEET_COLUMNS.map((column) => [column.id, column]));
+
+/** Rows whose value in every filtered column is one of the values ticked for it. */
+export function filterByColumns<R extends SheetRowLike>(rows: R[], filters: ColumnFilters): R[] {
+  const active = Object.entries(filters)
+    .map(([id, values]) => ({ column: COLUMN_BY_ID.get(id), values: new Set(values) }))
+    .filter((entry): entry is { column: SheetColumn; values: Set<string> } => Boolean(entry.column));
+  if (active.length === 0) return rows;
+  return rows.filter((row) => active.every(({ column, values }) => values.has(column.value(row))));
+}
+
+/**
+ * The values a column's filter lists, as Excel does: taken from the rows the
+ * other columns' filters leave, so the list never offers a value with no row.
+ */
+export function columnChoices<R extends SheetRowLike>(rows: R[], filters: ColumnFilters, id: string): string[] {
+  const column = COLUMN_BY_ID.get(id);
+  if (!column) return [];
+  const others = Object.fromEntries(Object.entries(filters).filter(([key]) => key !== id));
+  const values = new Set(filterByColumns(rows, others).map((row) => column.value(row)));
+  return [...values].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "en", { numeric: true })));
+}
+
+export interface SheetSort {
+  id: string;
+  direction: "asc" | "desc";
+}
+
+/** Rows sorted by one column, A to Z or Z to A; blanks always last, ties keep their order. */
+export function sortSheetRows<R extends SheetRowLike>(rows: R[], sort: SheetSort | null | undefined): R[] {
+  const column = sort ? COLUMN_BY_ID.get(sort.id) : undefined;
+  if (!sort || !column) return rows;
+  const key = column.sortKey ?? column.value;
+  const sign = sort.direction === "desc" ? -1 : 1;
+  return rows
+    .map((row, index) => ({ row, index, key: key(row) }))
+    .sort((a, b) => {
+      const blankA = a.key === "" || a.key === 0;
+      const blankB = b.key === "" || b.key === 0;
+      if (blankA !== blankB) return blankA ? 1 : -1;
+      const order =
+        typeof a.key === "number" && typeof b.key === "number"
+          ? a.key - b.key
+          : String(a.key).localeCompare(String(b.key), "en", { numeric: true });
+      return order === 0 ? a.index - b.index : order * sign;
+    })
+    .map((entry) => entry.row);
 }

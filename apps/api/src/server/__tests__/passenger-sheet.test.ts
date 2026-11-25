@@ -3,11 +3,11 @@
  * in the same order, one row per passenger.
  */
 
-import { passengerSheetRows, type SheetBooking } from "@junaidi/shared";
+import { filterSheetRows, passengerSheetRows, sheetFilterOptions, type SheetBooking } from "@junaidi/shared";
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 
-import { passengerSheetFilename, passengerWorkbook } from "../passenger-sheet";
+import { passengerSheetFilename, passengerSheetQuerySchema, passengerWorkbook } from "../passenger-sheet";
 
 /** The header row of C:\Code\Junaidi\FORMET HAJJ EXCEL.xlsx, exactly. */
 const OFFICE_HEADERS = [
@@ -55,8 +55,8 @@ describe("the passenger sheet export", () => {
   const sheet = {
     season: "1448",
     seasons: ["1448"],
-    staff: [],
-    categories: [],
+    ...sheetFilterOptions([]),
+    totalPassengers: 2,
     bookings: [{ id: "x", quotationId: "HQ-1448-0001", rows: passengerSheetRows(booking) }],
   };
 
@@ -83,6 +83,26 @@ describe("the passenger sheet export", () => {
     expect(at(first, "ARRIVAL DATE")).toBeInstanceOf(Date);
     expect(at(first, "TKT STATUS")).toBe("WITH TICKET");
     expect(at(first, "CATEGORY")).toBe("C");
+  });
+
+  it("exports only the filtered rows, numbered from 1", async () => {
+    const rows = filterSheetRows(passengerSheetRows(booking), { haji: "muhammad" });
+    const ws = await readBack(await passengerWorkbook({ ...sheet, bookings: [{ id: "x", quotationId: "HQ-1448-0001", rows }] }));
+    expect(ws.rowCount).toBe(2); // header + the one match
+    expect(ws.getRow(2).getCell(1).value).toBe(1);
+    expect(ws.getRow(2).getCell(OFFICE_HEADERS.indexOf("GIVING NAME") + 1).value).toBe("MUHAMMAD");
+  });
+
+  it("reads Excel-style column filters and a sort from the query", () => {
+    const parsed = passengerSheetQuerySchema.parse({
+      columns: JSON.stringify({ makkah1Hotel: ["Hilton", "Swissotel"], mina: [""] }),
+      sort: "arrivalDate:desc",
+      from: "2027-05-01",
+    });
+    expect(parsed.columns).toEqual({ makkah1Hotel: ["Hilton", "Swissotel"], mina: [""] });
+    expect(parsed.sort).toEqual({ id: "arrivalDate", direction: "desc" });
+    expect(() => passengerSheetQuerySchema.parse({ columns: "not json" })).toThrow();
+    expect(() => passengerSheetQuerySchema.parse({ sort: "x:sideways" })).toThrow();
   });
 
   it("names the file after the season and the day", () => {

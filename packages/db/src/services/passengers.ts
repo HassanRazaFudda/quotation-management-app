@@ -1,21 +1,27 @@
 /**
  * The passenger sheet: every person on every confirmed Hajj booking of a
- * season, one row each, built by the shared `passengerSheetRows`.
+ * season, one row each, built by the shared `passengerSheetRows`, then
+ * narrowed by the shared `filterSheetRows`.
  */
 
-import { categoryCode, passengerSheetRows, type PassengerSheetRow } from "@junaidi/shared";
+import {
+  filterByColumns,
+  filterSheetRows,
+  passengerSheetRows,
+  sheetFilterOptions,
+  type ColumnFilters,
+  type PassengerSheetRow,
+  type SheetFilterOptions,
+  type SheetRowFilter,
+} from "@junaidi/shared";
 
 import { QuotationModel } from "../models/quotation";
 
-export interface PassengerSheetFilter {
+export interface PassengerSheetFilter extends SheetRowFilter {
   /** Hijri season, e.g. "1448". Absent: the latest season with a confirmed booking. */
   season?: string;
-  /** The assigned staff name, exactly. */
-  staff?: string;
-  /** The category code as printed, e.g. "A". */
-  category?: string;
-  /** Matches the HB number, quotation number, guest, or any passenger's name or passport. */
-  search?: string;
+  /** Excel-style: per column, the values kept. */
+  columns?: ColumnFilters;
 }
 
 export interface PassengerSheetBooking {
@@ -24,15 +30,13 @@ export interface PassengerSheetBooking {
   rows: PassengerSheetRow[];
 }
 
-export interface PassengerSheet {
+export interface PassengerSheet extends SheetFilterOptions {
   season: string;
   seasons: string[];
-  staff: string[];
-  categories: string[];
+  /** Passengers in the season before any filter, so the page can say "filtered". */
+  totalPassengers: number;
   bookings: PassengerSheetBooking[];
 }
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export async function listPassengerSheet(filter: PassengerSheetFilter = {}): Promise<PassengerSheet> {
   const seasons = ((await QuotationModel.distinct("season", { status: "confirmed" })) as string[])
@@ -41,42 +45,31 @@ export async function listPassengerSheet(filter: PassengerSheetFilter = {}): Pro
     .reverse();
   const season = filter.season?.trim() || seasons[0] || "";
 
-  const query: Record<string, unknown> = { status: "confirmed", season };
-  const search = filter.search?.trim();
-  if (search) {
-    const pattern = new RegExp(escapeRegex(search), "i");
-    query.$or = [
-      { hbNumber: pattern },
-      { quotationId: pattern },
-      { "guest.name": pattern },
-      { "passengers.surname": pattern },
-      { "passengers.givenName": pattern },
-      { "passengers.passportNo": pattern },
-    ];
-  }
-
-  const docs = await QuotationModel.find(query)
+  const docs = await QuotationModel.find({ status: "confirmed", season })
     .select(
       "quotationId hbNumber date guest assignedStaff packageCategory totalNights finalTotal priceAsWhole flight stays passengers",
     )
     .sort({ date: 1, hbNumber: 1, _id: 1 })
     .lean();
 
-  // The filter lists come from the whole season, so a filter never hides its own options.
-  const all = await QuotationModel.find({ status: "confirmed", season })
-    .select("assignedStaff packageCategory")
-    .lean();
-  const staff = [...new Set(all.map((doc) => doc.assignedStaff?.name?.trim() ?? "").filter(Boolean))].sort();
-  const categories = [...new Set(all.map((doc) => categoryCode(doc.packageCategory ?? "")).filter(Boolean))].sort();
+  const all = docs.map((doc) => ({
+    id: String(doc._id),
+    quotationId: doc.quotationId,
+    rows: passengerSheetRows(doc as never),
+  }));
 
-  const bookings = docs
-    .filter((doc) => !filter.staff || (doc.assignedStaff?.name ?? "").trim() === filter.staff)
-    .filter((doc) => !filter.category || categoryCode(doc.packageCategory ?? "") === filter.category)
-    .map((doc) => ({
-      id: String(doc._id),
-      quotationId: doc.quotationId,
-      rows: passengerSheetRows(doc as never),
-    }));
+  // The choices come from the whole season, so a filter never hides its own options.
+  const options = sheetFilterOptions(all.flatMap((booking) => booking.rows));
 
-  return { season, seasons, staff, categories, bookings };
+  const bookings = all
+    .map((booking) => ({ ...booking, rows: filterByColumns(filterSheetRows(booking.rows, filter), filter.columns ?? {}) }))
+    .filter((booking) => booking.rows.length > 0);
+
+  return {
+    season,
+    seasons,
+    ...options,
+    totalPassengers: all.reduce((sum, booking) => sum + booking.rows.length, 0),
+    bookings,
+  };
 }

@@ -1589,7 +1589,8 @@ describe("passengers on a confirmed booking", () => {
       { status: "confirmed", hbNumber: "HB-SHEET-1", passengers: [{ surname: "Sheet", passportNo: "ZX999" }] },
       staff,
     );
-    const sheet = await listPassengerSheet({ season: DEFAULT_SEASON, search: "ZX999" });
+    // The HB number is on every passenger of the booking, so both rows match.
+    const sheet = await listPassengerSheet({ season: DEFAULT_SEASON, search: "HB-SHEET-1" });
     expect(sheet.bookings).toHaveLength(1);
     const rows = sheet.bookings[0]!.rows;
     // Two pax, one of them entered: the other is a blank row, not a missing one.
@@ -1598,6 +1599,11 @@ describe("passengers on a confirmed booking", () => {
     expect(rows[1]!.passenger.surname).toBe("");
     expect(rows[0]!.hbNumber).toBe("HB-SHEET-1");
     expect(sheet.seasons).toContain(DEFAULT_SEASON);
+
+    // A passport finds just that passenger now, not the whole booking.
+    const byPassport = await listPassengerSheet({ season: DEFAULT_SEASON, search: "ZX999" });
+    expect(byPassport.bookings.flatMap((booking) => booking.rows).map((row) => row.passenger.surname)).toEqual(["Sheet"]);
+    expect(byPassport.totalPassengers).toBeGreaterThanOrEqual(2);
   });
 });
 

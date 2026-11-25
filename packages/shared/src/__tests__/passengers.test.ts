@@ -8,6 +8,13 @@ import {
   PASSENGER_SHEET_COLUMNS,
   shortHijriLabel,
   validateRoomPicks,
+  filterSheetRows,
+  sheetFilterOptions,
+  SHEET_NONE,
+  SHEET_COLUMNS,
+  columnChoices,
+  filterByColumns,
+  sortSheetRows,
   type SheetBooking,
   type SheetStay,
 } from "../passengers";
@@ -201,5 +208,191 @@ describe("helpers", () => {
   it("aligns stored picks to the stays, dropping junk", () => {
     const [p] = passengersFor({ guest: { name: "x", pax: 1 }, stays: [makkah, aziziya], passengers: [{ roomPicks: [3.5 as never] }] });
     expect(p!.roomPicks).toEqual([-1, -1]);
+  });
+});
+
+describe("filtering the sheet", () => {
+  // Booking 1: 5 pax, JED in, MED out, 25 days, Mina split Standard/Deluxe.
+  const one = passengerSheetRows(
+    booking({
+      passengers: [
+        { surname: "AHMED", givenName: "MUHAMMAD", passportNo: "AZ1", roomPicks: [0, 0, -1, -1] },
+        { surname: "AHMED", givenName: "AYESHA", roomPicks: [0, 0, -1, -1] },
+        { surname: "KHAN", givenName: "BILAL", roomPicks: [1, 1, -1, -1] },
+        { roomPicks: [1, 1, -1, -1] },
+        { roomPicks: [1, -1, -1, -1] },
+      ],
+    }),
+  );
+  // Booking 2: 2 pax, no ticket, 10 days, Makkah only at Hilton, category C.
+  const two = passengerSheetRows(
+    booking({
+      hbNumber: "HB-900",
+      guest: { name: "Other Family", pax: 2 },
+      packageCategory: "Maktab C Category",
+      assignedStaff: { name: "Hafiz Sahab" },
+      totalNights: 9,
+      flight: { included: false },
+      stays: [{ ...makkah, accommodationName: "Hilton", blockStartGregorian: "2027-06-10", blockEndGregorian: "2027-06-19" }],
+      passengers: [{ surname: "RAZA", givenName: "HASSAN" }],
+    }),
+  );
+  const rows = [...one, ...two];
+  const count = (filter: Parameters<typeof filterSheetRows>[1]) => filterSheetRows(rows, filter).length;
+
+  it("lets every filter through when none is set", () => {
+    expect(count({})).toBe(7);
+  });
+
+  it("filters by hotel, category, staff and days", () => {
+    expect(count({ hotel: "Hilton" })).toBe(2);
+    expect(count({ hotel: "Swiss Al Maqam" })).toBe(5);
+    expect(count({ category: "C" })).toBe(2);
+    expect(count({ staff: "Kamran Baig" })).toBe(5);
+    expect(count({ days: 10 })).toBe(2);
+    expect(count({ days: 25 })).toBe(5);
+  });
+
+  it("filters by the passenger's name, and searches name, passport and HB", () => {
+    expect(count({ haji: "ahmed" })).toBe(2);
+    expect(count({ haji: "bilal" })).toBe(1);
+    expect(count({ search: "AZ1" })).toBe(1);
+    expect(count({ search: "HB-900" })).toBe(2);
+  });
+
+  it("filters by arrival and departure sector, or by no ticket", () => {
+    expect(count({ arrivalSector: "JED" })).toBe(5);
+    expect(count({ departureSector: "med" })).toBe(5);
+    expect(count({ arrivalSector: SHEET_NONE })).toBe(2);
+  });
+
+  it("filters by the passenger's own Mina tier, not the printed '-'", () => {
+    expect(one.map((row) => row.mina)).toEqual(["STANDARD", "-", "DELUXE", "-", ""]);
+    expect(count({ mina: "STANDARD" })).toBe(2);
+    expect(count({ mina: "DELUXE" })).toBe(2);
+    // Unassigned in booking 1, and booking 2 has no Mina at all.
+    expect(count({ mina: SHEET_NONE })).toBe(3);
+  });
+
+  it("keeps passengers whose trip overlaps the period", () => {
+    // Booking 1 travels 10 May - 3 June 2027; booking 2 travels 10-19 June.
+    expect(count({ from: "2027-05-15", to: "2027-05-20" })).toBe(5);
+    expect(count({ from: "2027-06-01", to: "2027-06-12" })).toBe(7);
+    expect(count({ from: "2027-06-15" })).toBe(2);
+    expect(count({ to: "2027-05-09" })).toBe(0);
+  });
+
+  it("applies several filters at once", () => {
+    expect(count({ hotel: "Swiss Al Maqam", mina: "STANDARD", haji: "ahmed" })).toBe(2);
+    expect(count({ hotel: "Swiss Al Maqam", mina: "DELUXE", haji: "ahmed" })).toBe(0);
+  });
+
+  it("offers each filter's choices from all the rows", () => {
+    const options = sheetFilterOptions(rows);
+    expect(options.hotels).toEqual(["Diar Al Mashaer", "Hilton", "Sofitel", "Swiss Al Maqam"]);
+    expect(options.arrivalSectors).toEqual(["JED"]);
+    expect(options.days).toEqual([10, 25]);
+    expect(options.minaTiers).toEqual(["DELUXE", "STANDARD"]);
+    expect(options.categories).toEqual(["A", "C"]);
+  });
+});
+
+describe("Excel-style column filters", () => {
+  const rows = [
+    ...passengerSheetRows(
+      booking({
+        passengers: [
+          { surname: "AHMED", roomPicks: [0, 0, -1, -1] },
+          { surname: "KHAN", roomPicks: [1, 1, -1, -1] },
+        ],
+        guest: { name: "x", pax: 2 },
+      }),
+    ),
+    ...passengerSheetRows(
+      booking({
+        hbNumber: "HB-900",
+        guest: { name: "y", pax: 1 },
+        stays: [{ ...makkah, accommodationName: "Hilton" }],
+        passengers: [{ surname: "RAZA" }],
+      }),
+    ),
+  ];
+
+  it("keeps rows matching any ticked value in a column", () => {
+    expect(filterByColumns(rows, { surname: ["AHMED", "RAZA"] }).map((r) => r.passenger.surname)).toEqual(["AHMED", "RAZA"]);
+  });
+
+  it("applies several columns at once", () => {
+    expect(filterByColumns(rows, { makkah1Hotel: ["Swiss Al Maqam"], mina: ["STANDARD"] }).map((r) => r.passenger.surname)).toEqual([
+      "AHMED",
+    ]);
+  });
+
+  it("treats '' as the blanks of a column", () => {
+    expect(filterByColumns(rows, { mina: [""] }).map((r) => r.passenger.surname)).toEqual(["RAZA"]);
+  });
+
+  it("ignores unknown columns, and an empty set of filters keeps every row", () => {
+    expect(filterByColumns(rows, {})).toHaveLength(3);
+    expect(filterByColumns(rows, { nope: ["x"] })).toHaveLength(3);
+  });
+
+  it("lists a column's values from what the other filters leave, blanks last", () => {
+    expect(columnChoices(rows, {}, "makkah1Hotel")).toEqual(["Hilton", "Swiss Al Maqam"]);
+    expect(columnChoices(rows, { surname: ["RAZA"] }, "makkah1Hotel")).toEqual(["Hilton"]);
+    // Its own filter does not narrow its own list.
+    expect(columnChoices(rows, { makkah1Hotel: ["Hilton"] }, "makkah1Hotel")).toEqual(["Hilton", "Swiss Al Maqam"]);
+    expect(columnChoices(rows, {}, "mina")).toEqual(["DELUXE", "STANDARD", ""]);
+  });
+
+  it("formats dates the same whether they are Dates or JSON strings", () => {
+    const column = SHEET_COLUMNS.find((c) => c.id === "arrivalDate")!;
+    const json = JSON.parse(JSON.stringify(rows[0]));
+    expect(column.value(rows[0]!)).toBe("10 May 2027");
+    expect(column.value(json)).toBe("10 May 2027");
+  });
+});
+
+describe("sorting the sheet", () => {
+  const rows = [
+    ...passengerSheetRows(booking({ hbNumber: "HB-2", guest: { name: "x", pax: 1 }, passengers: [{ surname: "KHAN" }] })),
+    ...passengerSheetRows(
+      booking({
+        hbNumber: "HB-10",
+        guest: { name: "y", pax: 1 },
+        stays: [{ ...makkah, blockStartGregorian: "2027-04-01", blockEndGregorian: "2027-04-20" }],
+        finalTotal: 900_000,
+        passengers: [{ surname: "AHMED" }],
+      }),
+    ),
+    ...passengerSheetRows(booking({ hbNumber: "HB-3", guest: { name: "z", pax: 1 }, passengers: [{}] })),
+  ];
+  const by = (id: string, direction: "asc" | "desc" = "asc") => sortSheetRows(rows, { id, direction });
+
+  it("sorts text A to Z and back, blanks last both ways", () => {
+    expect(by("surname").map((r) => r.passenger.surname)).toEqual(["AHMED", "KHAN", ""]);
+    expect(by("surname", "desc").map((r) => r.passenger.surname)).toEqual(["KHAN", "AHMED", ""]);
+  });
+
+  it("sorts numbers inside text the way people read them", () => {
+    expect(by("hb").map((r) => r.hbNumber)).toEqual(["HB-2", "HB-3", "HB-10"]);
+  });
+
+  it("sorts dates and amounts by value, not by their text", () => {
+    expect(by("arrivalDate").map((r) => r.hbNumber)[0]).toBe("HB-10"); // 01 Apr before 10 May
+    expect(by("amount", "desc").map((r) => r.hbNumber)[0]).toBe("HB-2"); // 2,000,000 above 900,000
+  });
+
+  it("leaves the order alone with no sort", () => {
+    expect(sortSheetRows(rows, null)).toEqual(rows);
+  });
+});
+
+describe("filtering rows that came over JSON", () => {
+  it("reads string dates for the travel period, as the browser has them", () => {
+    const rows = passengerSheetRows(booking({ guest: { name: "x", pax: 2 } }));
+    const json = JSON.parse(JSON.stringify(rows));
+    expect(filterSheetRows(json, { from: "2027-05-15", to: "2027-05-20" })).toHaveLength(2);
+    expect(filterSheetRows(json, { to: "2027-05-09" })).toHaveLength(0);
   });
 });

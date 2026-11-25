@@ -114,5 +114,6 @@ export const api = {
   login: <T>(body: unknown) => request<T>("/api/auth/login", { method: "POST", body, anonymous: true }),
   pdf: requestPdf,
   /** GET a file to download, e.g. the passenger sheet. */
-  file: (path: string) => requestPdf(path, { method: "GET" }, "Could not download the file."),
+  file: (path: string, body?: unknown) =>
+    requestPdf(path, body === undefined ? { method: "GET" } : { method: "POST", body }, "Could not download the file."),
 };
